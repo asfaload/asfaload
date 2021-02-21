@@ -78,7 +78,7 @@ Payload format:
     service_account: "asfaload",
     files: [
         {
-            hash: ${hash_scheme}://${hash_value},
+            hash: ${hash_scheme}:${hash_value},
             filename: ${filename},
         },
         {

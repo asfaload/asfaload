@@ -45,6 +45,9 @@ Symbol proposes unique features that match particularly well with our goals:
 * restriction can be applied to both tokens and accounts, protecting from transactions spam
 * metadata can be attached to accounts, facilitating the link between a Symbol account and a github or gitlab account
 
+The directory `demo` contains script validating the approach described below, and has a README file that was written while running the scripts.
+Below is some technical info without the hands-on approach found in the `demo/` directory.
+
 ## Creating User Accounts
 * Create the account which will send the transactions with the file hashes. We call this account `msig`.
     * Send initial amount of `asfaload` token.

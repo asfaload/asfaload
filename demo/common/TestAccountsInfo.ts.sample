@@ -1,0 +1,71 @@
+import {
+    Account,
+    Address,
+    AggregateTransaction,
+    CosignatureTransaction,
+    CosignatureSignedTransaction,
+    Deadline,
+    HashLockTransaction,
+    MultisigAccountModificationTransaction,
+    Mosaic,
+    NetworkType,
+    PlainMessage,
+    RepositoryFactoryHttp,
+    TransactionService,
+    TransferTransaction,
+    UInt64,
+    TransactionGroup,
+} from 'symbol-sdk';
+
+
+// Decentralised setup accounts
+// ----------------------------
+// service account
+const servicePrivateKey = '';
+// user accounts
+const msigPrivateKey = '';
+const cosign1PrivateKey = '';
+const cosign2PrivateKey = '';
+
+// service dependent accounts
+// --------------------------
+//  additional service account as cosign
+const serviceCosignPrivateKey = '';
+// user accounts
+const SD_msigPrivateKey = '';
+const SD_cosign1PrivateKey = '';
+const SD_cosign2PrivateKey = '';
+
+
+export const serviceAccount = Account.createFromPrivateKey(servicePrivateKey, NetworkType.TEST_NET);
+export const serviceCosignAccount = Account.createFromPrivateKey(serviceCosignPrivateKey, NetworkType.TEST_NET);
+export const msigAccount = Account.createFromPrivateKey(msigPrivateKey, NetworkType.TEST_NET);
+export const cosign1Account = Account.createFromPrivateKey(cosign1PrivateKey, NetworkType.TEST_NET);
+export const cosign2Account = Account.createFromPrivateKey(cosign2PrivateKey, NetworkType.TEST_NET);
+export const SD_msigAccount = Account.createFromPrivateKey(SD_msigPrivateKey, NetworkType.TEST_NET);
+export const SD_cosign1Account = Account.createFromPrivateKey(SD_cosign1PrivateKey, NetworkType.TEST_NET);
+export const SD_cosign2Account = Account.createFromPrivateKey(SD_cosign2PrivateKey, NetworkType.TEST_NET);
+
+// the mosaicId of our token
+export const mosaicId = "1433489E52719E00";
+export function printAccountsInfo() {
+    console.log(
+        'Accounts setup:\nservice account: ',
+        serviceAccount.address.pretty(),
+        'SD_service account: ',
+        serviceCosignAccount.address.pretty(),
+        '\n msig account: ',
+        msigAccount.address.pretty(),
+        '\n cosign1 account: ',
+        cosign1Account.address.pretty(),
+        '\n cosign2 account: ',
+        cosign2Account.address.pretty(),
+        '\n SD msig account: ',
+        SD_msigAccount.address.pretty(),
+        '\n SD cosign1 account: ',
+        SD_cosign1Account.address.pretty(),
+        '\n SD cosign2 account: ',
+        SD_cosign2Account.address.pretty()
+
+    );
+}

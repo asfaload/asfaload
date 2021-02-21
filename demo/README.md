@@ -163,3 +163,43 @@ which prints the account found in its output:
 ...
 Account found:   TBRPOC-SS6DEP-YVRLO7-XCPMMT-EPAL3M-ZTR7A2-E4A
 ```
+
+### Listing file hash transactions for an account
+
+The demo script currently requires to pass it the public key of the account.
+Its search criteria is:
+```
+    const searchCriteria: TransactionSearchCriteria= {
+        recipientAddress: serviceAccount.address,
+        type: [TransactionType.TRANSFER],
+        embedded: true,
+        group: TransactionGroup.Confirmed,
+        transferMosaicId: new MosaicId(mosaicId),
+        signerPublicKey: publicKey,
+      };
+```
+meaning that it will select confirmed transaction transfering our mosaic to our `service` account.
+It is run as:
+```
+./run.sh common/findTransaction.ts 200784A740FD446E0BAA70FE2778FF799A77D7BBC5FC4F935011FE7AF3672F21
+```
+This script currently just prints out the messages of the corresponding transactions (the output shown here is made up, the scripts don't/didn't build the right message format at the time of writing):
+```
+{
+    version: "0.0.1',
+    service: "github",
+    service_account: "asfaload",
+    files: [
+        {
+            hash: sha256:a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447,
+            filename: asfaget-amd64,
+        },
+        {
+            hash: sha256:a8a100fa18ed89aeaf49b244a6bc43dbfaa0c29341a6f2d9b9191e237927d94e,
+            filename: asfaget-x86,
+        }
+
+    ]
+
+```
+To validate a file hash, the transactions returned will have to be read to determine if the message contains the hash of the file we want to validate the integrity of.

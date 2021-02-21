@@ -152,3 +152,14 @@ symbol-cli transaction cosign --profile SD_cosign2 --hash 946936FD8F1F6E5E9C20AE
 ```
 As this operation requires the `service` account to lock 10XYMs, the transaction should only be broadcasted after the user has confirmed ownership of the
 publisher account.
+
+### Finding the account with a metadata
+This can be done with
+```
+./run.sh common/findAccountWithMetadata.ts github:asfaload
+```
+which prints the account found in its output:
+```
+...
+Account found:   TBRPOC-SS6DEP-YVRLO7-XCPMMT-EPAL3M-ZTR7A2-E4A
+```

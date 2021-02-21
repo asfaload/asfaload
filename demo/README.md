@@ -133,3 +133,22 @@ and then
 ```
 symbol-cli transaction cosign --profile SD_cosign2 --hash C225B090A7C8A31757BBE60018DCF166ED016C7BB1DDF621CE8BFC89F2E884C6
 ```
+
+## Common operations
+### Tag multisig account with metadata
+Metadata is used to link a publisher account to a Symbol multisig account. It is done by putting an identitying string in the key, and the value to true.
+It is done so because metadata can only be searched by key, and not by value.
+As an example, the account nemtech on github would get the metadata `github:nemtech = true`.
+Assigning the metadata is done with
+```
+./run.sh common/tagAccount.ts TBRPOCSS6DEPYVRLO7XCPMMTEPAL3MZTR7A2E4A 'github:asfaload'
+```
+The transaction has to be confirmed by the target account, and as it is a multisig, the cosignatories have to cosign the transaction.
+The output of the script gives the transaction hash to be cosigned. You can do so with the `symbol-cli` if you have created the profiles for the
+cosignatories, for example:
+```
+symbol-cli transaction cosign --profile SD_cosign1 --hash 946936FD8F1F6E5E9C20AE62AFBFB670333D0E9D70A980F94630A459F3C13865
+symbol-cli transaction cosign --profile SD_cosign2 --hash 946936FD8F1F6E5E9C20AE62AFBFB670333D0E9D70A980F94630A459F3C13865
+```
+As this operation requires the `service` account to lock 10XYMs, the transaction should only be broadcasted after the user has confirmed ownership of the
+publisher account.

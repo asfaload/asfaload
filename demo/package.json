@@ -1,0 +1,21 @@
+{
+  "name": "securedownload",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsc -t es5 index.ts && node index.js ",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "prompt-sync": "^4.2.0",
+    "rxjs": "^6.6.3",
+    "symbol-sdk": "^0.23.1",
+    "utf8": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.22"
+  }
+}

@@ -28,10 +28,9 @@ import {
     SD_cosign1Account,
     SD_cosign2Account,
     SD_msigAccount,
-    serviceCosignAccount,
-    serviceAccount,
     printAccountsInfo
 } from '../common/TestAccountsInfo'
+import { msigAccount } from '../common/TestAccountsInfo';
 
 const main = async (): Promise<void> => {
     const epochAdjustment = await repositoryFactory.getEpochAdjustment().toPromise();
@@ -62,9 +61,9 @@ const main = async (): Promise<void> => {
 
     const multisigAccountModificationTransaction = MultisigAccountModificationTransaction.create(
         Deadline.create(epochAdjustment),
-        3, // minApprovalDelta
-        3, // minRemovalDelta
-        [SD_cosign1Account.address, SD_cosign2Account.address, serviceCosignAccount.address, serviceAccount.address], // address additions
+        2, // minApprovalDelta
+        2, // minRemovalDelta
+        [SD_cosign1Account.address, SD_cosign2Account.address], // address additions
         [], // address deletions
         networkType,
     );
@@ -75,23 +74,21 @@ const main = async (): Promise<void> => {
         [], // cosignatures
         UInt64.fromUint(2000000), //maxFee
     );
-    const serviceSignedTransactionNotComplete = serviceAccount.sign(
+    const msigSignedTransactionNotComplete = msigAccount.sign(
       aggregateTransactionNotComplete,
       networkGenerationHash,
     );
-    console.log(`service signed not complete transaction hash : ${serviceSignedTransactionNotComplete.hash}`);
+    console.log(`service signed not complete transaction hash : ${msigSignedTransactionNotComplete.hash}`);
 
     //var signedTransaction = [SD_msigAccount,SD_cosign1Account,SD_cosign2Account].reduce<CosignatureSignedTransaction>( (acc,account) => cosignAggregateCompleteTransaction(acc,account),
     //cosignAggregateCompleteTransaction(serviceSignedTransactionNotComplete,serviceCosignAccount)
     //)
 
-    const msigSigned = cosignAggregateCompleteTransaction(serviceSignedTransactionNotComplete,SD_msigAccount)
-    const cosign1Signed = cosignAggregateCompleteTransaction(serviceSignedTransactionNotComplete,SD_cosign1Account)
-    const cosign2Signed = cosignAggregateCompleteTransaction(serviceSignedTransactionNotComplete,SD_cosign2Account)
-    const serviceCosignSigned = cosignAggregateCompleteTransaction(serviceSignedTransactionNotComplete,serviceCosignAccount)
+    const cosign1Signed = cosignAggregateCompleteTransaction(msigSignedTransactionNotComplete,SD_cosign1Account)
+    const cosign2Signed = cosignAggregateCompleteTransaction(msigSignedTransactionNotComplete,SD_cosign2Account)
 
     const cosignatureSignedTransactions = 
-      [msigSigned, cosign1Signed, cosign2Signed,serviceCosignSigned]
+      [cosign1Signed, cosign2Signed]
       .map(
         (v) => 
           new CosignatureSignedTransaction(
@@ -100,10 +97,10 @@ const main = async (): Promise<void> => {
             v.signerPublicKey ))
 
     const aggregateTransaction = TransactionMapping.createFromPayload(
-      serviceSignedTransactionNotComplete.payload,
+      msigSignedTransactionNotComplete.payload,
     ) as AggregateTransaction;
 
-    const signedAggregateComplete = serviceAccount.signTransactionGivenSignatures(
+    const signedAggregateComplete = SD_msigAccount.signTransactionGivenSignatures(
       aggregateTransaction,
       cosignatureSignedTransactions,
       networkGenerationHash,

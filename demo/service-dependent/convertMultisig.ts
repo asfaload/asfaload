@@ -74,7 +74,7 @@ const main = async (): Promise<void> => {
         [], // cosignatures
         UInt64.fromUint(2000000), //maxFee
     );
-    const msigSignedTransactionNotComplete = msigAccount.sign(
+    const msigSignedTransactionNotComplete = SD_msigAccount.sign(
       aggregateTransactionNotComplete,
       networkGenerationHash,
     );

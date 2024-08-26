@@ -5,6 +5,9 @@ SHELL:=/bin/bash
 compile:
 	npx hardhat compile
 
+## Report contracts sizes
+size:
+	npx hardhat size-contracts
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"

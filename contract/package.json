@@ -1,0 +1,20 @@
+{
+  "name": "contract",
+  "version": "0.0.1",
+  "description": "This smart contract is developed in [Solidity](https://soliditylang.org/) using [Hardhat](https://hardhat.org/). We use the [mise](https://mise.jdx.dev/) version manager to install Node, but if you already have the right version of node installed you can ignore this.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "@openzeppelin/contracts-upgradeable": "^5.0.2",
+    "hardhat": "^2.3.3"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+  }
+}

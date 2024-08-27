@@ -9,6 +9,15 @@ compile:
 size:
 	npx hardhat size-contracts
 
+.PHONY: deploy
+## Deploy contract to $NETWORK (e.g. dev)
+deploy:
+	npx hardhat ignition deploy ./ignition/modules/Asfaload.js --network $$NETWORK
+
+## Deploy contract to local node
+deploy-dev: export NETWORK=dev
+deploy-dev: deploy
+
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
 	@echo

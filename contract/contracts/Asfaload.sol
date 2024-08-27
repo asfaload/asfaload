@@ -16,6 +16,7 @@ contract Asfaload is Initializable {
     using ChainAddressesFun for ChainAddressesStore;
     ChainAddressesStore addresses;
 
+    // Create a new user with it chain address
     function createUser(
         string calldata chainAddressString
     ) public returns (UserId userId) {

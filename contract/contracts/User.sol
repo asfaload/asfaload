@@ -13,7 +13,7 @@ struct User {
 
 // Users storage. OpenZeppelin's iterable mappings don't support
 // user defined structs.
-// As the mapping is not iterable, we collects the keys in an array ourselves.
+// As the mapping is not iterable, we keep track of the last user id assigned
 struct UsersStore {
     mapping(UserId => User) users;
     uint lastId;

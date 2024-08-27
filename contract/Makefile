@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 SHELL:=/bin/bash
-
+DEV_NODE_NAME = moonbeam_development
 ## Compile all contracts
 compile:
 	npx hardhat compile
@@ -17,6 +17,33 @@ deploy:
 ## Deploy contract to local node
 deploy-dev: export NETWORK=dev
 deploy-dev: deploy
+
+.PHONY: start-local-node
+## Start a local moonbeam node with docker
+start-local-node:
+	if [[ -z $$(docker ps --filter "name=$(DEV_NODE_NAME)" -q) ]] ; then \
+		echo "starting container $${DEV_NODE_NAME}"; \
+		docker run -d --name $(DEV_NODE_NAME) -p 9944:9944 moonbeamfoundation/moonbeam:v0.39.1 --dev --rpc-external --tmp --sealing 6000; \
+	fi
+
+.PHONY: stop-local-node
+## Stop the local moonbeam node container
+stop-local-node:
+	if [[ -n $$(docker ps --filter "name=$(DEV_NODE_NAME)" -q) ]] ; then \
+		docker stop $(DEV_NODE_NAME); \
+		docker rm $(DEV_NODE_NAME); \
+	fi
+
+.PHONY: test
+## Run contract tests on local node, which is started if needed (but it is not stopped)
+test: start-local-node
+	# Sending a request to the node before it's ready makes it crash, so we first detect when it's ready
+	while ! docker logs $(DEV_NODE_NAME) 2>&1 | grep -q "Idle ([[:digit:]] peers)" ; \
+	do \
+			sleep 1; \
+			echo "Waiting for local node to be up..."; \
+	done; \
+	npx hardhat test --network dev tests/Asfaload.js
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"

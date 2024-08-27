@@ -22,7 +22,7 @@ struct UsersStore {
 library UsersFun {
     function createUser(
         UsersStore storage store
-    ) public returns (UserId userId) {
+    ) internal returns (UserId userId) {
         // get next id
         userId = UserId.wrap(++store.lastId);
         // Initialise user

@@ -22,7 +22,9 @@ library AsfaloadUtils {
     }
 
     // Converts a string representation of an address to an address
-    function stringToAddress(string memory str) public pure returns (address) {
+    function stringToAddress(
+        string memory str
+    ) internal pure returns (address) {
         bytes memory stringBytes = bytes(str);
         require(stringBytes.length == 42, "Address length incorrect");
         bytes memory addressBytes = new bytes(20);

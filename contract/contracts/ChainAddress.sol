@@ -25,7 +25,7 @@ library ChainAddressesFun {
         ChainAddressesStore storage store,
         UserId userId,
         address account
-    ) public {
+    ) internal {
         // Get next id
         ChainAddressId chainAddressId = ChainAddressId.wrap(++store.lastId);
         // Initialise address

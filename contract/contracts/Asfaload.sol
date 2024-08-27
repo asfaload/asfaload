@@ -28,4 +28,9 @@ contract Asfaload is Initializable {
         userId = users.createUser();
         addresses.setUserChainAddress(userId, chainAddress);
     }
+
+    // Get the current lastUserId
+    function getLastUserId() public view returns (uint) {
+        return users.lastId;
+    }
 }

@@ -33,5 +33,22 @@ describe('Asfaload contract', function () {
         0n
       );
     });
+
+    it('should export', async function () {
+      const deployment = await deployAsfaload();
+      if (!deployment || !deployment.deployedAsfaload) {
+        throw new Error('Deployment failed; Asfaload contract was not deployed.');
+      }
+      const { deployedAsfaload } = deployment;
+
+      expect(await deployedAsfaload.export()).to.deep.equal(
+        [
+          0n,
+          0n,
+          []
+        ]
+      );
+    });
+
   });
 })

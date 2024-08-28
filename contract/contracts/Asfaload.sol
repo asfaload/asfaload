@@ -8,6 +8,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./User.sol";
 import "./ChainAddress.sol";
+import "./Export.sol";
 import "./Utils.sol";
 
 contract Asfaload is Initializable {
@@ -32,5 +33,35 @@ contract Asfaload is Initializable {
     // Get the current lastUserId
     function getLastUserId() public view returns (uint) {
         return users.lastId;
+    }
+
+    // We want to be able to export the data managed by the contract for 2 reasons:
+    // - it is useful for tests
+    // - in case we need need to migrate to another contract or blockchain. Not in the plans, but better safe than sorry later on.
+    // Our data is stored in structs holding the data, and mappings are used as indexes on fields of these structs.
+    // This means that we only need to export the structs, and the mappings can be reconstructed.
+    function export() public view returns (AsfaloadExport.ExportData memory) {
+        // ChainAddresses
+        // --------------
+        // Initialise an array of the size of the last chain address id, which is by
+        // definition the highest number of items we will possibly export.
+        ChainAddress[] memory addressesExport = new ChainAddress[](
+            addresses.lastId
+        );
+        // Put all chain addresses in the array
+        for (uint i = 1; i <= addresses.lastId; i++) {
+            addressesExport[i] = addresses.chainAddresses[
+                ChainAddressId.wrap(i)
+            ];
+        }
+
+        // Build the struct to be returned
+        AsfaloadExport.ExportData memory exportData = AsfaloadExport.ExportData(
+            users.lastId,
+            addresses.lastId,
+            addressesExport
+        );
+
+        return exportData;
     }
 }

@@ -6,16 +6,27 @@ pragma solidity ^0.8.24;
 // The code below uses a lot of assignments of intermediate variables for readability, but this adds to the  bytecode size....
 // Thorten error messages
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./User.sol";
 import "./ChainAddress.sol";
 import "./Export.sol";
 import "./Utils.sol";
 
-contract Asfaload is Initializable {
+contract Asfaload is Initializable, OwnableUpgradeable {
     using UsersFun for UsersStore;
     UsersStore users;
     using ChainAddressesFun for ChainAddressesStore;
     ChainAddressesStore addresses;
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address sender) external initializer {
+        __Ownable_init(sender);
+        users.lastId = 0;
+        addresses.lastId = 0;
+    }
 
     // Create a new user with it chain address
     function createUser(
@@ -40,7 +51,12 @@ contract Asfaload is Initializable {
     // - in case we need need to migrate to another contract or blockchain. Not in the plans, but better safe than sorry later on.
     // Our data is stored in structs holding the data, and mappings are used as indexes on fields of these structs.
     // This means that we only need to export the structs, and the mappings can be reconstructed.
-    function export() public view returns (AsfaloadExport.ExportData memory) {
+    function export()
+        public
+        view
+        onlyOwner
+        returns (AsfaloadExport.ExportData memory)
+    {
         // ChainAddresses
         // --------------
         // Initialise an array of the size of the last chain address id, which is by

@@ -8,8 +8,10 @@ const { expect } = require('chai');
 describe('Asfaload contract', function () {
 
   async function deployAsfaload() {
+    const [owner] = await ethers.getSigners();
+    console.log(`deploying with ${owner.address}`);
     const asfaloadFactory = await ethers.getContractFactory(
-      'Asfaload'
+      'Asfaload', owner
     );
 
     try {
@@ -35,13 +37,16 @@ describe('Asfaload contract', function () {
     });
 
     it('should export', async function () {
+      const [owner] = await ethers.getSigners();
       const deployment = await deployAsfaload();
       if (!deployment || !deployment.deployedAsfaload) {
         throw new Error('Deployment failed; Asfaload contract was not deployed.');
       }
       const { deployedAsfaload } = deployment;
-
-      expect(await deployedAsfaload.export()).to.deep.equal(
+      // Check the contract was deployed with the right owner
+      expect(await deployedAsfaload.owner()).to.equal(owner.address);
+      // The owner can export data
+      expect(await deployedAsfaload.connect(owner).export()).to.deep.equal(
         [
           0n,
           0n,

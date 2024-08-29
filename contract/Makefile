@@ -44,10 +44,12 @@ wait-local-node:
 
 .PHONY: test
 ## Run contract tests on local node, which is started if needed (but it is not stopped)
+## Select which tests to run by passing your selection in the GREP variable: make test GREP="regex"
 # Sending a request to the node before it's ready makes it crash, so we first detect when it's ready
 # by depending on wait-local-node
 test: start-local-node wait-local-node
-	npx hardhat test --network dev tests/Asfaload.js
+	GREP="$(GREP)" && \
+			 npx hardhat test --network dev $${GREP:+--grep "$$GREP"} tests/Asfaload.js
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"

@@ -6,12 +6,13 @@ pragma solidity ^0.8.24;
 // The code below uses a lot of assignments of intermediate variables for readability, but this adds to the  bytecode size....
 // Thorten error messages
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./User.sol";
 import "./ChainAddress.sol";
 import "./Export.sol";
 import "./Utils.sol";
 
-contract Asfaload is Initializable {
+contract Asfaload is Initializable, OwnableUpgradeable {
     using UsersFun for UsersStore;
     UsersStore users;
     using ChainAddressesFun for ChainAddressesStore;

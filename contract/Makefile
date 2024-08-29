@@ -9,14 +9,20 @@ compile:
 size:
 	npx hardhat size-contracts
 
-.PHONY: deploy
-## Deploy contract to $NETWORK (e.g. dev)
-deploy:
-	npx hardhat ignition deploy ./ignition/modules/Asfaload.js --network $$NETWORK
 
 ## Deploy contract to local node
 deploy-dev: export NETWORK=dev
-deploy-dev: deploy
+deploy-dev: deploy-upgradeable
+
+.PHONY: deploy-upgradeable
+## Deploy contract to $NETWORK (e.g. dev)
+deploy-upgradeable:
+	npx hardhat run --network $${NETWORK:-dev} scripts/deploy-upgradable.js
+
+.PHONY: upgrade
+## Upgrade contract on chain ${NETWORK} at address found in .asfaload_address_${NETWORK}
+upgrade:
+	npx hardhat run --network $${NETWORK:-dev} scripts/upgrade-asfaload.js
 
 .PHONY: start-local-node
 ## Start a local moonbeam node with docker

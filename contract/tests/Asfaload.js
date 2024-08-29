@@ -13,9 +13,12 @@ describe('Asfaload contract', function () {
     );
 
     try {
-      const deployedAsfaload = await asfaloadFactory.deploy();
-      await deployedAsfaload.waitForDeployment(); // Wait for the transaction to be mined
-      return { deployedAsfaload: deployedAsfaload };
+
+      const Asfaload = await ethers.getContractFactory("Asfaload");
+      const asfaload = await upgrades.deployProxy(Asfaload, []);
+      await asfaload.waitForDeployment();
+      return { deployedAsfaload: asfaload };
+
     } catch (error) {
       console.error('Failed to deploy contract:', error);
       return null; // Return null to indicate failure

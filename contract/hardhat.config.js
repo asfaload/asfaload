@@ -1,6 +1,7 @@
 require('hardhat-contract-sizer');
 require('@nomicfoundation/hardhat-ethers');
 require('@nomicfoundation/hardhat-ignition-ethers');
+require('@openzeppelin/hardhat-upgrades');
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {

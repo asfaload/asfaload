@@ -3,6 +3,7 @@ const { ethers } = require('hardhat');
 
 // Import Chai to use its assertion functions here
 const { expect } = require('chai');
+const crypto = require('crypto');
 
 
 describe('Asfaload contract', function () {
@@ -21,6 +22,9 @@ describe('Asfaload contract', function () {
       return null; // Return null to indicate failure
     }
   }
+  ////////////////////////////////////////////////////////////////////////////////
+  // Initial deployment tests
+  ////////////////////////////////////////////////////////////////////////////////
   describe('Deployment', function () {
     it('should have lastUserId be 0', async function () {
       const deployment = await deployAsfaload();
@@ -49,6 +53,39 @@ describe('Asfaload contract', function () {
         ]
       );
     });
+
+  });
+  ////////////////////////////////////////////////////////////////////////////////
+  // Create user tests
+  ////////////////////////////////////////////////////////////////////////////////
+  describe('createUser', function () {
+    var deployedAsfaload;
+    before(async () => {
+      const deployment = await deployAsfaload();
+      if (!deployment || !deployment.deployedAsfaload) {
+        throw new Error('Deployment failed; Asfaload contract was not deployed.');
+      }
+      deployedAsfaload = deployment.deployedAsfaload;
+    }
+    )
+
+    it('should add a new user', async function () {
+      var id = crypto.randomBytes(32).toString('hex');
+      var privateKey = "0x" + id;
+      var wallet = new ethers.Wallet(privateKey);
+      await deployedAsfaload.createUser(wallet.address);
+
+      expect(await deployedAsfaload.getLastUserId()).to.equal(1n);
+      expect(await deployedAsfaload.export()).to.deep.equal(
+        [
+          0n,
+          0n,
+          []
+        ]
+      );
+
+    }
+    );
 
   });
 })

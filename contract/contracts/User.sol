@@ -24,7 +24,8 @@ library UsersFun {
         UsersStore storage store
     ) internal returns (UserId userId) {
         // get next id
-        userId = UserId.wrap(++store.lastId);
+        store.lastId = store.lastId + 1;
+        userId = UserId.wrap(store.lastId);
         // Initialise user
         User memory user = User(userId);
         // Store in id mapping

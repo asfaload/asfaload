@@ -14,8 +14,19 @@ import "./Utils.sol";
 contract Asfaload is Initializable {
     using UsersFun for UsersStore;
     UsersStore users;
+    uint public myvar = 2;
     using ChainAddressesFun for ChainAddressesStore;
     ChainAddressesStore addresses;
+
+    //constructor() {
+    //    _disableInitializers();
+    //}
+
+    function initialize() public initializer {
+        users.lastId = 1;
+        addresses.lastId = 1;
+        myvar = myvar + 1;
+    }
 
     // Create a new user with it chain address
     function createUser(
@@ -32,7 +43,8 @@ contract Asfaload is Initializable {
 
     // Get the current lastUserId
     function getLastUserId() public view returns (uint) {
-        return users.lastId;
+        return myvar;
+        //return users.lastId;
     }
 
     // We want to be able to export the data managed by the contract for 2 reasons:

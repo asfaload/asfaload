@@ -23,7 +23,7 @@ deploy-dev: deploy
 start-local-node:
 	if [[ -z $$(docker ps --filter "name=$(DEV_NODE_NAME)" -q) ]] ; then \
 		echo "starting container $${DEV_NODE_NAME}"; \
-		docker run -d --name $(DEV_NODE_NAME) -p 9944:9944 moonbeamfoundation/moonbeam:v0.39.1 --dev --rpc-external --tmp --sealing 6000; \
+		docker run -d --rm --name $(DEV_NODE_NAME) -p 9944:9944 moonbeamfoundation/moonbeam:v0.39.1 --dev --rpc-external --tmp --sealing 6000; \
 	fi
 
 .PHONY: stop-local-node
@@ -31,7 +31,6 @@ start-local-node:
 stop-local-node:
 	if [[ -n $$(docker ps --filter "name=$(DEV_NODE_NAME)" -q) ]] ; then \
 		docker stop $(DEV_NODE_NAME); \
-		docker rm $(DEV_NODE_NAME); \
 	fi
 
 .PHONY: test

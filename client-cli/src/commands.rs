@@ -5,12 +5,13 @@ use crate::{
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
-        bishop_art, get_password,
+        get_password,
     },
 };
 
 pub mod keys;
 pub mod list_pending;
+pub mod select_pending_tui;
 pub mod share_key;
 pub mod sign_pending;
 pub mod signature_status;
@@ -234,29 +235,11 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                         }
                         None => server_response,
                     };
-                    // Inquired formats proposals according to the Display implementation for PendingFile,
-                    // wrapped to append the bishop art below the digest line.
-                    struct WithBishop(rest_api_types::models::PendingFile);
-                    impl std::fmt::Display for WithBishop {
-                        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                            write!(f, "{}\n{}", self.0, bishop_art(self.0.digest()))
-                        }
-                    }
-                    let proposals: Vec<WithBishop> =
-                        response.pending_files.into_iter().map(WithBishop).collect();
-
-                    if proposals.is_empty() {
+                    if response.pending_files.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
                     } else if std::io::stdin().is_terminal() {
-                        match inquire::Select::new("File to sign", proposals).prompt() {
-                            Ok(choice) => choice.0.unseal(),
-                            Err(_) => {
-                                return Err(anyhow::Error::new(ClientCliError::InvalidInput(
-                                    "Selection cancelled or failed: no path to sign was provided"
-                                        .into(),
-                                )));
-                            }
-                        }
+                        select_pending_tui::select_pending_file(response.pending_files)
+                            .map_err(anyhow::Error::new)?
                     } else {
                         return Err(anyhow::Error::msg(
                             "Not a tty and no path to sign was passed.",

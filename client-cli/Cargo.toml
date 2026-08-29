@@ -31,7 +31,9 @@ client-lib = { path = "../client-lib" }
 forge-url = { path = "../file-auth/forge-url" }
 url = "2.5"
 shell-words = "1.1.1"
-inquire = "0.9.4"
+ratatui = { version = "0.30", features = ["crossterm"] }
+crossterm = "0.29"
+ansi-to-tui = "8.0"
 bishop = "1.0.0"
 colored = "3"
 

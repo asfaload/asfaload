@@ -41,7 +41,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.14"
 test_helpers = { path = "../core/test_helpers" }
-base64 = "0.22"
+base64 = "0.23"
 
 [lints]
 workspace = true

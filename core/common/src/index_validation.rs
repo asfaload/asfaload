@@ -102,7 +102,10 @@ mod tests {
     use anyhow::Result;
     use chrono::Utc;
 
-    use super::{IndexValidationError, file_auth::validate_index_against_digests};
+    use super::{
+        IndexValidationError,
+        file_auth::{validate_index_against_digests, validate_index_hash_files},
+    };
     use crate::{
         checksums_parser::ParsedChecksum,
         index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm},
@@ -337,6 +340,72 @@ mod tests {
         ]);
 
         validate_index_against_digests(index, digests).await?;
+        Ok(())
+    }
+
+    // Builds the body of a sha256sum-format checksums file.
+    fn checksums_body(pairs: &[(&str, &str)]) -> String {
+        pairs
+            .iter()
+            .map(|(hash, file_name)| format!("{}  {}", hash, file_name))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[tokio::test]
+    async fn fetched_source_validates_matching_digest() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/checksums.txt")
+            .with_status(200)
+            .with_body(checksums_body(&[(SHA256_A, "app.bin")]))
+            .create_async()
+            .await;
+
+        let source = format!("{}/checksums.txt", server.url());
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            &source,
+            SHA256_A,
+        )]);
+
+        validate_index_hash_files(index).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn each_file_is_validated_against_its_own_source() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let _m1 = server
+            .mock("GET", "/checksums-a.txt")
+            .with_status(200)
+            .with_body(checksums_body(&[(SHA256_A, "app.bin")]))
+            .create_async()
+            .await;
+        let _m2 = server
+            .mock("GET", "/checksums-b.txt")
+            .with_status(200)
+            .with_body(checksums_body(&[(SHA256_B, "lib.tar")]))
+            .create_async()
+            .await;
+
+        let index = index_with(vec![
+            file_checksum(
+                "app.bin",
+                HashAlgorithm::Sha256,
+                &format!("{}/checksums-a.txt", server.url()),
+                SHA256_A,
+            ),
+            file_checksum(
+                "lib.tar",
+                HashAlgorithm::Sha256,
+                &format!("{}/checksums-b.txt", server.url()),
+                SHA256_B,
+            ),
+        ]);
+
+        validate_index_hash_files(index).await?;
         Ok(())
     }
 }

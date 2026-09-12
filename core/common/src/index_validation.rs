@@ -94,3 +94,77 @@ pub mod file_auth {
         validate_index_against_digests(index, cached_checksums).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use anyhow::Result;
+    use chrono::Utc;
+
+    use super::file_auth::validate_index_against_digests;
+    use crate::{
+        checksums_parser::ParsedChecksum,
+        index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm},
+    };
+
+    const SHA256_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const URL_A: &str = "https://example.test/checksums-a.txt";
+
+    fn file_checksum(
+        file_name: &str,
+        algo: HashAlgorithm,
+        source: &str,
+        hash: &str,
+    ) -> FileChecksum {
+        FileChecksum {
+            file_name: file_name.to_string(),
+            algo,
+            source: source.to_string(),
+            hash: hash.to_string(),
+        }
+    }
+
+    fn index_with(files: Vec<FileChecksum>) -> AsfaloadIndex {
+        AsfaloadIndex {
+            mirrored_on: Utc::now(),
+            published_on: Utc::now(),
+            version: 1,
+            published_files: files,
+        }
+    }
+
+    fn parsed(file_name: &str, algo: HashAlgorithm, hash: &str) -> ParsedChecksum {
+        ParsedChecksum {
+            file_name: file_name.to_string(),
+            algo,
+            hash: hash.to_string(),
+        }
+    }
+
+    fn digests_of(
+        entries: Vec<(&str, Vec<ParsedChecksum>)>,
+    ) -> HashMap<String, Vec<ParsedChecksum>> {
+        entries
+            .into_iter()
+            .map(|(url, checksums)| (url.to_string(), checksums))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn validates_matching_digest() -> Result<()> {
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            URL_A,
+            SHA256_A,
+        )]);
+        let digests = digests_of(vec![(
+            URL_A,
+            vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_A)],
+        )]);
+
+        validate_index_against_digests(index, digests).await?;
+        Ok(())
+    }
+}

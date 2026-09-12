@@ -3,6 +3,7 @@ pub mod errors;
 pub mod fs;
 pub mod http;
 pub mod index_types;
+pub mod index_validation;
 
 use constants::{
     METADATA_SUFFIX, PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,

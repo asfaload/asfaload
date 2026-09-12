@@ -434,4 +434,131 @@ mod tests {
         mock.assert_async().await;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn propagates_http_error() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/checksums.txt")
+            .with_status(500)
+            .with_body("upstream error")
+            .create_async()
+            .await;
+
+        let source = format!("{}/checksums.txt", server.url());
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            &source,
+            SHA256_A,
+        )]);
+
+        match validate_index_hash_files(index).await {
+            Err(IndexValidationError::FetchError(crate::http::FetchError::HttpError {
+                status,
+                url,
+            })) => {
+                assert_eq!(status, 500);
+                assert_eq!(url, source);
+            }
+            Err(e) => panic!("Expected FetchError::HttpError but got {}", e),
+            Ok(_) => panic!("Expected FetchError error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn propagates_checksum_parse_error() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/checksums.txt")
+            .with_status(200)
+            .with_body("not-a-valid-checksum-line")
+            .create_async()
+            .await;
+
+        let source = format!("{}/checksums.txt", server.url());
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            &source,
+            SHA256_A,
+        )]);
+
+        match validate_index_hash_files(index).await {
+            Err(IndexValidationError::ChecksumParseError(
+                crate::checksums_parser::ChecksumParseError::InvalidLineFormat(line),
+            )) => {
+                assert_eq!(line, "not-a-valid-checksum-line");
+            }
+            Err(e) => panic!(
+                "Expected ChecksumParseError::InvalidLineFormat but got {}",
+                e
+            ),
+            Ok(_) => panic!("Expected ChecksumParseError error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetched_source_reports_digest_mismatch() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/checksums.txt")
+            .with_status(200)
+            .with_body(checksums_body(&[(SHA256_B, "app.bin")]))
+            .create_async()
+            .await;
+
+        let source = format!("{}/checksums.txt", server.url());
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            &source,
+            SHA256_A,
+        )]);
+
+        match validate_index_hash_files(index).await {
+            Err(IndexValidationError::DigestMismatch {
+                in_index,
+                in_source,
+                origin,
+            }) => {
+                assert_eq!(in_index, SHA256_A);
+                assert_eq!(in_source, SHA256_B);
+                assert_eq!(origin, source);
+            }
+            Err(e) => panic!("Expected DigestMismatch but got {}", e),
+            Ok(_) => panic!("Expected DigestMismatch error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetched_source_lacking_file_is_invalid_source() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/checksums.txt")
+            .with_status(200)
+            .with_body(checksums_body(&[(SHA256_A, "other.bin")]))
+            .create_async()
+            .await;
+
+        let source = format!("{}/checksums.txt", server.url());
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            &source,
+            SHA256_A,
+        )]);
+
+        match validate_index_hash_files(index).await {
+            Err(IndexValidationError::InvalidSource(msg)) => {
+                assert!(
+                    msg.contains("Found 0 checksums"),
+                    "expected zero-matches message, got: {}",
+                    msg
+                );
+            }
+            Err(e) => panic!("Expected InvalidSource but got {}", e),
+            Ok(_) => panic!("Expected InvalidSource error, got Ok value!"),
+        }
+    }
 }

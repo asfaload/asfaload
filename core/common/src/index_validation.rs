@@ -408,4 +408,30 @@ mod tests {
         validate_index_hash_files(index).await?;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn shared_source_is_fetched_exactly_once() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/checksums.txt")
+            .with_status(200)
+            .with_body(checksums_body(&[
+                (SHA256_A, "app.bin"),
+                (SHA256_B, "lib.tar"),
+            ]))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let source = format!("{}/checksums.txt", server.url());
+        let index = index_with(vec![
+            file_checksum("app.bin", HashAlgorithm::Sha256, &source, SHA256_A),
+            file_checksum("lib.tar", HashAlgorithm::Sha256, &source, SHA256_B),
+        ]);
+
+        validate_index_hash_files(index).await?;
+        // Panics if the mock was hit any other number of times than 1.
+        mock.assert_async().await;
+        Ok(())
+    }
 }

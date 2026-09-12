@@ -21,6 +21,7 @@ pub enum IndexValidationError {
 // This module covers usage of Asfaload for file downloads authentication.
 pub mod file_auth {
     use std::collections::HashMap;
+    use std::collections::hash_map::Entry;
 
     use crate::{
         checksums_parser::{ParsedChecksum, parse_checksums},
@@ -85,14 +86,10 @@ pub mod file_auth {
         for published_file in &index.published_files {
             // get the digest values found in the source for this published_file
             let source_url = &published_file.source;
-            // As we fetch the content asynchronously, we cannot use
-            //   cached_checksums.entry(source_url).or_insert_with(|| value_to_insert)
-            #[allow(clippy::map_entry)]
-            if !cached_checksums.contains_key(source_url) {
-                let source_content = fetch_with_retry(&published_file.source).await?;
-                let shasums = parse_checksums(&source_content)?;
-                cached_checksums.insert(source_url.into(), shasums);
-            };
+            if let Entry::Vacant(entry) = cached_checksums.entry(source_url.into()) {
+                let parsed = parse_checksums(&fetch_with_retry(source_url).await?)?;
+                entry.insert(parsed);
+            }
         }
         validate_index_against_digests(index, cached_checksums).await
     }

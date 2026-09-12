@@ -102,14 +102,17 @@ mod tests {
     use anyhow::Result;
     use chrono::Utc;
 
-    use super::file_auth::validate_index_against_digests;
+    use super::{IndexValidationError, file_auth::validate_index_against_digests};
     use crate::{
         checksums_parser::ParsedChecksum,
         index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm},
     };
 
+    // Two distinct, valid SHA-256 hex digests so a mismatch is detectable.
     const SHA256_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const SHA256_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const URL_A: &str = "https://example.test/checksums-a.txt";
+    const URL_B: &str = "https://example.test/checksums-b.txt";
 
     fn file_checksum(
         file_name: &str,
@@ -163,6 +166,175 @@ mod tests {
             URL_A,
             vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         )]);
+
+        validate_index_against_digests(index, digests).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reports_digest_mismatch_with_location() {
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            URL_A,
+            SHA256_A,
+        )]);
+        let digests = digests_of(vec![(
+            URL_A,
+            vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_B)],
+        )]);
+
+        match validate_index_against_digests(index, digests).await {
+            Err(IndexValidationError::DigestMismatch {
+                in_index,
+                in_source,
+                origin,
+            }) => {
+                assert_eq!(in_index, SHA256_A);
+                assert_eq!(in_source, SHA256_B);
+                assert_eq!(origin, URL_A);
+            }
+            Err(e) => panic!("Expected DigestMismatch but got {}", e),
+            Ok(_) => panic!("Expected DigestMismatch error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reports_missing_source_with_its_url() {
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            URL_A,
+            SHA256_A,
+        )]);
+        // The digests map contains another source, not URL_A
+        let digests = digests_of(vec![(
+            URL_B,
+            vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_A)],
+        )]);
+
+        match validate_index_against_digests(index, digests).await {
+            Err(IndexValidationError::InvalidSource(msg)) => {
+                assert!(
+                    msg.contains(URL_A),
+                    "error should name the missing URL, got: {}",
+                    msg
+                );
+            }
+            Err(e) => panic!("Expected InvalidSource but got {}", e),
+            Ok(_) => panic!("Expected InvalidSource error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reports_zero_checksums_when_file_absent_from_source() {
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            URL_A,
+            SHA256_A,
+        )]);
+        // Source lists only an unrelated file
+        let digests = digests_of(vec![(
+            URL_A,
+            vec![parsed("other.bin", HashAlgorithm::Sha256, SHA256_A)],
+        )]);
+
+        match validate_index_against_digests(index, digests).await {
+            Err(IndexValidationError::InvalidSource(msg)) => {
+                assert!(
+                    msg.contains("Found 0 checksums"),
+                    "expected zero-matches message, got: {}",
+                    msg
+                );
+                assert!(msg.contains("app.bin"));
+            }
+            Err(e) => panic!("Expected InvalidSource but got {}", e),
+            Ok(_) => panic!("Expected InvalidSource error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reports_zero_checksums_when_algorithm_differs() {
+        // Same filename and hash, but the source checksum was computed with
+        // sha512 while the index declares sha256: the algo filter must reject
+        // the match.
+        let sha512_hash = "cc".repeat(64);
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            URL_A,
+            &sha512_hash,
+        )]);
+        let digests = digests_of(vec![(
+            URL_A,
+            vec![parsed("app.bin", HashAlgorithm::Sha512, &sha512_hash)],
+        )]);
+
+        match validate_index_against_digests(index, digests).await {
+            Err(IndexValidationError::InvalidSource(msg)) => {
+                assert!(
+                    msg.contains("Found 0 checksums"),
+                    "expected zero-matches message, got: {}",
+                    msg
+                );
+            }
+            Err(e) => panic!("Expected InvalidSource but got {}", e),
+            Ok(_) => panic!("Expected InvalidSource error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reports_duplicate_checksums_in_source() {
+        let index = index_with(vec![file_checksum(
+            "app.bin",
+            HashAlgorithm::Sha256,
+            URL_A,
+            SHA256_A,
+        )]);
+        // sha256sum output is not expected to contain duplicate entries;
+        // two matching lines must be reported, not silently consumed.
+        let digests = digests_of(vec![(
+            URL_A,
+            vec![
+                parsed("app.bin", HashAlgorithm::Sha256, SHA256_A),
+                parsed("app.bin", HashAlgorithm::Sha256, SHA256_A),
+            ],
+        )]);
+
+        match validate_index_against_digests(index, digests).await {
+            Err(IndexValidationError::InvalidSource(msg)) => {
+                assert!(
+                    msg.contains("Found 2 checksums"),
+                    "expected duplicates message, got: {}",
+                    msg
+                );
+            }
+            Err(e) => panic!("Expected InvalidSource but got {}", e),
+            Ok(_) => panic!("Expected InvalidSource error, got Ok value!"),
+        }
+    }
+
+    #[tokio::test]
+    async fn validates_multiple_files_across_sources() -> Result<()> {
+        let index = index_with(vec![
+            file_checksum("app.bin", HashAlgorithm::Sha256, URL_A, SHA256_A),
+            file_checksum("lib.tar", HashAlgorithm::Sha256, URL_B, SHA256_B),
+        ]);
+        let digests = digests_of(vec![
+            (
+                URL_A,
+                vec![
+                    parsed("app.bin", HashAlgorithm::Sha256, SHA256_A),
+                    // extra entries in sources are tolerated
+                    parsed("unrelated.bin", HashAlgorithm::Sha256, SHA256_B),
+                ],
+            ),
+            (
+                URL_B,
+                vec![parsed("lib.tar", HashAlgorithm::Sha256, SHA256_B)],
+            ),
+        ]);
 
         validate_index_against_digests(index, digests).await?;
         Ok(())

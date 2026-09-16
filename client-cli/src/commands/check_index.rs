@@ -1,4 +1,6 @@
-use crate::error::Result;
+use crate::error::{ClientCliError, Result};
+use common::index_types::AsfaloadIndex;
+use common::index_validation::file_auth::validate_index_hash_files;
 
 /// Handle the check-index command.
 ///
@@ -21,7 +23,24 @@ pub async fn handle_check_index_command(
     backend_url: &str,
     json: bool,
 ) -> Result<()> {
-    // Stub body: real validation lands with the behavior tests.
-    let _ = (index_path, backend_url, json);
+    let client = admin_lib::v1::Client::new(backend_url);
+    let content = client.fetch_file(index_path).await?;
+
+    // A corrupt index body almost always means the wrong path was given, so the
+    // error names the path rather than exposing a bare serde message.
+    let index: AsfaloadIndex = serde_json::from_slice(&content).map_err(|e| {
+        ClientCliError::InvalidInput(format!(
+            "Body at {index_path} is not valid JSON for an index file: {e}"
+        ))
+    })?;
+
+    let files_checked = index.published_files.len();
+    validate_index_hash_files(index).await?;
+
+    // JSON success output is added in the next task; the `json` flag only
+    // affects error reporting (handled by main.rs) until then.
+    let _ = json;
+    println!("✓ Index valid: {files_checked} file(s) verified against their digest sources");
+
     Ok(())
 }

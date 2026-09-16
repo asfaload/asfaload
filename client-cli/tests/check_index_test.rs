@@ -181,3 +181,24 @@ fn check_index_json_output() {
     assert_eq!(index["publishedFiles"][0]["source"], source_url);
     assert_eq!(index["publishedFiles"][0]["hash"], SHA256_HASH);
 }
+
+// An index with no published files has nothing to contradict, so validation
+// succeeds trivially. Pinning that behavior: exit 0, "0 file(s) verified".
+// The absence of source mocks also proves no digest source is fetched.
+#[test]
+fn check_index_empty_index_succeeds() {
+    let mut backend = mockito::Server::new();
+    let _index = backend
+        .mock("GET", format!("/v1/files/{}", index_path()).as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{"mirroredOn":"2026-09-12T12:00:00Z","publishedOn":"2026-09-12T12:00:00Z","version":1,"publishedFiles":[]}"#,
+        )
+        .create();
+
+    check_index_cmd(&backend)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 file(s)"));
+}

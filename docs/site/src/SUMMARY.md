@@ -30,7 +30,9 @@
   - [sign-pending](client-cli/manual/sign-pending.md)
   - [signature-status](client-cli/manual/signature-status.md)
   - [revoke](client-cli/manual/revoke.md)
+  - [get-digest](client-cli/manual/get-digest.md)
   - [download](client-cli/manual/download.md)
+  - [check-index](client-cli/manual/check-index.md)
   - [ping](client-cli/manual/ping.md)
 
 # REST API

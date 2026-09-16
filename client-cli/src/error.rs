@@ -55,6 +55,9 @@ pub enum ClientCliError {
 
     #[error("Computed digest ({0}) does not match the digest advertised by the server ({1})")]
     ServerDigestError(String, AsfaloadHashes),
+
+    #[error("Index validation failed: {0}")]
+    IndexValidation(#[from] common::index_validation::IndexValidationError),
 }
 
 // FIXME: remove this, creates more confusion than necessary

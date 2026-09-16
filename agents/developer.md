@@ -9,7 +9,7 @@ proposed solution is problematic or has flows.
 - Before committing code,  you MUST run `make format`
 - `cargo check` must report NO error nor warning
 - `cargo clippy` must report NO error nor warning
-- `make check format`  must report NO error nor warning.
+- `make check-format` must report NO error nor warning.
 - The code you write should be covered by unit and/or integration test.
 - Follow best practices and industry standards
 - Provide clear explanations and documentation

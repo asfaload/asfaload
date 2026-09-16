@@ -1,9 +1,12 @@
+use features_lib::constants::INDEX_FILE;
 use predicates::prelude::*;
 use serde_json::Value;
 
 const SHA256_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const SHA256_OTHER: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const INDEX_PATH: &str = "project/releases/v0.5/asfaload.index.json";
+fn index_path() -> String {
+    format!("project/releases/v0.5/{INDEX_FILE}")
+}
 
 fn index_json(source_url: &str, hash: &str) -> String {
     format!(
@@ -37,7 +40,7 @@ fn mock_valid_index(
 ) -> (mockito::Mock, mockito::Mock) {
     let source_url = format!("{}/checksums.txt", file_server.url());
     let index = backend
-        .mock("GET", format!("/v1/files/{INDEX_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{}", index_path()).as_str())
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(index_json(&source_url, SHA256_HASH))
@@ -53,7 +56,7 @@ fn mock_valid_index(
 fn check_index_cmd(backend: &mockito::Server) -> assert_cmd::Command {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("check-index")
-        .arg(INDEX_PATH)
+        .arg(index_path())
         .arg("-u")
         .arg(backend.url());
     cmd
@@ -78,7 +81,7 @@ fn check_index_digest_mismatch_fails() {
     let mut file_server = mockito::Server::new();
     let source_url = format!("{}/checksums.txt", file_server.url());
     let _index = backend
-        .mock("GET", format!("/v1/files/{INDEX_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{}", index_path()).as_str())
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(index_json(&source_url, SHA256_HASH))
@@ -99,7 +102,7 @@ fn check_index_digest_mismatch_fails() {
 fn check_index_missing_index_fails() {
     let mut backend = mockito::Server::new();
     let _index = backend
-        .mock("GET", format!("/v1/files/{INDEX_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{}", index_path()).as_str())
         .with_status(404)
         .with_body("File not found")
         .create();
@@ -114,7 +117,7 @@ fn check_index_missing_index_fails() {
 fn check_index_invalid_json_body_fails() {
     let mut backend = mockito::Server::new();
     let _index = backend
-        .mock("GET", format!("/v1/files/{INDEX_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{}", index_path()).as_str())
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body("this is not an index")
@@ -132,7 +135,7 @@ fn check_index_json_error_on_mismatch() {
     let mut file_server = mockito::Server::new();
     let source_url = format!("{}/checksums.txt", file_server.url());
     let _index = backend
-        .mock("GET", format!("/v1/files/{INDEX_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{}", index_path()).as_str())
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(index_json(&source_url, SHA256_HASH))
@@ -165,7 +168,7 @@ fn check_index_json_output() {
     let output = check_index_cmd(&backend).arg("--json").assert().success();
     let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     let v: Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(v["index_path"], INDEX_PATH);
+    assert_eq!(v["index_path"], index_path().as_str());
     assert_eq!(v["valid"], true);
     assert_eq!(v["files_checked"], 1);
     // The whole validated index is embedded under "index", serialized camelCase.

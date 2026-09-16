@@ -38,7 +38,6 @@ pub struct JsonError {
 #[derive(Serialize)]
 pub struct CheckIndexOutput {
     pub index_path: String,
-    pub valid: bool,
     pub files_checked: usize,
     pub index: common::index_types::AsfaloadIndex,
 }

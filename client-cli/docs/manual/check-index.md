@@ -35,9 +35,9 @@ Human-readable (default):
 
     ✓ Index valid: 1 file(s) verified against their digest sources
 
-JSON (with `--json`). The `index` field carries the whole validated index object (camelCase fields, as in the index file itself):
+JSON (with `--json`). Success is implied by exit code `0` — on failure the command exits non-zero and reports `{"error": "…"}` on stderr instead. The `index` field carries the whole validated index object (camelCase fields, as in the index file itself):
 
-    {"index_path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json","valid":true,"files_checked":1,"index":{"mirroredOn":"2026-01-15T09:30:00Z","publishedOn":"2026-01-14T18:02:11Z","version":1,"publishedFiles":[{"fileName":"app-v1.0.tar.gz","algo":"Sha256","source":"https://github.com/acme/repo/releases/download/v1.0/SHA256SUMS.txt","hash":"e3b0c44…b855"}]}}
+    {"index_path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json","files_checked":1,"index":{"mirroredOn":"2026-01-15T09:30:00Z","publishedOn":"2026-01-14T18:02:11Z","version":1,"publishedFiles":[{"fileName":"app-v1.0.tar.gz","algo":"Sha256","source":"https://github.com/acme/repo/releases/download/v1.0/SHA256SUMS.txt","hash":"e3b0c44…b855"}]}}
 
 On failure, the error identifies the problem: a fetch error (unknown path, unreachable digest source), an unparseable body, or a digest mismatch naming the value in the index, the value in the source, and the source URL.
 

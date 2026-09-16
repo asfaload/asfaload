@@ -40,7 +40,6 @@ pub async fn handle_check_index_command(
     if json {
         let output = crate::output::CheckIndexOutput {
             index_path: index_path.to_string(),
-            valid: true,
             files_checked,
             index,
         };

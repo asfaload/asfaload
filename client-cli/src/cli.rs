@@ -352,6 +352,18 @@ pub enum Commands {
         #[command(flatten)]
         forge_type_args: ForgeTypeArgs,
     },
+
+    /// Validate a mirror index file against its digest sources
+    CheckIndex {
+        /// Path to the index file on the mirror (as displayed by list-pending)
+        index_path: String,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -386,6 +398,7 @@ impl Commands {
             Self::Ping { .. } => "PING",
             Self::Download { .. } => "DOWNLOAD",
             Self::GetDigest { .. } => "GET_DIGEST",
+            Self::CheckIndex { .. } => "CHECK_INDEX",
         }
     }
 
@@ -416,7 +429,8 @@ impl Commands {
             | Self::RegisterAssets { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. }
-            | Self::Ping { json_args, .. } => json_args.json,
+            | Self::Ping { json_args, .. }
+            | Self::CheckIndex { json_args, .. } => json_args.json,
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
         }

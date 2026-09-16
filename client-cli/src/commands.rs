@@ -20,6 +20,7 @@ use common::AsfaloadHashes;
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use rest_api_types::models::ClientPendingFile;
 
+pub mod check_index;
 pub mod download;
 pub mod get_digest;
 pub mod ping;
@@ -479,6 +480,22 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         Commands::GetDigest { file, json_args } => {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(get_digest::handle_get_digest_command(file, json_args.json))?;
+        }
+        Commands::CheckIndex {
+            index_path,
+            backend_url_args,
+            json_args,
+        } => {
+            let url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(check_index::handle_check_index_command(
+                index_path,
+                &url,
+                json_args.json,
+            ))?;
         }
     }
     Ok(())

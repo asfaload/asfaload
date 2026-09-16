@@ -35,12 +35,19 @@ pub async fn handle_check_index_command(
     })?;
 
     let files_checked = index.published_files.len();
-    validate_index_hash_files(index).await?;
+    validate_index_hash_files(index.clone()).await?;
 
-    // JSON success output is added in the next task; the `json` flag only
-    // affects error reporting (handled by main.rs) until then.
-    let _ = json;
-    println!("✓ Index valid: {files_checked} file(s) verified against their digest sources");
+    if json {
+        let output = crate::output::CheckIndexOutput {
+            index_path: index_path.to_string(),
+            valid: true,
+            files_checked,
+            index,
+        };
+        println!("{}", serde_json::to_string(&output)?);
+    } else {
+        println!("✓ Index valid: {files_checked} file(s) verified against their digest sources");
+    }
 
     Ok(())
 }

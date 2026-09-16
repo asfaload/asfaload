@@ -154,3 +154,28 @@ fn check_index_json_error_on_mismatch() {
         "expected digest mismatch message, got: {stderr}"
     );
 }
+
+#[test]
+fn check_index_json_output() {
+    let mut backend = mockito::Server::new();
+    let mut file_server = mockito::Server::new();
+    let _mocks = mock_valid_index(&mut backend, &mut file_server);
+    let source_url = format!("{}/checksums.txt", file_server.url());
+
+    let output = check_index_cmd(&backend).arg("--json").assert().success();
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let v: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(v["index_path"], INDEX_PATH);
+    assert_eq!(v["valid"], true);
+    assert_eq!(v["files_checked"], 1);
+    // The whole validated index is embedded under "index", serialized camelCase.
+    // These literals are hand-derived from the fixture body served above.
+    let index = &v["index"];
+    assert_eq!(index["version"], 1);
+    assert_eq!(index["mirrored_on"], Value::Null);
+    assert_eq!(index["mirroredOn"], "2026-09-12T12:00:00Z");
+    assert_eq!(index["publishedFiles"][0]["fileName"], "file-a.tar.gz");
+    assert_eq!(index["publishedFiles"][0]["algo"], "Sha256");
+    assert_eq!(index["publishedFiles"][0]["source"], source_url);
+    assert_eq!(index["publishedFiles"][0]["hash"], SHA256_HASH);
+}

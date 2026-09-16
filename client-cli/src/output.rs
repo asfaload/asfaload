@@ -32,3 +32,13 @@ pub struct NewSignersFileOutput {
 pub struct JsonError {
     pub error: String,
 }
+
+// Not derived Debug: AsfaloadIndex does not implement it and lives outside
+// this crate. The struct is only ever serialized to stdout.
+#[derive(Serialize)]
+pub struct CheckIndexOutput {
+    pub index_path: String,
+    pub valid: bool,
+    pub files_checked: usize,
+    pub index: common::index_types::AsfaloadIndex,
+}

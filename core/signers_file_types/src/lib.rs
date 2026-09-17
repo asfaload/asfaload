@@ -6,6 +6,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use common::errors::{SignersConfigError, SignersFileError, keys::KeyError};
 use common::fs::names::{metadata_path_for, metadata_signatures_path_for, signatures_path_for};
+use common::sha512_for_content;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
 use signatures::signatures_file::SignaturesFile;
@@ -306,6 +307,8 @@ pub enum VerifiedForgeContentError {
     FetchError(String),
     #[error("Failed to compute hash: {0}")]
     HashError(String),
+    #[error("Fetched content's hash {actual} does not match expected {expected}")]
+    FetchedContentHashMismatch { actual: String, expected: String },
 }
 
 /// A retrieval URL paired with the SHA-512 hash of the content at that URL.
@@ -345,14 +348,26 @@ impl VerifiedForgeContent {
     /// Returns the fetched content. If not cached (e.g. after deserialization),
     /// re-fetches from `retrieval_url`. Does not cache the re-fetched result, but
     /// impact is null or minimal in our scenario as we don't call it multiple times on
-    /// an instance that was deserialized.
+    /// an instance that was deserialized. Validates that content fetched has same hash
+    /// as expected.
     pub async fn content(&self) -> Result<String, VerifiedForgeContentError> {
         if let Some(ref c) = self.content {
             return Ok(c.clone());
         }
-        common::http::fetch_with_retry(&self.retrieval_url)
+        let fetched = common::http::fetch_with_retry(&self.retrieval_url)
             .await
-            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))
+            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))?;
+        let fetched_hash = sha512_for_content(fetched.as_bytes())
+            .map_err(|e| VerifiedForgeContentError::HashError(e.to_string()))?
+            .to_hex();
+        if fetched_hash == self.content_hash {
+            Ok(fetched)
+        } else {
+            Err(VerifiedForgeContentError::FetchedContentHashMismatch {
+                actual: fetched_hash,
+                expected: self.content_hash.clone(),
+            })
+        }
     }
 
     /// Production constructor: fetches content from the URL and computes the hash.

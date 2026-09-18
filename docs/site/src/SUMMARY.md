@@ -46,6 +46,6 @@
   - [GET /v1/files/{file_path}](rest-api/manual/get-file.md)
   - [GET /v1/files-to-sign/{file_path}](rest-api/manual/files-to-sign.md)
   - [GET /v1/get_signers/{file_path}](rest-api/manual/get-signers.md)
-  - [GET /v1/get_signers_chain/{artifact_path}](rest-api/manual/get-signers-chain.md)
+  - [GET /v1/get_artifact_signers_chain/{artifact_path}](rest-api/manual/get-artifact-signers-chain.md)
   - [POST /v1/revoke](rest-api/manual/revoke.md)
   - [POST /v1/assets](rest-api/manual/register-assets.md)

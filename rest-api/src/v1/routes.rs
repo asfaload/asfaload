@@ -6,9 +6,9 @@ use axum::{
 use crate::{
     auth_middleware::auth_middleware,
     handlers::{
-        get_artifact_info_handler, get_file_handler, get_files_to_sign_handler,
-        get_pending_signatures_handler, get_revocation_handler, get_signature_status_handler,
-        get_signers_chain_handler, get_signers_handler, ping_handler, register_assets_handler,
+        get_artifact_info_handler, get_artifact_signers_chain_handler, get_file_handler,
+        get_files_to_sign_handler, get_pending_signatures_handler, get_revocation_handler,
+        get_signature_status_handler, get_signers_handler, ping_handler, register_assets_handler,
         register_repo_handler, revoke_handler, submit_signature_handler, update_signers_handler,
     },
     state::AppState,
@@ -56,8 +56,8 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         ));
     let signers_router = Router::new().route("/get_signers/{*file_path}", get(get_signers_handler));
     let signers_chain_router = Router::new().route(
-        "/get_signers_chain/{*artifact_path}",
-        get(get_signers_chain_handler),
+        "/get_artifact_signers_chain/{*artifact_path}",
+        get(get_artifact_signers_chain_handler),
     );
     let artifact_info_router =
         Router::new().route("/get_artifact_info", post(get_artifact_info_handler));

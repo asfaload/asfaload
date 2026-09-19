@@ -17,7 +17,7 @@ constants = { path = "../core/constants/" }
 sled = "0.34.7"
 config = "0.15.19"
 url = { version = "2.5.8", features = ["serde"] }
-octocrab = "0.53.0"
+octocrab = "0.54.0"
 rustls = "0.23.36"
 normalize-path = "0.2.1"
 forge-url = { path = "../file-auth/forge-url" }

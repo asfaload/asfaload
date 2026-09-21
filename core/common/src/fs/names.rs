@@ -134,6 +134,21 @@ pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBu
 pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, PENDING_SIGNATURES_SUFFIX)
 }
+
+/// Returns true of the path passed in corresponds to a pending signers file, checking directory
+/// and file names. No IO is done.
+pub fn is_pending_signers_file_path<P: AsRef<Path>>(path_in: P) -> bool {
+    let path = path_in.as_ref();
+    if let Some(file_name) = path.file_name()
+        && let Some(parent_dir) = path.parent()
+        && let Some(dir_name) = parent_dir.file_name()
+    {
+        file_name == SIGNERS_FILE && dir_name == PENDING_SIGNERS_DIR
+    } else {
+        false
+    }
+}
+
 pub fn subject_path_from_pending_signatures<P: AsRef<Path>>(
     path_in: P,
 ) -> std::io::Result<PathBuf> {

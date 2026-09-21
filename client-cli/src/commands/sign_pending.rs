@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::Result;
+use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
     AsfaloadSignatures, sha512_for_content,
@@ -53,6 +54,35 @@ pub async fn handle_sign_pending_sec_key(
     let files_to_sign = client
         .fetch_files_to_sign(pending_file.path(), secret_key)
         .await?;
+
+    // A pending signers file must be byte-identical to the forge source its
+    // metadata points at. A compromised backend could otherwise have us sign a
+    // config that differs from the one the forge URL serves. The source is
+    // fetched from the retrieval URL recorded in the metadata and compared by
+    // SHA-512.
+    if is_pending_signers_file_path(pending_file.path()) {
+        let metadata_key = metadata_path_for(pending_file.path())?
+            .to_string_lossy()
+            .to_string();
+        // We get both the signers file and its metadata file (their respective paths are the keys
+        // of the HashMap)
+        let signers_content = files_to_sign.get(pending_file.path()).ok_or_else(|| {
+            crate::error::ClientCliError::InvalidInput(format!(
+                "Missing content for pending signers file: {}",
+                pending_file.path()
+            ))
+        })?;
+        // Extract the metadata json from the HashMap
+        let metadata_content = files_to_sign.get(&metadata_key).ok_or_else(|| {
+            crate::error::ClientCliError::InvalidInput(format!(
+                "Missing metadata required to validate pending signers file: {}",
+                metadata_key
+            ))
+        })?;
+        // Retrieves file from publishing platform to assess validity.
+        client_lib::verify_signers_file_matches_metadata_source(signers_content, metadata_content)
+            .await?;
+    }
 
     // Sign each file
     let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();

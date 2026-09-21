@@ -33,6 +33,31 @@ fn pending_response_json(files: &[(&str, &str)]) -> String {
     format!(r#"{{"pending_files":[{}]}}"#, items.join(","))
 }
 
+fn sha512_digest_str(content: &[u8]) -> String {
+    format!("sha512:{}", hex::encode(Sha512::digest(content)))
+}
+
+fn files_response_json(files: &[(&str, &[u8])]) -> String {
+    use base64::Engine;
+    let items: Vec<String> = files
+        .iter()
+        .map(|(path, content)| {
+            format!(
+                r#""{}":"{}""#,
+                path,
+                base64::engine::general_purpose::STANDARD.encode(content)
+            )
+        })
+        .collect();
+    format!(r#"{{"files":{{{}}}}}"#, items.join(","))
+}
+
+fn signers_metadata_json(source_url: &str) -> String {
+    format!(
+        r#"{{"data":{{"Forge":{{"kind":"Github","url":"https://github.com/acme/tool/raw/main/asfaload.signers/index.json","verified_content":{{"retrieval_url":"{source_url}","content_hash":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}},"retrieved_at":"2024-01-01T00:00:00Z"}}}}}}"#
+    )
+}
+
 // ---------------------------------------------------------------------------
 // --help wiring
 // ---------------------------------------------------------------------------
@@ -164,4 +189,138 @@ fn sign_pending_explicit_path_no_bishop_art() {
         !stdout.contains(&label_bracket),
         "explicit-path mode must not contain bishop art framing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Pending signers files must be byte-identical to the source vouched for by
+// their metadata before the client signs them.
+// ---------------------------------------------------------------------------
+
+const SIGNERS_PATH: &str = "acme/tool/asfaload.signers.pending/index.json";
+
+#[test]
+fn sign_pending_rejects_signers_file_not_matching_metadata() {
+    let source_content = br#"{"version":1}"#;
+    let pending_content = br#"{"version":2}"#;
+    let metadata_path = common::fs::names::metadata_path_for(SIGNERS_PATH)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    // Use distinct mocks for the user's file server and the Asfaload backend.
+    let mut file_server = mockito::Server::new();
+    let mut backend = mockito::Server::new();
+
+    let source_path = "/acme/tool/asfaload.signers/index.json";
+    // Mock file server where users publish their files
+    // This serves the user's source_content
+    let source = file_server
+        .mock("GET", source_path)
+        .with_status(200)
+        .with_body(source_content.as_slice())
+        .create();
+
+    let metadata = signers_metadata_json(&format!("{}{}", file_server.url(), source_path));
+
+    // mock handler returning files to sign for a path
+    // this returns the pending_content, not matching the file server's content
+    let _files = backend
+        .mock(
+            "GET",
+            format!("/v1/files-to-sign/{}", SIGNERS_PATH).as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[
+            (SIGNERS_PATH, pending_content.as_slice()),
+            (metadata_path.as_str(), metadata.as_bytes()),
+        ]))
+        .create();
+
+    // mock handler of submitted signatures
+    let submit = backend
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .expect(0)
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(backend.url())
+        .arg(SIGNERS_PATH)
+        .arg("--digest")
+        .arg(sha512_digest_str(pending_content))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Hash mismatch"));
+    submit.assert();
+    source.assert();
+}
+
+#[test]
+fn sign_pending_accepts_signers_file_matching_metadata() {
+    let signers_content = br#"{"version":1}"#;
+    let metadata_path = common::fs::names::metadata_path_for(SIGNERS_PATH)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    // Use distinct mocks for the user's file server and the Asfaload backend.
+    let mut file_server = mockito::Server::new();
+    let mut backend = mockito::Server::new();
+
+    let source_path = "/acme/tool/asfaload.signers/index.json";
+    // Mock file server where users publish their files
+    // This serves the user's signers_content
+    let source = file_server
+        .mock("GET", source_path)
+        .with_status(200)
+        .with_body(signers_content.as_slice())
+        .create();
+
+    let metadata = signers_metadata_json(&format!("{}{}", file_server.url(), source_path));
+
+    // mock handler returning files to sign for a path
+    // this returns the pending_content, identical to what is found on the file_server
+    let _files = backend
+        .mock(
+            "GET",
+            format!("/v1/files-to-sign/{}", SIGNERS_PATH).as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[
+            (SIGNERS_PATH, signers_content.as_slice()),
+            (metadata_path.as_str(), metadata.as_bytes()),
+        ]))
+        .create();
+
+    let submit = backend
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(backend.url())
+        .arg(SIGNERS_PATH)
+        .arg("--digest")
+        .arg(sha512_digest_str(signers_content))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert().success();
+    submit.assert();
+    source.assert();
 }

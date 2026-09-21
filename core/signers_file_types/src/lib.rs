@@ -1544,6 +1544,45 @@ mod accessor_tests {
     }
 
     #[tokio::test]
+    async fn verified_forge_content_content_rejects_hash_mismatch() {
+        let mut server = mockito::Server::new_async().await;
+        let served_body = "content served by the source";
+        let mock = server
+            .mock("GET", "/mismatch")
+            .with_status(200)
+            .with_body(served_body)
+            .create_async()
+            .await;
+
+        // The stored hash is computed over a different body than the one the
+        // server will serve, so the re-fetch must reject it.
+        let hashed_body = "content the stored hash was computed from";
+        let url = format!("{}/mismatch", server.url());
+        let original = VerifiedForgeContent::new_for_test(url.clone(), hashed_body.to_string());
+        // Serialise then deserialise so the content field is not present and needs a fetch when
+        // content() is called.
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: VerifiedForgeContent = serde_json::from_str(&json).unwrap();
+
+        let result = deserialized.content().await;
+        match result {
+            Err(VerifiedForgeContentError::FetchedContentHashMismatch { actual, expected }) => {
+                assert_eq!(
+                    actual,
+                    sha512_for_content(served_body.as_bytes()).unwrap().to_hex()
+                );
+                assert_eq!(
+                    expected,
+                    sha512_for_content(hashed_body.as_bytes()).unwrap().to_hex()
+                );
+            }
+            Err(e) => panic!("Expected FetchedContentHashMismatch, got: {e:?}"),
+            Ok(_) => panic!("Expected FetchedContentHashMismatch error, got Ok"),
+        }
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn verified_forge_content_new_fetches_and_hashes() {
         let mut server = mockito::Server::new_async().await;
         let content = "test content for hashing";

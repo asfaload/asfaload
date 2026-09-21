@@ -278,6 +278,56 @@ mod asfaload_index_tests {
     use super::*;
 
     #[test]
+    fn test_is_pending_signers_file_path() {
+        let pending_signers = || PathBuf::from(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+        let cases = vec![
+            (PathBuf::from("project").join(pending_signers()), true),
+            (PathBuf::from("/abs/project").join(pending_signers()), true),
+            (pending_signers(), true),
+            (
+                PathBuf::from("project")
+                    .join(SIGNERS_DIR)
+                    .join(SIGNERS_FILE),
+                false,
+            ),
+            (
+                PathBuf::from("project")
+                    .join(PENDING_SIGNERS_DIR)
+                    .join("other.json"),
+                false,
+            ),
+            (
+                PathBuf::from("project")
+                    .join(PENDING_SIGNERS_DIR)
+                    .join(format!("{}.backup", SIGNERS_FILE)),
+                false,
+            ),
+            (
+                PathBuf::from("project")
+                    .join(PENDING_SIGNERS_DIR)
+                    .join(format!("{}.{}", SIGNERS_FILE, METADATA_SUFFIX)),
+                false,
+            ),
+            (
+                PathBuf::from("project")
+                    .join(PENDING_SIGNERS_DIR)
+                    .join("sub")
+                    .join(SIGNERS_FILE),
+                false,
+            ),
+            (PathBuf::from(SIGNERS_FILE), false),
+            (PathBuf::new(), false),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                is_pending_signers_file_path(&input),
+                expected,
+                "unexpected result for path {input:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_signature_path_on_disk_for() -> Result<()> {
         let mut file = NamedTempFile::new()?;
         writeln!(file, "My data")?;

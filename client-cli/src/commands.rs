@@ -250,7 +250,19 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     if proposals.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
                     } else if std::io::stdin().is_terminal() {
-                        match inquire::Select::new("File to sign", proposals).prompt() {
+                        match inquire::Select::new(
+                            format!(
+                                "Files to sign (displayed one of {} at a time):",
+                                proposals.len(),
+                            )
+                            .as_str(),
+                            proposals,
+                        )
+                        // display one at a time as inquire's incremental redraw cannot reliably
+                        // diff multi-line options
+                        .with_page_size(1)
+                        .prompt()
+                        {
                             Ok(choice) => choice.0.unseal(),
                             Err(_) => {
                                 return Err(anyhow::Error::new(ClientCliError::InvalidInput(

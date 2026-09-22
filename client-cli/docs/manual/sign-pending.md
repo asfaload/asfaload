@@ -62,7 +62,7 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Interactive selection
 
-When `<FILE_PATH>` (and therefore `--digest`) is omitted, the command fetches your pending files and, on a terminal, shows an interactive `Select` prompt. Each proposal lists the file path, its digest, and its bishop art so you can visually confirm you are signing the intended file. Use `--digest-filter` to narrow the list beforehand.
+When `<FILE_PATH>` (and therefore `--digest`) is omitted, the command fetches your pending files and, on a terminal, shows an interactive `Select` prompt, one pending file at a time. Each proposal lists the file path, its digest, and its bishop art so you can visually confirm you are signing the intended file. Navigate with `↑`/`↓` to cycle through the pending files, or use `--digest-filter` to narrow the list beforehand.
 
 If nothing is pending, the command fails with `No pending signature found`. If stdin is not a terminal (e.g. in CI), the command fails with `Not a tty and no path to sign was passed.` — pass `<FILE_PATH>` and `--digest` explicitly in that case.
 

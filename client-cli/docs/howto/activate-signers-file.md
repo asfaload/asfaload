@@ -100,7 +100,7 @@ If several files are pending, `--digest-filter` (alias `--df`) restricts both `l
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey --df sha512:2e2fde4e...
 ```
 
-On an interactive terminal you can also omit the path and digest entirely: `sign-pending` then shows a selection prompt listing each pending file with its bishop art.
+On an interactive terminal you can also omit the path and digest entirely: `sign-pending` then shows a selection prompt, one pending file at a time, cycling through them with `↑`/`↓`, each with its bishop art.
 
 ## Troubleshooting
 

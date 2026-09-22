@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::error::Result;
+use crate::error::{ClientCliError, Result};
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
@@ -81,7 +81,13 @@ pub async fn handle_sign_pending_sec_key(
         })?;
         // Retrieves file from publishing platform to assess validity.
         client_lib::verify_signers_file_matches_metadata_source(signers_content, metadata_content)
-            .await?;
+            .await.map_err(|e| match e {
+               client_lib::ClientLibError::HashMismatch { expected: _, computed:_ }  => {
+
+                    ClientCliError::BackendDataError(format!("The pending signers file on the backend does not match the file on the publishing platform: {}", e))
+                }
+                _ => ClientCliError::ClientLib(e)
+            } )?;
     }
 
     // Sign each file

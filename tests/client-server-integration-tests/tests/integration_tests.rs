@@ -10,22 +10,48 @@ mod tests {
     use signers_file_types::SignersConfig;
     use std::fs;
     use std::path::Path;
-    use test_helpers::test_metadata;
 
     /// Initialize signers file and create the empty pending signatures file
     /// that list-pending needs to discover it.
-    fn initialize_signers_file_with_pending_sigs(
+    ///
+    /// The metadata written for the signers file points at a mock HTTP server
+    /// serving the same content as the signers file, mimicking the forge where
+    /// the project publishes it. The returned server guard must be kept alive
+    /// for the duration of the test: dropping it stops the server, and
+    /// sign-pending on the signers file would then fail the validation of the
+    /// file against its forge source.
+    async fn initialize_signers_file_with_pending_sigs(
         project_dir: &Path,
         signers_content: &str,
         pubkey: &AsfaloadPublicKeys,
-    ) {
-        initialize_signers_file(project_dir, signers_content, test_metadata(), pubkey)
+    ) -> mockito::ServerGuard {
+        let mut signers_source_server = mockito::Server::new_async().await;
+        signers_source_server
+            .mock("GET", "/signers.json")
+            .with_status(200)
+            .with_body(signers_content)
+            .create_async()
+            .await;
+
+        let metadata =
+            features_lib::SignersConfigMetadata::from_forge(features_lib::ForgeOrigin::new(
+                features_lib::Forge::Github,
+                "https://example.com/test".to_string(),
+                features_lib::VerifiedForgeContent::new_for_test(
+                    format!("{}/signers.json", signers_source_server.url()),
+                    signers_content.to_string(),
+                ),
+                chrono::Utc::now(),
+            ));
+
+        initialize_signers_file(project_dir, signers_content, metadata, pubkey)
             .expect("Failed to initialize signers file");
         let signers_path = project_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
         let pending_sig_path =
             pending_signatures_path_for(&signers_path).expect("Failed to compute pending sig path");
         fs::write(&pending_sig_path, r#"{"entries":{}}"#)
             .expect("Failed to write pending signatures file");
+        signers_source_server
     }
 
     // ========================================
@@ -92,8 +118,9 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
-
+        let _signers_source_server =
+            initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key)
+                .await;
         // The pending signers file needs to be signed first (two-phase signing).
         // list-pending should show it.
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
@@ -192,8 +219,9 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
-
+        let _signers_source_server =
+            initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key)
+                .await;
         // Sign the pending signers file first (two-phase signing)
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
@@ -312,8 +340,9 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
-
+        let _signers_source_server =
+            initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key)
+                .await;
         // Sign the pending signers file to activate it
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
@@ -400,11 +429,12 @@ mod tests {
         let project_dir = git_repo_path.join(&project_dir_sub);
         fs::create_dir_all(&project_dir).expect("Failed to create project dir");
 
-        initialize_signers_file_with_pending_sigs(
+        let _signers_source_server = initialize_signers_file_with_pending_sigs(
             &project_dir,
             &signers_json,
             test_keys.pub_key(0).unwrap(),
-        );
+        )
+        .await;
 
         drop(guard);
 

@@ -22,3 +22,6 @@ client-cli = { path = "../../client-cli" }
 common = { path = "../../core/common" }
 test_helpers = { path = "../../core/test_helpers" }
 forge-url = { path = "../../file-auth/forge-url", features = ["test-utils"] }
+
+[dev-dependencies]
+mockito = "1.7"

@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Manual test environment holding a pending signers file: a signers file was
+# registered with the backend but not yet signed by anyone, so the backend
+# holds a pending signers file and its metadata.
+#
+# This is the state right after register-repo, allowing the check of the
+# pending signers file against the forge source recorded in its metadata
+# (check-pending-signers) to be exercised manually, before any signature is
+# collected.
+#
+# Start with: ./setup
+# Type 'exit' in the spawned shell to stop all servers and clean up.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+. "$REPO_ROOT/tests/e2e_tests/lib/helpers.sh"
+. "$SCRIPT_DIR/../lib.sh"
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [-h]
+
+Set up a manual test environment holding a pending signers file: the initial
+signers file was registered with the backend, and nobody signed it yet.
+
+Type 'exit' in the spawned shell to stop all servers and clean up.
+
+OPTIONS
+  -h, --help          Show this help message and exit
+
+ENVIRONMENT SET IN SPAWNED SHELL
+  ASFALOAD_BACKEND_URL        Backend REST API address
+  ASFALOAD_PASSWORD_FILE      Path to file containing the key password
+  KEY_0 KEY_1 KEY_2           Paths to fixture private keys
+  FILE_SERVER_URL             Local file server address
+  BACKEND_REPO                Backend git repo working tree (mirror content)
+  PENDING_SIGNERS_MIRROR_PATH Mirror-relative path of the pending signers file
+  PATH                        target/debug prepended (asfaload-cli available directly)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf '%sUnknown argument: %s%s\n' "$RED" "$1" "$RESET" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+mt_init_workspace
+mt_build_binaries
+mt_start_file_server
+mt_start_backend
+
+# --- Generate the signers file on the file server ---
+
+printf '%sGenerating signers file...%s ' "$DIM" "$RESET"
+
+mkdir -p "$PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
+GENUINE_NAME="signers_file_1${_SIGNERS_SUFFIX}.json"
+GENUINE="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
+
+"$CLI" new-signers-file \
+    --artifact-signers-file "${KEY_0}.pub" \
+    --artifact-signers-file "${KEY_1}.pub" \
+    --artifact-signers-file "${KEY_2}.pub" \
+    -A 2 \
+    -o "$GENUINE" \
+    > /dev/null 2>&1
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Register the signers file (creates the pending signers file) ---
+
+"$CLI" register-repo \
+    --secret-key "$KEY_0" \
+    -u "$BACKEND_URL" \
+    "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME" \
+    --json > /dev/null
+
+# --- Locate the pending signers file on the backend ---
+# The backend's git repo working tree mirrors its project directory
+# (scheme/host/port/project, see the backend's path normalisation).
+
+BACKEND_PROJECT_DIR="$BACKEND_REPO/http/localhost/${FILE_SERVER_PORT}/project"
+PENDING_SIGNERS_FILE="$BACKEND_PROJECT_DIR/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+PENDING_METADATA_FILE="$BACKEND_PROJECT_DIR/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX"
+
+if [[ ! -f "$PENDING_SIGNERS_FILE" || ! -f "$PENDING_METADATA_FILE" ]]; then
+    printf '%sSetup failed: pending signers file or metadata missing on backend.%s\n' "$RED" "$RESET" >&2
+    exit 1
+fi
+
+# Mirror-relative path of the pending signers file, as displayed by
+# list-pending and expected by check-pending-signers.
+BACKEND_RELATIVE_PROJECT_DIR="${BACKEND_PROJECT_DIR#"$BACKEND_REPO/"}"
+PENDING_SIGNERS_MIRROR_PATH="$BACKEND_RELATIVE_PROJECT_DIR/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+
+if [[ "$PENDING_SIGNERS_MIRROR_PATH" = /* ]]; then
+    printf '%sSetup failed: mirror path is not relative: %s%s\n' "$RED" "$PENDING_SIGNERS_MIRROR_PATH" "$RESET" >&2
+    exit 1
+fi
+
+MT_RC_EXTRA_EXPORTS+=(
+    "BACKEND_REPO=$BACKEND_REPO"
+    "PENDING_SIGNERS_MIRROR_PATH=$PENDING_SIGNERS_MIRROR_PATH"
+)
+
+# --- Welcome message ---
+
+printf '\n'
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$BOLD" "$RESET"
+printf '%s  Manual test environment: pending signers file%s\n' "$GREEN" "$RESET"
+printf '\n'
+printf '  %-28s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
+printf '  %-28s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
+printf '  %-28s %s\n' "BACKEND_REPO" "$BACKEND_REPO"
+printf '  %-28s %s\n' "PENDING_SIGNERS_MIRROR_PATH" "$PENDING_SIGNERS_MIRROR_PATH"
+printf '\n'
+printf '  The initial signers file was registered with the backend, and nobody\n'
+printf '  signed it yet: the backend holds a pending signers file and its\n'
+printf '  metadata, pointing at the signers file published on the file server.\n'
+printf '\n'
+printf '%s  Try:%s\n' "$BOLD" "$RESET"
+printf '    asfaload-cli list-pending -K $KEY_0\n'
+printf '    asfaload-cli check-pending-signers $PENDING_SIGNERS_MIRROR_PATH\n'
+printf '    asfaload-cli check-pending-signers --json $PENDING_SIGNERS_MIRROR_PATH\n'
+printf '\n'
+printf '%s  Expected:%s the check succeeds: the pending signers file matches the\n' "$BOLD" "$RESET"
+printf '  content published at its retrieval url, and the command reports that\n'
+printf '  url, the file hash and its bishop art. Tamper with the pending signers\n'
+printf '  file on the backend (or its metadata retrieval_url, as in the\n'
+printf '  compromised_*_env environments) to see the check fail.\n'
+printf '\n'
+printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"
+
+mt_spawn_shell

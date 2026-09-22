@@ -33,6 +33,7 @@
   - [get-digest](client-cli/manual/get-digest.md)
   - [download](client-cli/manual/download.md)
   - [check-index](client-cli/manual/check-index.md)
+  - [check-pending-signers](client-cli/manual/check-pending-signers.md)
   - [ping](client-cli/manual/ping.md)
 
 # REST API

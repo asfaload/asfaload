@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use crate::error::{ClientCliError, Result};
+use crate::error::Result;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-    AsfaloadSignatures, SignersConfigMetadata, SignersConfigOrigin, sha512_for_content,
+    AsfaloadSignatures, sha512_for_content,
 };
 use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
 
@@ -82,23 +82,8 @@ pub async fn handle_sign_pending_sec_key(
 
         // Retrieves file from publishing platform to assess validity.
         client_lib::verify_signers_file_matches_metadata_source(signers_content, metadata_content)
-            .await.map_err(|e| match e {
-                // Handle hash mismatch error exlpicitly
-                client_lib::ClientLibError::HashMismatch { expected: _, computed:_ }  => {
-                    // Instanciate metadata to get retrieval url for error message.
-                    let metadata_result = serde_json::from_slice(metadata_content);
-                    let metadata:SignersConfigMetadata= match metadata_result {
-                            Ok(s) => {s},
-                            Err(json_err) => return ClientCliError::BackendDataError(format!("Failed to parse metadata: {json_err}"))
-                        };
-                    let retrieval_url = match metadata.origin() {
-                        SignersConfigOrigin::Forge(d) => d.verified_content().retrieval_url(),
-                    };
-                    ClientCliError::BackendDataError(format!("The pending signers file on the backend does not match the file on the publishing platform at url {}: {}", retrieval_url , e))
-                }
-                // All other errors are reported as is
-                _ => ClientCliError::ClientLib(e)
-            } )?;
+            .await
+            .map_err(|e| crate::error::signers_metadata_verification_error(metadata_content, e))?;
     }
 
     // Sign each file

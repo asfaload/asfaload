@@ -32,6 +32,7 @@ Reference for all `asfaload-cli` commands.
 - [`get-digest`](get-digest.md) — compute the SHA-512 digest of a local file or URL
 - [`download`](download.md) — download a file with signature verification
 - [`check-index`](check-index.md) — validate an index file's digests against their sources
+- [`check-pending-signers`](check-pending-signers.md) — verify a pending signers file against its forge source
 
 ## Diagnostics
 

@@ -54,7 +54,7 @@ The server rebuilds the canonical request string from the received headers and b
 ## Signers
 
 - [`GET /v1/get_signers/{file_path}`](get-signers.md) — get the signers configuration for a path
-- [`GET /v1/get_signers_chain/{artifact_path}`](get-signers-chain.md) — get the signers history chain for a signed artifact
+- [`GET /v1/get_artifact_signers_chain/{artifact_path}`](get-artifact-signers-chain.md) — get the signers history chain for a signed artifact
 
 ## Revocation
 

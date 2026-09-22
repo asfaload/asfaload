@@ -713,6 +713,7 @@ dependencies = [
  "common",
  "features_lib",
  "forge-url",
+ "mockito",
  "reqwest",
  "rest-api",
  "rest_api_auth",

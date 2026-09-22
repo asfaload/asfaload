@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use crate::error::Result;
+use crate::error::{ClientCliError, Result};
+use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-    AsfaloadSignatures, sha512_for_content,
+    AsfaloadSignatures, SignersConfigMetadata, SignersConfigOrigin, sha512_for_content,
 };
 use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
 
@@ -53,6 +54,52 @@ pub async fn handle_sign_pending_sec_key(
     let files_to_sign = client
         .fetch_files_to_sign(pending_file.path(), secret_key)
         .await?;
+
+    // A pending signers file must be byte-identical to the forge source its
+    // metadata points at. A compromised backend could otherwise have us sign a
+    // config that differs from the one the forge URL serves. The source is
+    // fetched from the retrieval URL recorded in the metadata and compared by
+    // SHA-512.
+    if is_pending_signers_file_path(pending_file.path()) {
+        let metadata_key = metadata_path_for(pending_file.path())?
+            .to_string_lossy()
+            .to_string();
+        // We get both the signers file and its metadata file (their respective paths are the keys
+        // of the HashMap)
+        let signers_content = files_to_sign.get(pending_file.path()).ok_or_else(|| {
+            crate::error::ClientCliError::InvalidInput(format!(
+                "Missing content for pending signers file: {}",
+                pending_file.path()
+            ))
+        })?;
+        // Extract the metadata json from the HashMap
+        let metadata_content = files_to_sign.get(&metadata_key).ok_or_else(|| {
+            crate::error::ClientCliError::InvalidInput(format!(
+                "Missing metadata required to validate pending signers file: {}",
+                metadata_key
+            ))
+        })?;
+
+        // Retrieves file from publishing platform to assess validity.
+        client_lib::verify_signers_file_matches_metadata_source(signers_content, metadata_content)
+            .await.map_err(|e| match e {
+                // Handle hash mismatch error exlpicitly
+                client_lib::ClientLibError::HashMismatch { expected: _, computed:_ }  => {
+                    // Instanciate metadata to get retrieval url for error message.
+                    let metadata_result = serde_json::from_slice(metadata_content);
+                    let metadata:SignersConfigMetadata= match metadata_result {
+                            Ok(s) => {s},
+                            Err(json_err) => return ClientCliError::BackendDataError(format!("Failed to parse metadata: {json_err}"))
+                        };
+                    let retrieval_url = match metadata.origin() {
+                        SignersConfigOrigin::Forge(d) => d.verified_content().retrieval_url(),
+                    };
+                    ClientCliError::BackendDataError(format!("The pending signers file on the backend does not match the file on the publishing platform at url {}: {}", retrieval_url , e))
+                }
+                // All other errors are reported as is
+                _ => ClientCliError::ClientLib(e)
+            } )?;
+    }
 
     // Sign each file
     let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();

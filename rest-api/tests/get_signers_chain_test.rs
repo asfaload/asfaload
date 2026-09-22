@@ -28,7 +28,7 @@ async fn test_get_signers_chain_no_history() -> Result<()> {
     let client = reqwest::Client::new();
     let response = client
         .get(format!(
-            "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+            "http://127.0.0.1:{}/v1/get_artifact_signers_chain/{}",
             setup.port(),
             setup.artifact_path()
         ))
@@ -80,7 +80,7 @@ async fn test_get_signers_chain_nonexistent_artifact() -> Result<()> {
     let client = reqwest::Client::new();
     let response = client
         .get(format!(
-            "http://127.0.0.1:{}/v1/get_signers_chain/nonexistent/file.bin",
+            "http://127.0.0.1:{}/v1/get_artifact_signers_chain/nonexistent/file.bin",
             port
         ))
         .send()
@@ -118,7 +118,7 @@ async fn test_get_signers_chain_unsigned_artifact() -> Result<()> {
     let client = reqwest::Client::new();
     let response = client
         .get(format!(
-            "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+            "http://127.0.0.1:{}/v1/get_artifact_signers_chain/{}",
             port, artifact_rel
         ))
         .send()
@@ -146,7 +146,7 @@ async fn test_get_signers_chain_path_traversal() -> Result<()> {
     let client = reqwest::Client::new();
     let response = client
         .get(format!(
-            "http://127.0.0.1:{}/v1/get_signers_chain/../../../etc/passwd",
+            "http://127.0.0.1:{}/v1/get_artifact_signers_chain/../../../etc/passwd",
             port
         ))
         .send()
@@ -228,7 +228,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     let client = reqwest::Client::new();
     let response = client
         .get(format!(
-            "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+            "http://127.0.0.1:{}/v1/get_artifact_signers_chain/{}",
             setup.port(),
             setup.artifact_path()
         ))
@@ -368,7 +368,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     // --- Phase 3: Verify the chain is unchanged after post-signing rotation ---
     let response_after = client
         .get(format!(
-            "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+            "http://127.0.0.1:{}/v1/get_artifact_signers_chain/{}",
             setup.port(),
             setup.artifact_path()
         ))

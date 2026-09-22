@@ -111,6 +111,9 @@ pub enum ClientLibError {
     #[error("Failed to fetch signers file from forge: {0}")]
     SignersChainForgeFetchError(String),
 
+    #[error("Failed to fetch signers source: {0}")]
+    SignersMetadataSourceFetchError(String),
+
     #[error("Signers chain is empty")]
     SignersChainEmpty,
 

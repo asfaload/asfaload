@@ -192,6 +192,34 @@ pub trait GitBackend: Send + Sync + 'static {
         };
         Ok(res)
     }
+
+    /// Return the HEAD commit hash and its commit time.
+    ///
+    /// Chain building reads files at a pinned commit, never from the working
+    /// tree: a commit is an atomic snapshot, immune to in-flight git_actor
+    /// mutations (an update writes several files before committing) and to
+    /// dirty trees left behind by a crash mid-update.
+    fn head_commit(&self) -> Result<(String, DateTime<Utc>), ApiError> {
+        // Single git call: the hash and time always come from the same commit,
+        // even if HEAD moves concurrently.
+        let output = GitCommand::git(self.root(), &["log", "--format=%H%n%cI", "-1", "HEAD"])?;
+        let mut lines = output.lines();
+        let (Some(commit), Some(commit_time_str), None) =
+            (lines.next(), lines.next(), lines.next())
+        else {
+            return Err(ApiError::GitError(format!(
+                "Expected '<hash>\\n<commit time>' from git log, got: {}",
+                output
+            )));
+        };
+        let commit_time: DateTime<Utc> = commit_time_str.parse().map_err(|e| {
+            ApiError::GitError(format!(
+                "Failed to parse commit time '{}': {}",
+                commit_time_str, e
+            ))
+        })?;
+        Ok((commit.to_string(), commit_time))
+    }
 }
 
 const GIT_ACTOR_NAME: &str = "git-actor";
@@ -770,6 +798,48 @@ mod sha256_tests {
 
         let current = std::fs::read_to_string(&file_path).unwrap();
         assert_eq!(current, r#"{"version": 2}"#);
+    }
+
+    #[test]
+    fn test_sha256_head_commit() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        let file_path = repo_path.join("data.json");
+        std::fs::write(&file_path, r#"{"version": 1}"#).unwrap();
+
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "add data.json",
+            )
+            .unwrap();
+
+        let expected = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+        let (commit, time) = backend.head_commit().unwrap();
+        assert_eq!(commit, expected);
+        // Second-precision sanity: commit time must not be in the future.
+        assert!(time <= chrono::Utc::now() + chrono::Duration::seconds(5));
+    }
+
+    #[test]
+    fn test_sha256_head_commit_empty_repo_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        // Truly empty repo (no commits): HEAD does not exist yet.
+        // `init_sha256_repo` cannot be used here as it creates an initial
+        // empty commit.
+        let status = Command::new("git")
+            .args(["init", "--object-format=sha256"])
+            .arg(repo_path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
+        assert!(backend.head_commit().is_err());
     }
 
     #[test]

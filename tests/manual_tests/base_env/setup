@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 . "$REPO_ROOT/tests/e2e_tests/lib/helpers.sh"
+. "$SCRIPT_DIR/../lib.sh"
 
 # --- Defaults ---
 PENDING_COUNT=5
@@ -67,101 +68,25 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Temp workspace ---
-WORK_DIR=$(mktemp -d)
-SERVER_PID=""
-FILE_SERVER_PID=""
 
-PASSWORD_FILE="$WORK_DIR/password"
-printf '%s' "$key_password" > "$PASSWORD_FILE"
-export ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE"
-
-cleanup() {
-    [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true
-    [[ -n "$FILE_SERVER_PID" ]] && kill "$FILE_SERVER_PID" 2>/dev/null || true
-    [[ -n "$SERVER_PID" ]] && wait "$SERVER_PID" 2>/dev/null || true
-    [[ -n "$FILE_SERVER_PID" ]] && wait "$FILE_SERVER_PID" 2>/dev/null || true
-    rm -rf "$WORK_DIR"
-}
-trap cleanup EXIT
+mt_init_workspace
 
 # --- Build ---
-printf '%sBuilding binaries...%s ' "$DIM" "$RESET"
-cargo build --quiet \
-    --manifest-path "$REPO_ROOT/Cargo.toml" \
-    -p rest-api -p test-file-server -p client-cli 2>&1
-printf '%s✓%s\n' "$GREEN" "$RESET"
 
-CLI="$REPO_ROOT/target/debug/asfaload-cli"
+mt_build_binaries
 
 # --- File server ---
-FS_ROOT="$WORK_DIR/fs"
-PROJECT_DIR="$FS_ROOT/project"
-mkdir -p "$PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
 
-FILE_SERVER_LOG="$WORK_DIR/file-server.log"
-"$REPO_ROOT/target/debug/test-file-server" --dir "$FS_ROOT" \
-    > "$FILE_SERVER_LOG" 2>&1 &
-FILE_SERVER_PID=$!
-
-printf '%sStarting file server...%s ' "$DIM" "$RESET"
-FILE_SERVER_PORT=""
-for i in $(seq 1 30); do
-    FILE_SERVER_PORT=$(grep -oP 'LISTENING_PORT=\K[0-9]+' "$FILE_SERVER_LOG" 2>/dev/null || true)
-    [[ -n "$FILE_SERVER_PORT" ]] && break
-    if ! kill -0 "$FILE_SERVER_PID" 2>/dev/null; then
-        printf '%s✗%s\n' "$RED" "$RESET"
-        printf '%sFile server process died unexpectedly.%s\n' "$RED" "$RESET" >&2
-        exit 1
-    fi
-    sleep 0.2
-done
-
-if [[ -z "$FILE_SERVER_PORT" ]]; then
-    printf '%s✗%s\n' "$RED" "$RESET"
-    printf '%sFile server did not report a port within 6 seconds.%s\n' "$RED" "$RESET" >&2
-    exit 1
-fi
-
-FILE_SERVER_URL="http://localhost:${FILE_SERVER_PORT}"
-printf '%s✓ %s%s\n' "$GREEN" "$FILE_SERVER_URL" "$RESET"
+mt_start_file_server
 
 # --- Backend ---
-BACKEND_REPO="$WORK_DIR/repo"
-init_backend_repo "$BACKEND_REPO"
-export ASFALOAD_GIT_REPO_PATH="$BACKEND_REPO"
-export ASFALOAD_GIT_BACKEND="sha256"
 
-BACKEND_PORT=$((3000 + RANDOM % 1000))
-export ASFALOAD_SERVER_PORT="$BACKEND_PORT"
-BACKEND_URL="http://localhost:${BACKEND_PORT}"
-
-SERVER_LOG="$WORK_DIR/server.log"
-"$REPO_ROOT/target/debug/rest-api" > "$SERVER_LOG" 2>&1 &
-SERVER_PID=$!
-
-printf '%sStarting backend...%s ' "$DIM" "$RESET"
-for i in $(seq 1 30); do
-    if curl "$BACKEND_URL" --silent > /dev/null 2>&1; then
-        break
-    fi
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        printf '%s✗%s\n' "$RED" "$RESET"
-        printf '%sBackend process died unexpectedly.%s\n' "$RED" "$RESET" >&2
-        exit 1
-    fi
-    sleep 0.5
-done
-
-if ! curl "$BACKEND_URL" --silent > /dev/null 2>&1; then
-    printf '%s✗%s\n' "$RED" "$RESET"
-    printf '%sBackend did not become ready within 15 seconds.%s\n' "$RED" "$RESET" >&2
-    exit 1
-fi
-
-printf '%s✓ %s%s\n' "$GREEN" "$BACKEND_URL" "$RESET"
+mt_start_backend
 
 # --- Signers file activation ---
 printf '%sActivating signers file...%s ' "$DIM" "$RESET"
+
+mkdir -p "$PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
 
 SIGNERS_FILE_NAME="signers_file_1${_SIGNERS_SUFFIX}.json"
 SIGNERS_FILE_PATH="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE_NAME"
@@ -245,20 +170,6 @@ printf '\n'
 printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"
 
-# --- RC file for subshell ---
-RC_FILE="$WORK_DIR/env.sh"
-cat > "$RC_FILE" <<RCEOF
-[ -f ~/.bashrc ] && source ~/.bashrc
+# --- Spawn the interactive shell ---
 
-export ASFALOAD_BACKEND_URL="${BACKEND_URL}"
-export ASFALOAD_PASSWORD_FILE="${PASSWORD_FILE}"
-export KEY_0="${KEY_0}"
-export KEY_1="${KEY_1}"
-export KEY_2="${KEY_2}"
-export FILE_SERVER_URL="${FILE_SERVER_URL}"
-export PATH="${REPO_ROOT}/target/debug:\$PATH"
-
-PS1="[asfaload-dev] \w\$ "
-RCEOF
-
-bash --rcfile "$RC_FILE"
+mt_spawn_shell

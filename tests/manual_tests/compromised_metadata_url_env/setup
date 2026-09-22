@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Manual test environment simulating a compromised backend that rewrote the
+# retrieval_url of the pending signers file metadata to point at a different
+# signers file.
+#
+# The pending signers file content is untouched, so the digest checks pass:
+# the client fetches the source from the tampered retrieval_url and rejects
+# the signing because that source differs from the file to be signed.
+#
+# Start with: ./setup
+# Type 'exit' in the spawned shell to stop all servers and clean up.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+. "$REPO_ROOT/tests/e2e_tests/lib/helpers.sh"
+. "$SCRIPT_DIR/../lib.sh"
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [-h]
+
+Set up a manual test environment with a compromised backend: the retrieval_url
+in the pending signers file metadata points at a different signers file.
+
+Type 'exit' in the spawned shell to stop all servers and clean up.
+
+OPTIONS
+  -h, --help          Show this help message and exit
+
+ENVIRONMENT SET IN SPAWNED SHELL
+  ASFALOAD_BACKEND_URL   Backend REST API address
+  ASFALOAD_PASSWORD_FILE Path to file containing the key password
+  KEY_0 KEY_1 KEY_2      Paths to fixture private keys
+  FILE_SERVER_URL        Local file server address
+  METADATA_FILE          Backend's pending metadata file (tampered)
+  METADATA_ORIGINAL      Backup of the genuine metadata (restore source)
+  PATH                   target/debug prepended (asfaload-cli available directly)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf '%sUnknown argument: %s%s\n' "$RED" "$1" "$RESET" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+mt_init_workspace
+mt_build_binaries
+mt_start_file_server
+mt_start_backend
+
+# --- Generate the genuine signers file and an alternative one ---
+
+printf '%sGenerating signers files...%s ' "$DIM" "$RESET"
+
+mkdir -p "$PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
+GENUINE_NAME="signers_file_1${_SIGNERS_SUFFIX}.json"
+ALTERNATIVE_NAME="signers_file_2${_SIGNERS_SUFFIX}.json"
+GENUINE="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
+ALTERNATIVE="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$ALTERNATIVE_NAME"
+
+# The genuine signers file (the one that gets registered).
+"$CLI" new-signers-file \
+    --artifact-signers-file "${KEY_0}.pub" \
+    --artifact-signers-file "${KEY_1}.pub" \
+    --artifact-signers-file "${KEY_2}.pub" \
+    -A 2 \
+    -o "$GENUINE" \
+    > /dev/null 2>&1
+
+# The alternative signers file the tampered metadata will point at.
+"$CLI" new-signers-file \
+    --artifact-signers-file "${KEY_0}.pub" \
+    --artifact-signers-file "${KEY_1}.pub" \
+    --artifact-signers-file "${KEY_2}.pub" \
+    --artifact-signers-file "${KEY_3}.pub" \
+    -A 3 \
+    -o "$ALTERNATIVE" \
+    > /dev/null 2>&1
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Register the genuine signers file (creates the pending signers file) ---
+
+"$CLI" register-repo \
+    --secret-key "$KEY_0" \
+    -u "$BACKEND_URL" \
+    "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME" \
+    --json > /dev/null
+
+# --- Tamper: rewrite the retrieval_url in the pending metadata ---
+# The backend's git repo working tree mirrors its project directory
+# (scheme/host/port/project, see the backend's path normalisation).
+
+BACKEND_PROJECT_DIR="$BACKEND_REPO/http/localhost/${FILE_SERVER_PORT}/project"
+METADATA_FILE="$BACKEND_PROJECT_DIR/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX"
+METADATA_ORIGINAL="$WORK_DIR/metadata_original.json"
+
+cp "$METADATA_FILE" "$METADATA_ORIGINAL"
+TAMPERED_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$ALTERNATIVE_NAME"
+
+jq --arg url "$TAMPERED_URL" \
+    '.data.Forge.verified_content.retrieval_url = $url' \
+    "$METADATA_ORIGINAL" > "$METADATA_FILE"
+
+CURRENT_URL=$(jq -r '.data.Forge.verified_content.retrieval_url' "$METADATA_FILE")
+if [[ "$CURRENT_URL" != "$TAMPERED_URL" ]]; then
+    printf '%sTampering failed: retrieval_url unchanged.%s\n' "$RED" "$RESET" >&2
+    exit 1
+fi
+
+MT_RC_EXTRA_EXPORTS+=(
+    "METADATA_FILE=$METADATA_FILE"
+    "METADATA_ORIGINAL=$METADATA_ORIGINAL"
+)
+
+# --- Welcome message ---
+
+printf '\n'
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$BOLD" "$RESET"
+printf '%s  Compromised backend: tampered metadata retrieval_url%s\n' "$GREEN" "$RESET"
+printf '\n'
+printf '  %-20s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
+printf '  %-20s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
+printf '  %-20s %s\n' "METADATA_FILE" "$METADATA_FILE"
+printf '  %-20s %s\n' "METADATA_ORIGINAL" "$METADATA_ORIGINAL"
+printf '\n'
+printf '  The pending signers file content is genuine, but the retrieval_url in\n'
+printf '  its metadata now points at %s instead.\n' "$ALTERNATIVE_NAME"
+printf '\n'
+printf '%s  Try:%s\n' "$BOLD" "$RESET"
+printf '    asfaload-cli list-pending -K $KEY_0\n'
+printf '    asfaload-cli sign-pending -K $KEY_0\n'
+printf '\n'
+printf '%s  Expected:%s signing is rejected with a Hash mismatch error: the\n' "$BOLD" "$RESET"
+printf '  client fetches the source at the tampered retrieval_url and detects\n'
+printf '  that it differs from the file it is asked to sign.\n'
+printf '\n'
+printf '%s  Fetch failure variant%s (source does not exist):\n' "$BOLD" "$RESET"
+printf '    jq --arg url "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/nonexistent%s.json" \\\n' "${_SIGNERS_SUFFIX}"
+printf '      '"'"'.data.Forge.verified_content.retrieval_url = $url'"'"' \\\n'
+printf '      $METADATA_ORIGINAL > $METADATA_FILE\n'
+printf '  Signing is then rejected with a Failed to fetch signers source error.\n'
+printf '\n'
+printf '%s  Restore the genuine metadata to sign successfully:%s\n' "$BOLD" "$RESET"
+printf '    cp $METADATA_ORIGINAL $METADATA_FILE\n'
+printf '\n'
+printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"
+
+mt_spawn_shell

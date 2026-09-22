@@ -15,13 +15,16 @@ pub struct SignersChainResult {
 
 /// Fetch the signers chain for a signed artifact from the backend.
 ///
-/// Makes an unauthenticated GET request to `/v1/get_signers_chain/{artifact_path}`.
-async fn get_signers_chain(
+/// Makes an unauthenticated GET request to `/v1/get_artifact_signers_chain/{artifact_path}`.
+async fn get_artifact_signers_chain(
     client: &reqwest::Client,
     backend_url: &str,
     artifact_path: &str,
 ) -> AsfaloadLibResult<GetSignersChainResponse> {
-    let url = format!("{}/v1/get_signers_chain/{}", backend_url, artifact_path);
+    let url = format!(
+        "{}/v1/get_artifact_signers_chain/{}",
+        backend_url, artifact_path
+    );
     let response = client
         .get(&url)
         .send()
@@ -109,7 +112,8 @@ pub async fn verify_signers_chain(
     artifact_path: &str,
 ) -> AsfaloadLibResult<SignersChainResult> {
     let http_client = reqwest::Client::new();
-    let chain_response = get_signers_chain(&http_client, backend_url, artifact_path).await?;
+    let chain_response =
+        get_artifact_signers_chain(&http_client, backend_url, artifact_path).await?;
     validate_fetched_chain(chain_response.chain, artifact_path).await
 }
 
@@ -209,7 +213,7 @@ mod tests {
         };
 
         let _mock = server
-            .mock("GET", "/v1/get_signers_chain/test/path")
+            .mock("GET", "/v1/get_artifact_signers_chain/test/path")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(serde_json::to_string(&response_body).unwrap())
@@ -521,7 +525,7 @@ mod tests {
         let _backend_chain_mock = asfaload_backend
             .mock(
                 "GET",
-                format!("/v1/get_signers_chain/{}", github_artifact_path).as_str(),
+                format!("/v1/get_artifact_signers_chain/{}", github_artifact_path).as_str(),
             )
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -594,7 +598,7 @@ mod tests {
         let _chain_mock = backend
             .mock(
                 "GET",
-                format!("/v1/get_signers_chain/{}", artifact_path).as_str(),
+                format!("/v1/get_artifact_signers_chain/{}", artifact_path).as_str(),
             )
             .with_status(200)
             .with_header("content-type", "application/json")

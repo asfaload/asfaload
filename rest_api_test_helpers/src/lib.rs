@@ -848,7 +848,7 @@ mod tests {
         let client = reqwest::Client::new();
         let resp = client
             .get(format!(
-                "http://127.0.0.1:{}/v1/get_signers_chain/nonexistent",
+                "http://127.0.0.1:{}/v1/get_artifact_signers_chain/nonexistent",
                 setup.port()
             ))
             .send()
@@ -889,7 +889,7 @@ mod tests {
         let client = reqwest::Client::new();
         let resp = client
             .get(format!(
-                "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+                "http://127.0.0.1:{}/v1/get_artifact_signers_chain/{}",
                 setup.port(),
                 setup.artifact_path()
             ))

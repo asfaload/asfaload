@@ -1339,7 +1339,8 @@ async fn build_chain_from_local_signers_copy(
     Ok((chain, commit, commit_time))
 }
 
-pub async fn get_signers_chain_handler(
+/// Returns the signers chain for a signed artifact.
+pub async fn get_artifact_signers_chain_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
@@ -1354,7 +1355,7 @@ pub async fn get_signers_chain_handler(
     tracing::info!(
         request_id = %request_id,
         artifact_path = %artifact_path_in,
-        "Received get_signers_chain request"
+        "Received get_artifact_signers_chain request"
     );
 
     let artifact_path = NormalisedPaths::new(&state.git_repo_path, &artifact_path_in)

@@ -1,7 +1,7 @@
-# `GET /v1/get_signers_chain/{artifact_path}`
+# `GET /v1/get_artifact_signers_chain/{artifact_path}`
 
 - **Auth**: none
-- **Source**: [`src/handlers.rs`](../../src/handlers.rs) — `get_signers_chain_handler`
+- **Source**: [`src/handlers.rs`](../../src/handlers.rs) — `get_artifact_signers_chain_handler`
 
 Fetch the signers history chain for a signed artifact. The server traces the artifact's local signers copy back to its source commit, reads the history file and all associated signers/metadata/signature files at that point in time, and returns the chain of signers configurations that were active up to and including the one used to sign the artifact.
 
@@ -44,13 +44,13 @@ Fields:
 
 ### Fetch the signers chain
 
-    curl -sS 'http://127.0.0.1:3000/v1/get_signers_chain/https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json'
+    curl -sS 'http://127.0.0.1:3000/v1/get_artifact_signers_chain/https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json'
 
     {"history":{"entries":[...]}}
 
 ### Invalid artifact path
 
-    curl -sS -i 'http://127.0.0.1:3000/v1/get_signers_chain/invalid'
+    curl -sS -i 'http://127.0.0.1:3000/v1/get_artifact_signers_chain/invalid'
 
     HTTP/1.1 400 Bad Request
 

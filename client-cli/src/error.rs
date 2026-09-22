@@ -58,6 +58,9 @@ pub enum ClientCliError {
 
     #[error("Index validation failed: {0}")]
     IndexValidation(#[from] common::index_validation::IndexValidationError),
+
+    #[error("Backend data error: {0}")]
+    BackendDataError(String),
 }
 
 // FIXME: remove this, creates more confusion than necessary

@@ -231,6 +231,33 @@ run_step_json "List pending for key0 (should show pending signers)" \
 
 SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 
+# Only run this if we started the backend ourselves, giving us direct access
+# to its git repo working tree.
+if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
+    ################################################################################
+    section "Pending Signers Validation Against Forge Source"
+    ################################################################################
+
+    # Simulate a compromised backend: the pending signers file is replaced with
+    # different (still valid) signers content. list-pending computes the digest
+    # from the tampered file on disk, so the client's digest pre-check passes;
+    # only the validation of the file against the forge source recorded in its
+    # metadata catches the tampering.
+    PENDING_SIGNERS_FILE="$(_project_dir)/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+    PENDING_SIGNERS_BACKUP=$(mktemp)
+    to_delete_on_filesystem+=("$PENDING_SIGNERS_BACKUP")
+    cp "$PENDING_SIGNERS_FILE" "$PENDING_SIGNERS_BACKUP"
+    cp "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json" "$PENDING_SIGNERS_FILE"
+
+    TAMPERED_SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
+    expect_fail_json "Sign pending signers differing from forge source" \
+        '.error | contains("Hash mismatch")' \
+        cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $TAMPERED_SIGNERS_SIGN_ARGS
+
+    # Restore the original content so the rest of the flow proceeds unchanged.
+    cp "$PENDING_SIGNERS_BACKUP" "$PENDING_SIGNERS_FILE"
+fi
+
 run_step_json "Sign signers file with key0 (submitter signs in second phase)" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS

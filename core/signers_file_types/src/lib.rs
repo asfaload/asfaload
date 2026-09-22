@@ -6,6 +6,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use common::errors::{SignersConfigError, SignersFileError, keys::KeyError};
 use common::fs::names::{metadata_path_for, metadata_signatures_path_for, signatures_path_for};
+use common::sha512_for_content;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
 use signatures::signatures_file::SignaturesFile;
@@ -306,6 +307,8 @@ pub enum VerifiedForgeContentError {
     FetchError(String),
     #[error("Failed to compute hash: {0}")]
     HashError(String),
+    #[error("Fetched content's hash {actual} does not match expected {expected}")]
+    FetchedContentHashMismatch { actual: String, expected: String },
 }
 
 /// A retrieval URL paired with the SHA-512 hash of the content at that URL.
@@ -345,14 +348,26 @@ impl VerifiedForgeContent {
     /// Returns the fetched content. If not cached (e.g. after deserialization),
     /// re-fetches from `retrieval_url`. Does not cache the re-fetched result, but
     /// impact is null or minimal in our scenario as we don't call it multiple times on
-    /// an instance that was deserialized.
+    /// an instance that was deserialized. Validates that content fetched has same hash
+    /// as expected.
     pub async fn content(&self) -> Result<String, VerifiedForgeContentError> {
         if let Some(ref c) = self.content {
             return Ok(c.clone());
         }
-        common::http::fetch_with_retry(&self.retrieval_url)
+        let fetched = common::http::fetch_with_retry(&self.retrieval_url)
             .await
-            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))
+            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))?;
+        let fetched_hash = sha512_for_content(fetched.as_bytes())
+            .map_err(|e| VerifiedForgeContentError::HashError(e.to_string()))?
+            .to_hex();
+        if fetched_hash == self.content_hash {
+            Ok(fetched)
+        } else {
+            Err(VerifiedForgeContentError::FetchedContentHashMismatch {
+                actual: fetched_hash,
+                expected: self.content_hash.clone(),
+            })
+        }
     }
 
     /// Production constructor: fetches content from the URL and computes the hash.
@@ -1525,6 +1540,45 @@ mod accessor_tests {
         // content() on deserialized instance re-fetches
         let fetched = deserialized.content().await.unwrap();
         assert_eq!(fetched, body);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_content_rejects_hash_mismatch() {
+        let mut server = mockito::Server::new_async().await;
+        let served_body = "content served by the source";
+        let mock = server
+            .mock("GET", "/mismatch")
+            .with_status(200)
+            .with_body(served_body)
+            .create_async()
+            .await;
+
+        // The stored hash is computed over a different body than the one the
+        // server will serve, so the re-fetch must reject it.
+        let hashed_body = "content the stored hash was computed from";
+        let url = format!("{}/mismatch", server.url());
+        let original = VerifiedForgeContent::new_for_test(url.clone(), hashed_body.to_string());
+        // Serialise then deserialise so the content field is not present and needs a fetch when
+        // content() is called.
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: VerifiedForgeContent = serde_json::from_str(&json).unwrap();
+
+        let result = deserialized.content().await;
+        match result {
+            Err(VerifiedForgeContentError::FetchedContentHashMismatch { actual, expected }) => {
+                assert_eq!(
+                    actual,
+                    sha512_for_content(served_body.as_bytes()).unwrap().to_hex()
+                );
+                assert_eq!(
+                    expected,
+                    sha512_for_content(hashed_body.as_bytes()).unwrap().to_hex()
+                );
+            }
+            Err(e) => panic!("Expected FetchedContentHashMismatch, got: {e:?}"),
+            Ok(_) => panic!("Expected FetchedContentHashMismatch error, got Ok"),
+        }
         mock.assert();
     }
 

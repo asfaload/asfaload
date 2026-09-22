@@ -364,6 +364,19 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+
+    /// Verify a pending signers file matches the content served at its metadata's retrieval URL.
+    /// This validation is done automatically by the command sign-pending.
+    CheckPendingSigners {
+        /// Path to the pending signers file on the mirror (as displayed by list-pending)
+        signers_path: String,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -399,6 +412,7 @@ impl Commands {
             Self::Download { .. } => "DOWNLOAD",
             Self::GetDigest { .. } => "GET_DIGEST",
             Self::CheckIndex { .. } => "CHECK_INDEX",
+            Self::CheckPendingSigners { .. } => "CHECK_PENDING_SIGNERS",
         }
     }
 
@@ -430,7 +444,8 @@ impl Commands {
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. }
             | Self::Ping { json_args, .. }
-            | Self::CheckIndex { json_args, .. } => json_args.json,
+            | Self::CheckIndex { json_args, .. }
+            | Self::CheckPendingSigners { json_args, .. } => json_args.json,
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
         }

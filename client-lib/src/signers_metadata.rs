@@ -108,6 +108,7 @@ mod tests {
 
         let result = super::verify_signers_file_matches_metadata_source(
             SOURCE_CONTENT.as_bytes(),
+            "test/backend/path",
             &metadata,
         )
         .await;
@@ -122,6 +123,7 @@ mod tests {
 
         let result = super::verify_signers_file_matches_metadata_source(
             br#"{"version":2}"#.as_slice(),
+            "test/backend/path",
             &metadata,
         )
         .await;
@@ -138,8 +140,12 @@ mod tests {
         let (_server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
         let content = format!("{SOURCE_CONTENT}\n");
 
-        let result =
-            super::verify_signers_file_matches_metadata_source(content.as_bytes(), &metadata).await;
+        let result = super::verify_signers_file_matches_metadata_source(
+            content.as_bytes(),
+            "test/backend/path",
+            &metadata,
+        )
+        .await;
 
         match result {
             Err(ClientLibError::HashMismatch { .. }) => {}
@@ -161,6 +167,7 @@ mod tests {
 
         let result = super::verify_signers_file_matches_metadata_source(
             SOURCE_CONTENT.as_bytes(),
+            "test/backend/path",
             &metadata,
         )
         .await;

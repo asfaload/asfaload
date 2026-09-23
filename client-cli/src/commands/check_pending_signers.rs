@@ -40,9 +40,13 @@ pub async fn handle_check_pending_signers_command(
     let metadata_content = client.fetch_file(&metadata_path.to_string_lossy()).await?;
     let metadata: SignersConfigMetadata = serde_json::from_slice(&metadata_content)?;
 
-    client_lib::verify_signers_file_matches_metadata_source(&signers_content, &metadata)
-        .await
-        .map_err(|e| signers_metadata_verification_error(&metadata, e))?;
+    client_lib::verify_signers_file_matches_metadata_source(
+        &signers_content,
+        signers_path,
+        &metadata,
+    )
+    .await
+    .map_err(|e| signers_metadata_verification_error(&metadata, e))?;
 
     let retrieval_url = match metadata.origin() {
         SignersConfigOrigin::Forge(origin) => origin.verified_content().retrieval_url(),

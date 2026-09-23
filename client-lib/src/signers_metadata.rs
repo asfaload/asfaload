@@ -104,11 +104,10 @@ mod tests {
     #[tokio::test]
     async fn matching_content_is_accepted() {
         let (_server, source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
 
         let result = super::verify_signers_file_matches_metadata_source(
             SOURCE_CONTENT.as_bytes(),
-            &metadata_json,
+            &metadata,
         )
         .await;
 
@@ -119,11 +118,10 @@ mod tests {
     #[tokio::test]
     async fn changed_byte_is_rejected() {
         let (_server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
 
         let result = super::verify_signers_file_matches_metadata_source(
             br#"{"version":2}"#.as_slice(),
-            &metadata_json,
+            &metadata,
         )
         .await;
 
@@ -137,32 +135,15 @@ mod tests {
     #[tokio::test]
     async fn trailing_whitespace_is_rejected() {
         let (_server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
         let content = format!("{SOURCE_CONTENT}\n");
 
         let result =
-            super::verify_signers_file_matches_metadata_source(content.as_bytes(), &metadata_json)
-                .await;
+            super::verify_signers_file_matches_metadata_source(content.as_bytes(), &metadata).await;
 
         match result {
             Err(ClientLibError::HashMismatch { .. }) => {}
             Err(e) => panic!("Expected HashMismatch, got: {e:?}"),
             Ok(_) => panic!("Expected HashMismatch error, got Ok"),
-        }
-    }
-
-    #[tokio::test]
-    async fn malformed_metadata_is_rejected() {
-        let result = super::verify_signers_file_matches_metadata_source(
-            SOURCE_CONTENT.as_bytes(),
-            b"not json",
-        )
-        .await;
-
-        match result {
-            Err(ClientLibError::Json(_)) => {}
-            Err(e) => panic!("Expected Json parse error, got: {e:?}"),
-            Ok(_) => panic!("Expected Json parse error, got Ok"),
         }
     }
 
@@ -176,11 +157,10 @@ mod tests {
             .await;
         let metadata =
             metadata_with_source_url(&format!("{}/source", server.url()), SOURCE_CONTENT);
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
 
         let result = super::verify_signers_file_matches_metadata_source(
             SOURCE_CONTENT.as_bytes(),
-            &metadata_json,
+            &metadata,
         )
         .await;
 

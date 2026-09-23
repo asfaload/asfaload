@@ -68,10 +68,8 @@ pub enum ClientCliError {
 ///
 /// A `HashMismatch` means the pending signers file differs from the content
 /// served at the retrieval URL recorded in its metadata; the message names
-/// that URL so the user can inspect the diverging source. The metadata bytes
-/// are parsed here only to extract the URL, so unparseable metadata is
-/// reported as a `BackendDataError` too. Any other error is passed through
-/// as a `ClientLib` error.
+/// that URL so the user can inspect the diverging source. Any other error is
+/// passed through as a `ClientLib` error.
 pub(crate) fn signers_metadata_verification_error(
     metadata: &SignersConfigMetadata,
     error: client_lib::ClientLibError,
@@ -103,14 +101,13 @@ mod tests {
 
     const SOURCE_URL: &str = "https://files.example.com/acme/tool/asfaload.signers/index.json";
 
-    fn metadata_json(source_url: &str) -> Vec<u8> {
-        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+    fn metadata(source_url: &str) -> SignersConfigMetadata {
+        SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/acme/tool/raw/main/asfaload.signers/index.json".to_string(),
             VerifiedForgeContent::new_for_test(source_url.to_string(), "{}".to_string()),
             chrono::Utc::now(),
-        ));
-        serde_json::to_vec(&metadata).unwrap()
+        ))
     }
 
     #[test]
@@ -120,7 +117,7 @@ mod tests {
             computed: "b".repeat(128),
         };
 
-        let mapped = signers_metadata_verification_error(&metadata_json(SOURCE_URL), error);
+        let mapped = signers_metadata_verification_error(&metadata(SOURCE_URL), error);
 
         match mapped {
             ClientCliError::BackendDataError(message) => {
@@ -132,30 +129,10 @@ mod tests {
     }
 
     #[test]
-    fn hash_mismatch_with_unparseable_metadata_reports_parse_failure() {
-        let error = ClientLibError::HashMismatch {
-            expected: "a".repeat(128),
-            computed: "b".repeat(128),
-        };
-
-        let mapped = signers_metadata_verification_error(b"not json", error);
-
-        match mapped {
-            ClientCliError::BackendDataError(message) => {
-                assert!(
-                    message.contains("Failed to parse metadata"),
-                    "message: {message}"
-                );
-            }
-            other => panic!("Expected BackendDataError but got {other}"),
-        }
-    }
-
-    #[test]
     fn other_errors_pass_through_unmapped() {
         let error = ClientLibError::SignersMetadataSourceFetchError("backend down".to_string());
 
-        let mapped = signers_metadata_verification_error(&metadata_json(SOURCE_URL), error);
+        let mapped = signers_metadata_verification_error(&metadata(SOURCE_URL), error);
 
         match mapped {
             ClientCliError::ClientLib(ClientLibError::SignersMetadataSourceFetchError(message)) => {

@@ -157,6 +157,32 @@ fn check_pending_signers_mismatch_json_error() {
     );
 }
 
+// Metadata JSON is parsed by the command itself, before the retrieval URL is
+// contacted: malformed metadata must fail the command without any fetch.
+#[test]
+fn check_pending_signers_fails_on_malformed_metadata() {
+    let mut backend = mockito::Server::new();
+    let metadata_path = metadata_path_for(SIGNERS_PATH)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let _signers = backend
+        .mock("GET", format!("/v1/files/{SIGNERS_PATH}").as_str())
+        .with_status(200)
+        .with_body(SOURCE_CONTENT)
+        .create();
+    let _metadata = backend
+        .mock("GET", format!("/v1/files/{metadata_path}").as_str())
+        .with_status(200)
+        .with_body("not json")
+        .create();
+
+    check_pending_cmd(&backend)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("JSON serialization error"));
+}
+
 // A path that is not a pending signers file must be rejected before any
 // network call: the files endpoint mock expects zero hits.
 #[test]

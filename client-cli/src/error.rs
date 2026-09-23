@@ -68,8 +68,11 @@ pub enum ClientCliError {
 ///
 /// A `HashMismatch` means the pending signers file differs from the content
 /// served at the retrieval URL recorded in its metadata; the message names
-/// that URL so the user can inspect the diverging source. Any other error is
-/// passed through as a `ClientLib` error.
+/// that URL so the user can inspect the diverging source. A
+/// `UrlOutsideRealm` means the retrieval URL is outside the project of the
+/// file's backend path, typically a compromised backend rewriting the
+/// metadata; the message names both so the user can compare them. Any other
+/// error is passed through as a `ClientLib` error.
 pub(crate) fn signers_metadata_verification_error(
     metadata: &SignersConfigMetadata,
     error: client_lib::ClientLibError,
@@ -84,6 +87,11 @@ pub(crate) fn signers_metadata_verification_error(
             ClientCliError::BackendDataError(format!(
                 "The pending signers file on the backend does not match the file on the publishing platform at url {}: {}",
                 retrieval_url, error
+            ))
+        }
+        client_lib::ClientLibError::UrlOutsideRealm { path, url, .. } => {
+            ClientCliError::BackendDataError(format!(
+                "The pending signers file on the backend points at url {url}, which does not match the file's backend path {path}. The metadata may have been tampered with."
             ))
         }
         _ => ClientCliError::ClientLib(error),

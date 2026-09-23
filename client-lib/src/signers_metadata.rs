@@ -177,18 +177,24 @@ mod tests {
     fn realm_check_accepts_artifact_inside_fileserver_project() {
         // Anchor signers file lives in acme/tool/asfaload.signers; the file
         // server strips the signers dir, so the project root is acme/tool.
+        // A non-ambiguous host: under the test-utils feature, localhost and
+        // 127.0.0.1 are GitHub test hosts, and would make this URL parse as
+        // GitHub instead of FileServer.
         let res = verify_remote_url_in_path_realm(
-            "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
-            "http://127.0.0.1:8080/acme/tool/asfaload.signers/signers.json",
+            "http/files.example.com/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
+            "http://files.example.com:8080/acme/tool/asfaload.signers/signers.json",
         );
         assert!(res.is_ok(), "{:?}", res);
     }
 
     #[test]
     fn realm_check_accepts_path_equal_to_project_id() {
+        // A non-ambiguous host: under the test-utils feature, localhost and
+        // 127.0.0.1 are GitHub test hosts, and would make this URL parse as
+        // GitHub instead of FileServer.
         let res = verify_remote_url_in_path_realm(
-            "http/localhost/8080/project",
-            "http://localhost:8080/project/signers.json",
+            "http/files.example.com/8080/project",
+            "http://files.example.com:8080/project/signers.json",
         );
         assert!(res.is_ok(), "{:?}", res);
     }

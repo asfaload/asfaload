@@ -1,7 +1,9 @@
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{SignersConfigMetadata, SignersConfigOrigin, sha512_for_content};
 
-use crate::error::{ClientCliError, Result, signers_metadata_verification_error};
+use crate::error::{
+    ClientCliError, Result, signers_metadata_parse_error, signers_metadata_verification_error,
+};
 use crate::utils::{bishop_art, bishop_plain};
 
 /// Handle the check-pending-signers command.
@@ -38,7 +40,8 @@ pub async fn handle_check_pending_signers_command(
     let signers_content = client.fetch_file(signers_path).await?;
     let metadata_path = metadata_path_for(signers_path)?;
     let metadata_content = client.fetch_file(&metadata_path.to_string_lossy()).await?;
-    let metadata: SignersConfigMetadata = serde_json::from_slice(&metadata_content)?;
+    let metadata: SignersConfigMetadata =
+        serde_json::from_slice(&metadata_content).map_err(signers_metadata_parse_error)?;
 
     client_lib::verify_signers_file_matches_metadata_source(
         &signers_content,

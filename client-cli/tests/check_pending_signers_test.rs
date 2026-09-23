@@ -205,7 +205,7 @@ fn check_pending_signers_fails_on_malformed_metadata() {
     check_pending_cmd(&backend, &signers_path)
         .assert()
         .failure()
-        .stderr(predicate::str::contains("JSON serialization error"));
+        .stderr(predicate::str::contains("Failed to parse metadata"));
 }
 
 // The metadata's retrieval_url serves content identical to the pending file,

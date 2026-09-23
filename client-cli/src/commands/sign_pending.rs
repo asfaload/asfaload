@@ -80,7 +80,8 @@ pub async fn handle_sign_pending_sec_key(
             ))
         })?;
 
-        let metadata: SignersConfigMetadata = serde_json::from_slice(metadata_content)?;
+        let metadata: SignersConfigMetadata = serde_json::from_slice(metadata_content)
+            .map_err(crate::error::signers_metadata_parse_error)?;
         // Retrieves file from publishing platform to assess validity.
         client_lib::verify_signers_file_matches_metadata_source(
             signers_content,

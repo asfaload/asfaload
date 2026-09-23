@@ -64,6 +64,15 @@ pub enum ClientCliError {
     BackendDataError(String),
 }
 
+/// Report unparsable signers metadata as corrupted backend data.
+///
+/// The metadata file comes from the backend, so a parse failure means the
+/// backend serves corrupted data, not a generic JSON error the user could
+/// act on.
+pub(crate) fn signers_metadata_parse_error(error: serde_json::Error) -> ClientCliError {
+    ClientCliError::BackendDataError(format!("Failed to parse metadata: {error}"))
+}
+
 /// Translate a signers-metadata verification failure into a CLI error.
 ///
 /// A `HashMismatch` means the pending signers file differs from the content
@@ -131,6 +140,24 @@ mod tests {
             ClientCliError::BackendDataError(message) => {
                 assert!(message.contains(SOURCE_URL), "message: {message}");
                 assert!(message.contains("Hash mismatch"), "message: {message}");
+            }
+            other => panic!("Expected BackendDataError but got {other}"),
+        }
+    }
+
+    #[test]
+    fn unparsable_metadata_is_reported_as_backend_data_error() {
+        let json_error = serde_json::from_slice::<SignersConfigMetadata>(b"not json")
+            .expect_err("raw text is not valid metadata JSON");
+
+        let mapped = signers_metadata_parse_error(json_error);
+
+        match mapped {
+            ClientCliError::BackendDataError(message) => {
+                assert!(
+                    message.contains("Failed to parse metadata"),
+                    "Unexpected BackendDataError message: {message}"
+                );
             }
             other => panic!("Expected BackendDataError but got {other}"),
         }

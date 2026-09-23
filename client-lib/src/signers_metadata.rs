@@ -9,6 +9,7 @@ use forge_url::{ForgeInfo, ForgeTrait};
 /// compared to the SHA-512 of the file's bytes.
 pub async fn verify_signers_file_matches_metadata_source(
     file_content: &[u8],
+    _backend_path: &str,
     metadata: &SignersConfigMetadata,
 ) -> AsfaloadLibResult<()> {
     let SignersConfigOrigin::Forge(origin) = metadata.origin();

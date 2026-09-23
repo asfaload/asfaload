@@ -82,9 +82,13 @@ pub async fn handle_sign_pending_sec_key(
 
         let metadata: SignersConfigMetadata = serde_json::from_slice(metadata_content)?;
         // Retrieves file from publishing platform to assess validity.
-        client_lib::verify_signers_file_matches_metadata_source(signers_content, &metadata)
-            .await
-            .map_err(|e| crate::error::signers_metadata_verification_error(&metadata, e))?;
+        client_lib::verify_signers_file_matches_metadata_source(
+            signers_content,
+            pending_file.path(),
+            &metadata,
+        )
+        .await
+        .map_err(|e| crate::error::signers_metadata_verification_error(&metadata, e))?;
     }
 
     // Sign each file

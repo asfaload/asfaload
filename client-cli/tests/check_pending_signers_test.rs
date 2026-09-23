@@ -211,8 +211,8 @@ fn check_pending_signers_fails_on_malformed_metadata() {
 // The metadata's retrieval_url serves content identical to the pending file,
 // but sits outside the file's realm: a hash comparison alone accepts, so the
 // rejection must come from the location check. It must also happen before
-// any fetch of the out-of-realm source, and name both the url and the
-// backend path so the user can compare them.
+// any fetch of the out-of-realm source, and name the url, the project it
+// resolves to and the backend path, so the user can compare them.
 #[test]
 fn check_pending_signers_rejects_source_outside_realm() {
     let mut backend = mockito::Server::new();
@@ -220,6 +220,15 @@ fn check_pending_signers_rejects_source_outside_realm() {
     let mut attacker_server = mockito::Server::new();
     let signers_path = signers_path(&file_server);
     let attacker_url = format!("{}{SOURCE_PATH}", attacker_server.url());
+    // The forge project the attacker url resolves to: its origin plus the
+    // owner/repo segments of the source route.
+    let attacker_project = {
+        let parsed = url::Url::parse(&attacker_server.url()).unwrap();
+        format!(
+            "{}/acme/tool",
+            forge_url::path_prefix_from_url(&parsed).unwrap()
+        )
+    };
     let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &attacker_url, &signers_path);
     let fake_source = attacker_server
         .mock("GET", SOURCE_PATH)
@@ -235,6 +244,7 @@ fn check_pending_signers_rejects_source_outside_realm() {
             "does not match the file's backend path",
         ))
         .stderr(predicate::str::contains(&attacker_url))
+        .stderr(predicate::str::contains(&attacker_project))
         .stderr(predicate::str::contains(&signers_path))
         .stderr(predicate::str::contains("tampered"));
 

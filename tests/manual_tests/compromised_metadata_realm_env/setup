@@ -173,6 +173,10 @@ MT_RC_EXTRA_EXPORTS+=(
 
 # --- Welcome message ---
 
+# Forge project the tampered url resolves to: origin plus the first two path
+# segments of the served route.
+EVIL_REALM="http/localhost/${EVIL_SERVER_PORT}/project/${HIDDEN_SIGNERS_DIR}"
+
 printf '\n'
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$BOLD" "$RESET"
 printf '%s  Compromised backend: metadata points outside the file realm%s\n' "$GREEN" "$RESET"
@@ -198,8 +202,11 @@ printf '    asfaload-cli sign-pending -K $KEY_0\n'
 printf '\n'
 printf '%s  Expected:%s check-pending-signers and sign-pending are rejected\n' "$BOLD" "$RESET"
 printf '  with an error of this shape:\n'
-printf '    Metadata source '"'"'%s'"'"' does not match\n' "$TAMPERED_URL"
-printf '    backend path '"'"'%s'"'"'\n' "$PENDING_SIGNERS_PATH"
+printf '    The pending signers file on the backend points at url\n'
+printf '    %s,\n' "$TAMPERED_URL"
+printf '    which resolves to the project %s.\n' "$EVIL_REALM"
+printf '    That project does not match the file'"'"'s backend path\n'
+printf '    %s.\n' "$PENDING_SIGNERS_PATH"
 printf '  The fake source is never fetched: after the rejected commands, the\n'
 printf '  attacker server log $EVIL_SERVER_LOG has no request lines. Watch it with:\n'
 printf '    tail -f $EVIL_SERVER_LOG\n'

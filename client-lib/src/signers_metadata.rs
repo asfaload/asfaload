@@ -294,16 +294,22 @@ mod tests {
             "https/github.com/443/acme/tool/asfaload.signers/index.json",
             url,
         );
-        match res {
+        match &res {
             Err(ClientLibError::UrlOutsideRealm {
                 url: error_url,
                 project_id,
                 ..
             }) => {
-                assert_eq!(error_url, url);
+                assert_eq!(error_url.as_str(), url);
                 assert_eq!(
                     project_id.as_deref(),
                     Some("https/github.com/443/attacker/evil")
+                );
+                let display = res.as_ref().unwrap_err().to_string();
+                assert!(display.contains(url), "display: {display}");
+                assert!(
+                    display.contains("https/github.com/443/attacker/evil"),
+                    "display: {display}"
                 );
             }
             Err(e) => panic!("Expected UrlOutsideRealm, got {e}"),
@@ -339,9 +345,16 @@ mod tests {
             "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
             "http://127.0.0.1:8080",
         );
-        match res {
+        match &res {
             Err(ClientLibError::UrlOutsideRealm { project_id, .. }) => {
-                assert_eq!(project_id, None);
+                assert_eq!(*project_id, None);
+                // An unparseable URL has no project to name: the display
+                // states the resolution failure instead.
+                let display = res.as_ref().unwrap_err().to_string();
+                assert!(
+                    display.contains("cannot be resolved to a forge project"),
+                    "display: {display}"
+                );
             }
             Err(e) => panic!("Expected UrlOutsideRealm, got {e}"),
             Ok(_) => panic!("Expected UrlOutsideRealm error, got Ok"),

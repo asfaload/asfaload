@@ -80,8 +80,9 @@ pub(crate) fn signers_metadata_parse_error(error: serde_json::Error) -> ClientCl
 /// that URL so the user can inspect the diverging source. A
 /// `UrlOutsideRealm` means the retrieval URL is outside the project of the
 /// file's backend path, typically a compromised backend rewriting the
-/// metadata; the message names both so the user can compare them. Any other
-/// error is passed through as a `ClientLib` error.
+/// metadata; the message names the url, the project it resolves to and the
+/// backend path, so the user can compare them. Any other error is passed
+/// through as a `ClientLib` error.
 pub(crate) fn signers_metadata_verification_error(
     metadata: &SignersConfigMetadata,
     error: client_lib::ClientLibError,
@@ -98,9 +99,21 @@ pub(crate) fn signers_metadata_verification_error(
                 retrieval_url, error
             ))
         }
-        client_lib::ClientLibError::UrlOutsideRealm { path, url, .. } => {
+        client_lib::ClientLibError::UrlOutsideRealm {
+            path,
+            url,
+            project_id,
+        } => {
+            let source_detail = match &project_id {
+                Some(project) => format!(
+                    "points at url {url}, which resolves to the project {project}. That project does not match the file's backend path {path}."
+                ),
+                None => format!(
+                    "points at url {url}, which cannot be resolved to a forge project. The file's backend path is {path}."
+                ),
+            };
             ClientCliError::BackendDataError(format!(
-                "The pending signers file on the backend points at url {url}, which does not match the file's backend path {path}. The metadata may have been tampered with."
+                "The pending signers file on the backend {source_detail} The metadata may have been tampered with."
             ))
         }
         _ => ClientCliError::ClientLib(error),
@@ -158,6 +171,50 @@ mod tests {
                     message.contains("Failed to parse metadata"),
                     "Unexpected BackendDataError message: {message}"
                 );
+            }
+            other => panic!("Expected BackendDataError but got {other}"),
+        }
+    }
+
+    #[test]
+    fn url_outside_realm_names_resolved_project() {
+        let error = ClientLibError::UrlOutsideRealm {
+            path: "https/github.com/443/acme/tool/asfaload.signers.pending/index.json".to_string(),
+            url: "https://raw.githubusercontent.com/attacker/evil/main/signers.json".to_string(),
+            project_id: Some("https/github.com/443/attacker/evil".to_string()),
+        };
+
+        let mapped = signers_metadata_verification_error(&metadata(SOURCE_URL), error);
+
+        match mapped {
+            ClientCliError::BackendDataError(message) => {
+                assert!(
+                    message.contains("resolves to the project https/github.com/443/attacker/evil"),
+                    "message: {message}"
+                );
+                assert!(message.contains("tampered"), "message: {message}");
+            }
+            other => panic!("Expected BackendDataError but got {other}"),
+        }
+    }
+
+    #[test]
+    fn url_outside_realm_without_project_reports_unresolvable_url() {
+        let error = ClientLibError::UrlOutsideRealm {
+            path: "https/github.com/443/acme/tool/asfaload.signers.pending/index.json".to_string(),
+            url: "not a url".to_string(),
+            project_id: None,
+        };
+
+        let mapped = signers_metadata_verification_error(&metadata(SOURCE_URL), error);
+
+        match mapped {
+            ClientCliError::BackendDataError(message) => {
+                assert!(
+                    message.contains("cannot be resolved to a forge project"),
+                    "message: {message}"
+                );
+                assert!(message.contains("tampered"), "message: {message}");
             }
             other => panic!("Expected BackendDataError but got {other}"),
         }

@@ -1,5 +1,6 @@
 use crate::{AsfaloadLibResult, ClientLibError};
 use features_lib::{SignersConfigMetadata, SignersConfigOrigin, sha512_for_content};
+use forge_url::{ForgeInfo, ForgeTrait};
 
 /// Verify that a file's bytes are identical to the source content served by the
 /// forge URL recorded in its metadata.
@@ -43,6 +44,27 @@ pub async fn verify_signers_file_matches_metadata_source(
             expected: source_hash,
             computed: file_hash,
         })
+    }
+}
+
+/// Validates that the url can be used as a source for the path on the backend.
+pub fn verify_remote_url_in_path_realm(path: &str, url: &str) -> AsfaloadLibResult<()> {
+    let reject = |url: String| ClientLibError::UrlOutsideRealm {
+        path: path.to_string(),
+        url: url.to_string(),
+    };
+
+    let parsed = url::Url::parse(url).map_err(|_| reject(url.to_string()))?;
+    let project_id = ForgeInfo::new(&parsed)
+        .map(|info| info.project_id())
+        .map_err(|_| reject(url.to_string()))?;
+
+    // Important to test against a '/'-ending string, to prevent issues with repo names prefix of
+    // the one we work with.
+    if path == project_id || path.starts_with(&format!("{}/", project_id)) {
+        Ok(())
+    } else {
+        Err(reject(project_id))
     }
 }
 

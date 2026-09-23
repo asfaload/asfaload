@@ -131,6 +131,9 @@ pub enum ClientLibError {
 
     #[error("Signers chain transition is invalid")]
     SignersChainTransitionInvalid,
+
+    #[error("Metadata source '{url}' does not match path '{path}'")]
+    UrlOutsideRealm { path: String, url: String },
 }
 
 pub type AsfaloadLibResult<T> = std::result::Result<T, ClientLibError>;

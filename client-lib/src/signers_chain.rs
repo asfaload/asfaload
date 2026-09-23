@@ -1,6 +1,5 @@
-use crate::{AsfaloadLibResult, ClientLibError};
+use crate::{AsfaloadLibResult, ClientLibError, signers_metadata::verify_remote_url_in_path_realm};
 use features_lib::{SignersChain, SignersConfig, SignersInfoTrait};
-use forge_url::{ForgeInfo, ForgeTrait};
 use rest_api_types::GetSignersChainResponse;
 
 /// Result of a successful signers chain validation.
@@ -118,28 +117,16 @@ pub async fn verify_signers_chain(
 }
 
 /// Assert that the trust anchor's fetched URL falls within the download's realm.
-///
-/// `artifact_path` is in `scheme/host/port/owner/repo/...` form — the same
-/// namespace as `ForgeInfo::project_id`. The anchor is acceptable only if the
-/// download path equals, or sits inside, the anchor's forge project. Fails
-/// closed: any URL that cannot be parsed into a forge project is rejected.
 fn assert_anchor_within_realm(artifact_path: &str, retrieval_url: &str) -> AsfaloadLibResult<()> {
-    let reject = |anchor_realm: String| ClientLibError::SignersChainTrustAnchorOutsideRealm {
-        artifact_path: artifact_path.to_string(),
-        anchor_realm,
-    };
-
-    let parsed = url::Url::parse(retrieval_url).map_err(|_| reject(retrieval_url.to_string()))?;
-    let project_id = ForgeInfo::new(&parsed)
-        .map(|info| info.project_id())
-        .map_err(|_| reject(retrieval_url.to_string()))?;
-
-    // Important to test against a '/'-ending string, to prevent issues with repo names prefix of
-    // the one we work with.
-    if artifact_path == project_id || artifact_path.starts_with(&format!("{}/", project_id)) {
-        Ok(())
-    } else {
-        Err(reject(project_id))
+    let result = verify_remote_url_in_path_realm(artifact_path, retrieval_url);
+    match result {
+        Err(ClientLibError::UrlOutsideRealm { path, url }) => {
+            Err(ClientLibError::SignersChainTrustAnchorOutsideRealm {
+                artifact_path: path,
+                anchor_realm: url,
+            })
+        }
+        other => other,
     }
 }
 

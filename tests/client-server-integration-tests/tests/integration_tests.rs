@@ -11,23 +11,48 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
+    /// Mirror shape of a signers project served by a mock forge.
+    ///
+    /// `_source_server` must be kept alive: dropping it stops the mock forge,
+    /// and sign-pending on the signers file would then fail the validation of
+    /// the file against its forge source.
+    struct SignersProjectFixture {
+        _source_server: mockito::ServerGuard,
+        /// Git-repo relative path of the project dir: the forge origin plus
+        /// the project path.
+        project_dir_path: String,
+    }
+
     /// Initialize signers file and create the empty pending signatures file
     /// that list-pending needs to discover it.
     ///
-    /// The metadata written for the signers file points at a mock HTTP server
-    /// serving the same content as the signers file, mimicking the forge where
-    /// the project publishes it. The returned server guard must be kept alive
-    /// for the duration of the test: dropping it stops the server, and
-    /// sign-pending on the signers file would then fail the validation of the
-    /// file against its forge source.
+    /// The backend nests project dirs under the forge origin the files were
+    /// fetched from: scheme/host/port/... (see the backend's path
+    /// normalisation). The mockito server stands in for the forge serving the
+    /// signers source, so the mirror location and the source route derive from
+    /// its origin. The route has 4 path segments so the source resolves to the
+    /// same forge project under the github and file-server classifications of
+    /// 127.0.0.1 (this crate enables forge-url test-utils).
+    ///
+    /// The returned fixture must be kept alive for the duration of the test:
+    /// dropping it stops the mock forge, and sign-pending on the signers file
+    /// would then fail the validation of the file against its forge source.
     async fn initialize_signers_file_with_pending_sigs(
-        project_dir: &Path,
+        git_repo_path: &Path,
+        project_name: &str,
         signers_content: &str,
         pubkey: &AsfaloadPublicKeys,
-    ) -> mockito::ServerGuard {
-        let mut signers_source_server = mockito::Server::new_async().await;
-        signers_source_server
-            .mock("GET", "/signers.json")
+    ) -> SignersProjectFixture {
+        let mut source_server = mockito::Server::new_async().await;
+
+        let parsed = url::Url::parse(&source_server.url()).unwrap();
+        let origin = forge_url::path_prefix_from_url(&parsed).unwrap();
+
+        let project_path = format!("{}/forge", project_name);
+        let route = format!("/{}/asfaload.signers/index.json", project_path);
+
+        source_server
+            .mock("GET", route.as_str())
             .with_status(200)
             .with_body(signers_content)
             .create_async()
@@ -38,20 +63,26 @@ mod tests {
                 features_lib::Forge::Github,
                 "https://example.com/test".to_string(),
                 features_lib::VerifiedForgeContent::new_for_test(
-                    format!("{}/signers.json", signers_source_server.url()),
+                    format!("{}{}", source_server.url(), route),
                     signers_content.to_string(),
                 ),
                 chrono::Utc::now(),
             ));
 
-        initialize_signers_file(project_dir, signers_content, metadata, pubkey)
+        let project_dir = git_repo_path.join(&origin).join(&project_path);
+        fs::create_dir_all(&project_dir).expect("Failed to create project dir");
+        initialize_signers_file(&project_dir, signers_content, metadata, pubkey)
             .expect("Failed to initialize signers file");
         let signers_path = project_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
         let pending_sig_path =
             pending_signatures_path_for(&signers_path).expect("Failed to compute pending sig path");
         fs::write(&pending_sig_path, r#"{"entries":{}}"#)
             .expect("Failed to write pending signatures file");
-        signers_source_server
+
+        SignersProjectFixture {
+            _source_server: source_server,
+            project_dir_path: format!("{}/{}", origin, project_path),
+        }
     }
 
     // ========================================
@@ -106,10 +137,8 @@ mod tests {
         let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)
             .expect("Failed to derive public key");
 
-        let (project_dir_sub, file_path) =
+        let (project_dir_name, _) =
             test_harness::unique_test_paths("add_file_list", "test_file.txt");
-        let project_dir = git_repo_path.join(&project_dir_sub);
-        fs::create_dir_all(&project_dir).expect("Failed to create project dir");
 
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))
@@ -118,9 +147,13 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        let _signers_source_server =
-            initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key)
-                .await;
+        let signers_project = initialize_signers_file_with_pending_sigs(
+            &git_repo_path,
+            &project_dir_name.to_string_lossy(),
+            &signers_content,
+            &public_key,
+        )
+        .await;
         // The pending signers file needs to be signed first (two-phase signing).
         // list-pending should show it.
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
@@ -137,7 +170,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
+                p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -158,7 +191,9 @@ mod tests {
             "Signers file should be complete with 1 of 1 signer"
         );
 
-        // Now create the artifact file
+        // Now create the artifact file. It nests inside the forge project, so
+        // the activated signers file is found as its global signers file.
+        let file_path = format!("{}/test_file.txt", signers_project.project_dir_path);
         test_harness::create_file_in_repo(&file_path, "This is a test file.")
             .await
             .expect("Failed to create file");
@@ -207,10 +242,7 @@ mod tests {
             .expect("Failed to derive public key");
 
         // Setup signers
-        let (project_dir_sub, file_path) =
-            test_harness::unique_test_paths("sign_pending", "artifact.txt");
-        let project_dir = git_repo_path.join(&project_dir_sub);
-        fs::create_dir_all(&project_dir).expect("Failed to create project dir");
+        let (project_dir_name, _) = test_harness::unique_test_paths("sign_pending", "artifact.txt");
 
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))
@@ -219,9 +251,13 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        let _signers_source_server =
-            initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key)
-                .await;
+        let signers_project = initialize_signers_file_with_pending_sigs(
+            &git_repo_path,
+            &project_dir_name.to_string_lossy(),
+            &signers_content,
+            &public_key,
+        )
+        .await;
         // Sign the pending signers file first (two-phase signing)
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
@@ -237,7 +273,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
+                p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -257,7 +293,9 @@ mod tests {
             "Signers file should be complete with 1 of 1 signer"
         );
 
-        // Create artifact file
+        // Create artifact file. It nests inside the forge project, so the
+        // activated signers file is found as its global signers file.
+        let file_path = format!("{}/artifact.txt", signers_project.project_dir_path);
         test_harness::create_file_in_repo(&file_path, "This is an artifact to be signed.")
             .await
             .expect("Failed to create file");
@@ -328,10 +366,8 @@ mod tests {
         let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)
             .expect("Failed to derive public key");
 
-        let (project_dir_sub, file_path) =
+        let (project_dir_name, _) =
             test_harness::unique_test_paths("sign_pending_digest_mismatch", "artifact.txt");
-        let project_dir = git_repo_path.join(&project_dir_sub);
-        fs::create_dir_all(&project_dir).expect("Failed to create project dir");
 
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))
@@ -340,9 +376,13 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        let _signers_source_server =
-            initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key)
-                .await;
+        let signers_project = initialize_signers_file_with_pending_sigs(
+            &git_repo_path,
+            &project_dir_name.to_string_lossy(),
+            &signers_content,
+            &public_key,
+        )
+        .await;
         // Sign the pending signers file to activate it
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
@@ -358,7 +398,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
+                p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -375,6 +415,7 @@ mod tests {
         .expect("sign-pending for signers should succeed");
 
         // Create artifact and its pending signatures file
+        let file_path = format!("{}/artifact.txt", signers_project.project_dir_path);
         test_harness::create_file_in_repo(&file_path, "artifact content")
             .await
             .expect("Failed to create artifact file");
@@ -425,12 +466,11 @@ mod tests {
         let signers_json = signers_config.to_json().expect("Failed to serialize");
 
         // --- Phase 1: Initialize signers ---
-        let (project_dir_sub, _) = test_harness::unique_test_paths("multi_signer", "dummy");
-        let project_dir = git_repo_path.join(&project_dir_sub);
-        fs::create_dir_all(&project_dir).expect("Failed to create project dir");
+        let (project_dir_name, _) = test_harness::unique_test_paths("multi_signer", "dummy");
 
-        let _signers_source_server = initialize_signers_file_with_pending_sigs(
-            &project_dir,
+        let signers_project = initialize_signers_file_with_pending_sigs(
+            &git_repo_path,
+            &project_dir_name.to_string_lossy(),
             &signers_json,
             test_keys.pub_key(0).unwrap(),
         )
@@ -455,7 +495,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
+                p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -503,8 +543,10 @@ mod tests {
         .expect("sign-pending key[2] should succeed");
         assert!(r2.is_complete, "Should be complete after all 3 signatures");
 
-        // --- Phase 3: Create artifact file ---
-        let (_, artifact_path) = test_harness::unique_test_paths("multi_signer", "artifact.txt");
+        // --- Phase 3: Create artifact file. It nests inside the forge
+        // project, so the activated signers file is found as its global
+        // signers file.
+        let artifact_path = format!("{}/artifact.txt", signers_project.project_dir_path);
 
         test_harness::create_file_in_repo(&artifact_path, "artifact content")
             .await

@@ -725,6 +725,7 @@ dependencies = [
  "tempfile",
  "test_helpers",
  "tokio",
+ "url",
 ]
 
 [[package]]

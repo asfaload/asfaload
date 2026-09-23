@@ -81,6 +81,8 @@ mod tests {
 
     const SOURCE_CONTENT: &str = r#"{"version":1}"#;
 
+    const SOURCE_ROUTE: &str = "/acme/tool/asfaload.signers/index.json";
+
     fn metadata_with_source_url(source_url: &str, source_content: &str) -> SignersConfigMetadata {
         SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
@@ -92,28 +94,40 @@ mod tests {
         ))
     }
 
+    // The backend path of the signers file, derived from the forge origin: the
+    // mockito url as scheme/host/port, plus the project path.
+    fn backend_path_for(server: &mockito::ServerGuard) -> String {
+        let parsed = url::Url::parse(&server.url()).unwrap();
+        format!(
+            "{}/acme/tool",
+            forge_url::path_prefix_from_url(&parsed).unwrap()
+        )
+    }
+
     async fn serve_source(
         source_content: &str,
     ) -> (mockito::ServerGuard, mockito::Mock, SignersConfigMetadata) {
         let mut server = mockito::Server::new_async().await;
+        // The mockito server stands in for the forge serving the signers file.
         let source_mock = server
-            .mock("GET", "/source")
+            .mock("GET", SOURCE_ROUTE)
             .with_status(200)
             .with_body(source_content)
             .create_async()
             .await;
         let metadata =
-            metadata_with_source_url(&format!("{}/source", server.url()), source_content);
+            metadata_with_source_url(&format!("{}{SOURCE_ROUTE}", server.url()), source_content);
         (server, source_mock, metadata)
     }
 
     #[tokio::test]
     async fn matching_content_is_accepted() {
-        let (_server, source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
+        let (server, source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
+        let backend_path = backend_path_for(&server);
 
         let result = super::verify_signers_file_matches_metadata_source(
             SOURCE_CONTENT.as_bytes(),
-            "test/backend/path",
+            &backend_path,
             &metadata,
         )
         .await;
@@ -124,11 +138,12 @@ mod tests {
 
     #[tokio::test]
     async fn changed_byte_is_rejected() {
-        let (_server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
+        let (server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
+        let backend_path = backend_path_for(&server);
 
         let result = super::verify_signers_file_matches_metadata_source(
             br#"{"version":2}"#.as_slice(),
-            "test/backend/path",
+            &backend_path,
             &metadata,
         )
         .await;
@@ -142,12 +157,13 @@ mod tests {
 
     #[tokio::test]
     async fn trailing_whitespace_is_rejected() {
-        let (_server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
+        let (server, _source_mock, metadata) = serve_source(SOURCE_CONTENT).await;
+        let backend_path = backend_path_for(&server);
         let content = format!("{SOURCE_CONTENT}\n");
 
         let result = super::verify_signers_file_matches_metadata_source(
             content.as_bytes(),
-            "test/backend/path",
+            &backend_path,
             &metadata,
         )
         .await;
@@ -163,16 +179,17 @@ mod tests {
     async fn source_fetch_failure_is_reported() {
         let mut server = mockito::Server::new_async().await;
         server
-            .mock("GET", "/source")
+            .mock("GET", SOURCE_ROUTE)
             .with_status(500)
             .create_async()
             .await;
         let metadata =
-            metadata_with_source_url(&format!("{}/source", server.url()), SOURCE_CONTENT);
+            metadata_with_source_url(&format!("{}{SOURCE_ROUTE}", server.url()), SOURCE_CONTENT);
+        let backend_path = backend_path_for(&server);
 
         let result = super::verify_signers_file_matches_metadata_source(
             SOURCE_CONTENT.as_bytes(),
-            "test/backend/path",
+            &backend_path,
             &metadata,
         )
         .await;

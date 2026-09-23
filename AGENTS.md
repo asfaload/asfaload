@@ -10,6 +10,10 @@ The project is described in [agents/project-description.md](agents/project-descr
 
 Never open or consider any file specified in ./.agentsignore. The .agentsignore file uses Git ignore pattern rules.
 
+# English Language
+
+When you write english, be it in comments, in answers or in documentation, you always write ASD-STE100 Simplified Technical English.
+
 ## Build/Test/Lint Commands
 
 ### Core Commands

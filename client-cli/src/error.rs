@@ -1,4 +1,5 @@
 use common::AsfaloadHashes;
+use features_lib::SignersConfigMetadata;
 use features_lib::errors::AggregateSignatureError;
 use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
 use thiserror::Error;
@@ -72,20 +73,11 @@ pub enum ClientCliError {
 /// reported as a `BackendDataError` too. Any other error is passed through
 /// as a `ClientLib` error.
 pub(crate) fn signers_metadata_verification_error(
-    metadata_content: &[u8],
+    metadata: &SignersConfigMetadata,
     error: client_lib::ClientLibError,
 ) -> ClientCliError {
     match error {
         client_lib::ClientLibError::HashMismatch { .. } => {
-            let metadata: features_lib::SignersConfigMetadata =
-                match serde_json::from_slice(metadata_content) {
-                    Ok(metadata) => metadata,
-                    Err(json_err) => {
-                        return ClientCliError::BackendDataError(format!(
-                            "Failed to parse metadata: {json_err}"
-                        ));
-                    }
-                };
             let retrieval_url = match metadata.origin() {
                 features_lib::SignersConfigOrigin::Forge(origin) => {
                     origin.verified_content().retrieval_url()

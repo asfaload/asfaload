@@ -4,7 +4,7 @@ use crate::error::Result;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-    AsfaloadSignatures, sha512_for_content,
+    AsfaloadSignatures, SignersConfigMetadata, sha512_for_content,
 };
 use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
 
@@ -80,10 +80,11 @@ pub async fn handle_sign_pending_sec_key(
             ))
         })?;
 
+        let metadata: SignersConfigMetadata = serde_json::from_slice(metadata_content)?;
         // Retrieves file from publishing platform to assess validity.
-        client_lib::verify_signers_file_matches_metadata_source(signers_content, metadata_content)
+        client_lib::verify_signers_file_matches_metadata_source(signers_content, &metadata)
             .await
-            .map_err(|e| crate::error::signers_metadata_verification_error(metadata_content, e))?;
+            .map_err(|e| crate::error::signers_metadata_verification_error(&metadata, e))?;
     }
 
     // Sign each file

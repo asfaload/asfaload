@@ -38,14 +38,12 @@ pub async fn handle_check_pending_signers_command(
     let signers_content = client.fetch_file(signers_path).await?;
     let metadata_path = metadata_path_for(signers_path)?;
     let metadata_content = client.fetch_file(&metadata_path.to_string_lossy()).await?;
-
-    client_lib::verify_signers_file_matches_metadata_source(&signers_content, &metadata_content)
-        .await
-        .map_err(|e| signers_metadata_verification_error(&metadata_content, e))?;
-
-    // The verification passed, so the metadata parsed successfully during
-    // verification; parsing it here only extracts the retrieval URL for output.
     let metadata: SignersConfigMetadata = serde_json::from_slice(&metadata_content)?;
+
+    client_lib::verify_signers_file_matches_metadata_source(&signers_content, &metadata)
+        .await
+        .map_err(|e| signers_metadata_verification_error(&metadata, e))?;
+
     let retrieval_url = match metadata.origin() {
         SignersConfigOrigin::Forge(origin) => origin.verified_content().retrieval_url(),
     };

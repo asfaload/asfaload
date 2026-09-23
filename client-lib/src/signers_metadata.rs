@@ -191,4 +191,57 @@ mod tests {
             Ok(_) => panic!("Expected source fetch error, got Ok"),
         }
     }
+
+    // -- Unit tests for the realm check itself --
+
+    #[test]
+    fn realm_check_accepts_artifact_inside_fileserver_project() {
+        // Anchor signers file lives in acme/tool/asfaload.signers; the file
+        // server strips the signers dir, so the project root is acme/tool.
+        let res = verify_remote_url_in_path_realm(
+            "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
+            "http://127.0.0.1:8080/acme/tool/asfaload.signers/signers.json",
+        );
+        assert!(res.is_ok(), "{:?}", res);
+    }
+
+    #[test]
+    fn realm_check_rejects_different_repo_same_host() {
+        let res = verify_remote_url_in_path_realm(
+            "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
+            "http://127.0.0.1:8080/attacker/evil/asfaload.signers/signers.json",
+        );
+        assert!(matches!(res, Err(ClientLibError::UrlOutsideRealm { .. })));
+    }
+
+    #[test]
+    fn realm_check_rejects_prefix_collision_repo() {
+        // The anchor repo "acme/to" is a STRING prefix of the download's
+        // "acme/tool" but a different project. A naive `starts_with(project_id)`
+        // would wrongly accept it; the `/`-boundary check must reject it.
+        let res = verify_remote_url_in_path_realm(
+            "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
+            "http://127.0.0.1:8080/acme/to/asfaload.signers/signers.json",
+        );
+        assert!(matches!(res, Err(ClientLibError::UrlOutsideRealm { .. })));
+    }
+
+    #[test]
+    fn realm_check_rejects_unparseable_anchor_url() {
+        // Host-only URL has no project path -> fail closed.
+        let res = verify_remote_url_in_path_realm(
+            "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
+            "http://127.0.0.1:8080",
+        );
+        assert!(matches!(res, Err(ClientLibError::UrlOutsideRealm { .. })));
+    }
+
+    #[test]
+    fn realm_check_rejects_different_host() {
+        let res = verify_remote_url_in_path_realm(
+            "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
+            "http://evil.example.com/acme/tool/asfaload.signers/signers.json",
+        );
+        assert!(matches!(res, Err(ClientLibError::UrlOutsideRealm { .. })));
+    }
 }

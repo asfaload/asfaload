@@ -206,6 +206,61 @@ mod tests {
     }
 
     #[test]
+    fn realm_check_accepts_path_equal_to_project_id() {
+        let res = verify_remote_url_in_path_realm(
+            "http/localhost/8080/project",
+            "http://localhost:8080/project/signers.json",
+        );
+        assert!(res.is_ok(), "{:?}", res);
+    }
+
+    #[test]
+    fn realm_check_accepts_github_blob_url() {
+        let res = verify_remote_url_in_path_realm(
+            "https/github.com/443/acme/tool/asfaload.signers/index.json",
+            "https://github.com/acme/tool/blob/main/asfaload.signers/index.json",
+        );
+        assert!(res.is_ok(), "{:?}", res);
+    }
+
+    #[test]
+    fn realm_check_accepts_raw_github_url_canonicalised_to_github_project() {
+        // raw.githubusercontent.com URLs canonicalise to the github.com
+        // project, so a signers file served by the raw host matches a backend
+        // path rooted at https/github.com/443.
+        let res = verify_remote_url_in_path_realm(
+            "https/github.com/443/asfaload/repo_for_e2e_tests/asfaload.signers/index.json",
+            "https://raw.githubusercontent.com/asfaload/repo_for_e2e_tests/master/basic_flow/signers_file_1_asfaload.json",
+        );
+        assert!(res.is_ok(), "{:?}", res);
+    }
+
+    #[test]
+    fn realm_check_rejects_url_from_other_github_repo() {
+        let url =
+            "https://raw.githubusercontent.com/attacker/evil/master/asfaload.signers/index.json";
+        let res = verify_remote_url_in_path_realm(
+            "https/github.com/443/acme/tool/asfaload.signers/index.json",
+            url,
+        );
+        match res {
+            Err(ClientLibError::UrlOutsideRealm {
+                url: error_url,
+                project_id,
+                ..
+            }) => {
+                assert_eq!(error_url, url);
+                assert_eq!(
+                    project_id.as_deref(),
+                    Some("https/github.com/443/attacker/evil")
+                );
+            }
+            Err(e) => panic!("Expected UrlOutsideRealm, got {e}"),
+            Ok(_) => panic!("Expected UrlOutsideRealm error, got Ok"),
+        }
+    }
+
+    #[test]
     fn realm_check_rejects_different_repo_same_host() {
         let res = verify_remote_url_in_path_realm(
             "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
@@ -233,7 +288,13 @@ mod tests {
             "http/127.0.0.1/8080/acme/tool/releases/v1.0.0/asfaload.index.json",
             "http://127.0.0.1:8080",
         );
-        assert!(matches!(res, Err(ClientLibError::UrlOutsideRealm { .. })));
+        match res {
+            Err(ClientLibError::UrlOutsideRealm { project_id, .. }) => {
+                assert_eq!(project_id, None);
+            }
+            Err(e) => panic!("Expected UrlOutsideRealm, got {e}"),
+            Ok(_) => panic!("Expected UrlOutsideRealm error, got Ok"),
+        }
     }
 
     #[test]

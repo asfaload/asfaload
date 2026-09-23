@@ -118,14 +118,15 @@ pub async fn verify_signers_chain(
 
 /// Assert that the trust anchor's fetched URL falls within the download's realm.
 fn assert_anchor_within_realm(artifact_path: &str, retrieval_url: &str) -> AsfaloadLibResult<()> {
-    let result = verify_remote_url_in_path_realm(artifact_path, retrieval_url);
-    match result {
-        Err(ClientLibError::UrlOutsideRealm { path, url }) => {
-            Err(ClientLibError::SignersChainTrustAnchorOutsideRealm {
-                artifact_path: path,
-                anchor_realm: url,
-            })
-        }
+    match verify_remote_url_in_path_realm(artifact_path, retrieval_url) {
+        Err(ClientLibError::UrlOutsideRealm {
+            path,
+            url,
+            project_id,
+        }) => Err(ClientLibError::SignersChainTrustAnchorOutsideRealm {
+            artifact_path: path,
+            anchor_realm: project_id.unwrap_or(url),
+        }),
         other => other,
     }
 }

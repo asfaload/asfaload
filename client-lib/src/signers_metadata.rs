@@ -49,22 +49,23 @@ pub async fn verify_signers_file_matches_metadata_source(
 
 /// Validates that the url can be used as a source for the path on the backend.
 pub fn verify_remote_url_in_path_realm(path: &str, url: &str) -> AsfaloadLibResult<()> {
-    let reject = |url: String| ClientLibError::UrlOutsideRealm {
+    let reject = |url: String, project_id: Option<String>| ClientLibError::UrlOutsideRealm {
         path: path.to_string(),
-        url: url.to_string(),
+        url,
+        project_id,
     };
 
-    let parsed = url::Url::parse(url).map_err(|_| reject(url.to_string()))?;
+    let parsed = url::Url::parse(url).map_err(|_| reject(url.to_string(), None))?;
     let project_id = ForgeInfo::new(&parsed)
         .map(|info| info.project_id())
-        .map_err(|_| reject(url.to_string()))?;
+        .map_err(|_| reject(url.to_string(), None))?;
 
     // Important to test against a '/'-ending string, to prevent issues with repo names prefix of
     // the one we work with.
     if path == project_id || path.starts_with(&format!("{}/", project_id)) {
         Ok(())
     } else {
-        Err(reject(project_id))
+        Err(reject(url.to_string(), Some(project_id)))
     }
 }
 

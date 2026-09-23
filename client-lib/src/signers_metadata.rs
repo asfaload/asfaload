@@ -179,6 +179,42 @@ mod tests {
         }
     }
 
+    // The files on the backend look fine: local file is identical to remote origin file found in
+    // the metadata. However, the url of that source does not match the path on the backend.
+    #[tokio::test]
+    async fn out_of_realm_source_url_is_rejected() {
+        let mut server = mockito::Server::new_async().await;
+        let source_mock = server
+            .mock("GET", "/attacker/evil/master/signers.json")
+            .with_status(200)
+            .with_body(SOURCE_CONTENT)
+            // The out-of-realm source must never be contacted: rejection has
+            // to happen before any fetch.
+            .expect(0)
+            .create_async()
+            .await;
+        let metadata = metadata_with_source_url(
+            &format!("{}/attacker/evil/master/signers.json", server.url()),
+            SOURCE_CONTENT,
+        );
+
+        let result = super::verify_signers_file_matches_metadata_source(
+            SOURCE_CONTENT.as_bytes(),
+            "https/github.com/443/acme/tool/asfaload.signers/index.json",
+            &metadata,
+        )
+        .await;
+
+        match result {
+            Err(ClientLibError::UrlOutsideRealm { .. }) => {}
+            Err(e) => panic!("Expected UrlOutsideRealm, got: {e:?}"),
+            Ok(_) => panic!("Expected UrlOutsideRealm error, got Ok"),
+        }
+
+        // Proves the served source was never fetched.
+        source_mock.assert_async().await;
+    }
+
     // -- Unit tests for the realm check itself --
 
     #[test]

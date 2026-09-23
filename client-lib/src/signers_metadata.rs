@@ -9,11 +9,16 @@ use forge_url::{ForgeInfo, ForgeTrait};
 /// compared to the SHA-512 of the file's bytes.
 pub async fn verify_signers_file_matches_metadata_source(
     file_content: &[u8],
-    _backend_path: &str,
+    backend_path: &str,
     metadata: &SignersConfigMetadata,
 ) -> AsfaloadLibResult<()> {
     let SignersConfigOrigin::Forge(origin) = metadata.origin();
     let source_url = origin.retrieval_url();
+
+    // Before fetching, validate the remote url against path on disk.
+    // This protects against a compromised backend where an attacker put valid data but coming from
+    // a server not matching the file's path on disk on the backend.
+    verify_remote_url_in_path_realm(backend_path, source_url)?;
 
     let response = reqwest::Client::new()
         .get(source_url)

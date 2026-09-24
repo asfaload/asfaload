@@ -45,6 +45,9 @@ impl ForgeTrait for GitHubRepoInfo {
         let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
 
         let (owner, repo, branch, file_path, raw_url) = match url.host_str() {
+            // Url of the form
+            // "https://github.com/asfaload/repo_for_e2e_tests/blob/master/basic_flow/signers_file_1_asfaload.json"
+            // The url in the browser of a signers file in a repo
             Some("github.com") => {
                 if segments.len() < 5 {
                     return Err(ForgeUrlError::InvalidFormat(
@@ -70,6 +73,10 @@ impl ForgeTrait for GitHubRepoInfo {
                 .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
                 (owner, repo, branch, PathBuf::from(&file_path), raw_url)
             }
+            // Url of the form
+            // "https://raw.githubusercontent.com/asfaload/repo_for_e2e_tests/master/basic_flow/signers_file_1_asfaload.json"
+            // Found in signers files' metadata files (effective retrieval url corresponding to a
+            // browser url's raw content url).
             Some("raw.githubusercontent.com") => {
                 if segments.len() < 4 {
                     return Err(ForgeUrlError::InvalidFormat(

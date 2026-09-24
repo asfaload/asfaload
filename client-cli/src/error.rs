@@ -1,3 +1,4 @@
+use client_lib::ClientLibError;
 use common::AsfaloadHashes;
 use features_lib::SignersConfigMetadata;
 use features_lib::errors::AggregateSignatureError;
@@ -71,6 +72,21 @@ pub enum ClientCliError {
 /// act on.
 pub(crate) fn signers_metadata_parse_error(error: serde_json::Error) -> ClientCliError {
     ClientCliError::BackendDataError(format!("Failed to parse metadata: {error}"))
+}
+
+/// Report digest sources that do not come from the right account on the publishing platform.
+pub(crate) fn index_digest_source_error(error: ClientLibError) -> ClientCliError {
+    match error {
+        ClientLibError::UrlOutsideRealm {
+            path,
+            url,
+            project_id: _project_id,
+        } => ClientCliError::BackendDataError(format!(
+            "Digest source ({}) not in index path realm ({})",
+            url, path
+        )),
+        other => other.into(),
+    }
 }
 
 /// Translate a signers-metadata verification failure into a CLI error.

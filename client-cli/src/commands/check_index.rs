@@ -1,4 +1,4 @@
-use crate::error::{ClientCliError, Result};
+use crate::error::{ClientCliError, Result, index_digest_source_error};
 use client_lib::signers_metadata::verify_remote_url_in_path_realm;
 use common::index_types::AsfaloadIndex;
 use common::index_validation::file_auth::validate_index_hash_files;
@@ -43,7 +43,8 @@ pub async fn handle_check_index_command(
     // backend, and this still seems a reasonable way to implement as the number of sources should
     // be small (often even 1).
     for published_file in &index.published_files {
-        verify_remote_url_in_path_realm(index_path, &published_file.source)?;
+        verify_remote_url_in_path_realm(index_path, &published_file.source)
+            .map_err(index_digest_source_error)?;
     }
 
     // Previous step checked all digest sources are in the realm of the index file's path on the backend.

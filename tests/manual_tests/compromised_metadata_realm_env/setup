@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Manual test environment simulating a compromised backend that rewrote the
+# retrieval_url of the pending signers file metadata to point at a server
+# outside the file's realm.
+#
+# The fake source serves content byte-identical to the pending signers file,
+# so a hash comparison alone accepts the signing. The client must reject the
+# location: the retrieval url host does not match the backend path of the
+# file. The rejection must happen before any fetch: the access log of the
+# fake source then has no request lines.
+#
+# This differs from compromised_metadata_url_env: there the tampered url stays
+# in the realm, and the hash comparison rejects the signing.
+#
+# Start with: ./setup
+# Type 'exit' in the spawned shell to stop all servers and clean up.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+. "$REPO_ROOT/tests/e2e_tests/lib/helpers.sh"
+. "$SCRIPT_DIR/../lib.sh"
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [-h]
+
+Set up a manual test environment with a compromised backend: the retrieval_url
+in the pending signers file metadata points at a server outside the file's
+realm. That server serves content identical to the pending signers file.
+
+Type 'exit' in the spawned shell to stop all servers and clean up.
+
+OPTIONS
+  -h, --help          Show this help message and exit
+
+ENVIRONMENT SET IN SPAWNED SHELL
+  ASFALOAD_BACKEND_URL   Backend REST API address
+  ASFALOAD_PASSWORD_FILE Path to file containing the key password
+  KEY_0 KEY_1 KEY_2      Paths to fixture private keys
+  FILE_SERVER_URL        Genuine file server address
+  EVIL_SERVER_URL        Attacker file server address
+  EVIL_SERVER_LOG        Access log of the attacker file server
+  PENDING_SIGNERS_PATH   Mirror-relative path of the pending signers file
+  METADATA_FILE          Backend's pending metadata file (tampered)
+  METADATA_ORIGINAL      Backup of the genuine metadata (restore source)
+  PATH                   target/debug prepended (asfaload-cli available directly)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf '%sUnknown argument: %s%s\n' "$RED" "$1" "$RESET" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+mt_init_workspace
+mt_build_binaries
+mt_start_file_server
+mt_start_backend
+
+# --- Start the attacker's file server ---
+# python3 http.server writes an access log, so the spawned shell can check
+# that the client never fetched the fake source.
+EVIL_FS_ROOT="$WORK_DIR/evil-fs"
+mkdir -p "$EVIL_FS_ROOT/project/$HIDDEN_SIGNERS_DIR"
+EVIL_SERVER_PID=""
+EVIL_SERVER_LOG="$WORK_DIR/evil-file-server.log"
+# Port 0 lets the OS pick a free port; the startup banner reports it.
+python3 -u -m http.server --bind 127.0.0.1 0 --directory "$EVIL_FS_ROOT" \
+    > "$EVIL_SERVER_LOG" 2>&1 &
+EVIL_SERVER_PID=$!
+
+printf '%sStarting attacker file server...%s ' "$DIM" "$RESET"
+EVIL_SERVER_PORT=""
+for _i in $(seq 1 30); do
+    EVIL_SERVER_PORT=$(grep -oP 'Serving HTTP on [0-9.]+ port \K[0-9]+' "$EVIL_SERVER_LOG" 2>/dev/null || true)
+    [[ -n "$EVIL_SERVER_PORT" ]] && break
+    if ! kill -0 "$EVIL_SERVER_PID" 2>/dev/null; then
+        printf '%s✗%s\n' "$RED" "$RESET"
+        printf '%sAttacker file server process died unexpectedly.%s\n' "$RED" "$RESET" >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+if [[ -z "$EVIL_SERVER_PORT" ]]; then
+    printf '%s✗%s\n' "$RED" "$RESET"
+    printf '%sAttacker file server did not report a port within 6 seconds.%s\n' "$RED" "$RESET" >&2
+    exit 1
+fi
+
+EVIL_SERVER_URL="http://localhost:${EVIL_SERVER_PORT}"
+printf '%s✓ %s%s\n' "$GREEN" "$EVIL_SERVER_URL" "$RESET"
+
+# The cleanup trap of mt_init_workspace kills the backend and the genuine file
+# server only. Replace it with a trap that also stops the attacker server.
+mt_realm_cleanup() {
+    [[ -n "$EVIL_SERVER_PID" ]] && kill "$EVIL_SERVER_PID" 2>/dev/null || true
+    mt_cleanup
+}
+trap mt_realm_cleanup EXIT
+
+# --- Generate the genuine signers file and mirror it on the attacker server ---
+
+printf '%sGenerating signers files...%s ' "$DIM" "$RESET"
+
+mkdir -p "$PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
+GENUINE_NAME="signers_file_1${_SIGNERS_SUFFIX}.json"
+GENUINE="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
+
+"$CLI" new-signers-file \
+    --artifact-signers-file "${KEY_0}.pub" \
+    --artifact-signers-file "${KEY_1}.pub" \
+    --artifact-signers-file "${KEY_2}.pub" \
+    -A 2 \
+    -o "$GENUINE" \
+    > /dev/null 2>&1
+
+# The attacker mirrors the genuine signers file on their own server: the
+# content is identical, only the location differs.
+cp "$GENUINE" "$EVIL_FS_ROOT/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Register the genuine signers file (creates the pending signers file) ---
+
+"$CLI" register-repo \
+    --secret-key "$KEY_0" \
+    -u "$BACKEND_URL" \
+    "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME" \
+    --json > /dev/null
+
+# --- Tamper: rewrite the retrieval_url in the pending metadata ---
+# The backend's git repo working tree mirrors its project directory
+# (scheme/host/port/project, see the backend's path normalisation).
+
+BACKEND_PROJECT_DIR="$BACKEND_REPO/http/localhost/${FILE_SERVER_PORT}/project"
+METADATA_FILE="$BACKEND_PROJECT_DIR/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX"
+METADATA_ORIGINAL="$WORK_DIR/metadata_original.json"
+PENDING_SIGNERS_PATH="http/localhost/${FILE_SERVER_PORT}/project/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+
+cp "$METADATA_FILE" "$METADATA_ORIGINAL"
+TAMPERED_URL="$EVIL_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
+
+jq --arg url "$TAMPERED_URL" \
+    '.data.Forge.verified_content.retrieval_url = $url' \
+    "$METADATA_ORIGINAL" > "$METADATA_FILE"
+
+CURRENT_URL=$(jq -r '.data.Forge.verified_content.retrieval_url' "$METADATA_FILE")
+if [[ "$CURRENT_URL" != "$TAMPERED_URL" ]]; then
+    printf '%sTampering failed: retrieval_url unchanged.%s\n' "$RED" "$RESET" >&2
+    exit 1
+fi
+
+MT_RC_EXTRA_EXPORTS+=(
+    "METADATA_FILE=$METADATA_FILE"
+    "METADATA_ORIGINAL=$METADATA_ORIGINAL"
+    "EVIL_SERVER_URL=$EVIL_SERVER_URL"
+    "EVIL_SERVER_LOG=$EVIL_SERVER_LOG"
+    "PENDING_SIGNERS_PATH=$PENDING_SIGNERS_PATH"
+)
+
+# --- Welcome message ---
+
+# Forge project the tampered url resolves to: origin plus the first two path
+# segments of the served route.
+EVIL_REALM="http/localhost/${EVIL_SERVER_PORT}/project/${HIDDEN_SIGNERS_DIR}"
+
+printf '\n'
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$BOLD" "$RESET"
+printf '%s  Compromised backend: metadata points outside the file realm%s\n' "$GREEN" "$RESET"
+printf '\n'
+printf '  %-20s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
+printf '  %-20s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
+printf '  %-20s %s\n' "EVIL_SERVER_URL" "$EVIL_SERVER_URL"
+printf '  %-20s %s\n' "EVIL_SERVER_LOG" "$EVIL_SERVER_LOG"
+printf '  %-20s %s\n' "METADATA_FILE" "$METADATA_FILE"
+printf '  %-20s %s\n' "METADATA_ORIGINAL" "$METADATA_ORIGINAL"
+printf '\n'
+printf '  The pending signers file content is genuine, and the retrieval_url\n'
+printf '  in its metadata now points at %s,\n' "$EVIL_SERVER_URL"
+printf '  which serves the same content. A hash comparison alone accepts the\n'
+printf '  signing. The client must reject the location: the url is outside\n'
+printf '  the realm of the backend path of the file.\n'
+printf '\n'
+printf '%s  Try:%s\n' "$BOLD" "$RESET"
+printf '    asfaload-cli list-pending -K $KEY_0\n'
+printf '    asfaload-cli check-pending-signers $PENDING_SIGNERS_PATH \\\n'
+printf '      -u $ASFALOAD_BACKEND_URL\n'
+printf '    asfaload-cli sign-pending -K $KEY_0\n'
+printf '\n'
+printf '%s  Expected:%s check-pending-signers and sign-pending are rejected\n' "$BOLD" "$RESET"
+printf '  with an error of this shape:\n'
+printf '    The pending signers file on the backend points at url\n'
+printf '    %s,\n' "$TAMPERED_URL"
+printf '    which resolves to the project %s.\n' "$EVIL_REALM"
+printf '    That project does not match the file'"'"'s backend path\n'
+printf '    %s.\n' "$PENDING_SIGNERS_PATH"
+printf '  The fake source is never fetched: after the rejected commands, the\n'
+printf '  attacker server log $EVIL_SERVER_LOG has no request lines. Watch it with:\n'
+printf '    tail -f $EVIL_SERVER_LOG\n'
+printf '\n'
+printf '%s  Restore the genuine metadata to sign successfully:%s\n' "$BOLD" "$RESET"
+printf '    cp $METADATA_ORIGINAL $METADATA_FILE\n'
+printf '\n'
+printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"
+
+mt_spawn_shell

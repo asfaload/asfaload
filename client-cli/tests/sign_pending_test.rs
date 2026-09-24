@@ -196,20 +196,32 @@ fn sign_pending_explicit_path_no_bishop_art() {
 // their metadata before the client signs them.
 // ---------------------------------------------------------------------------
 
-const SIGNERS_PATH: &str = "acme/tool/asfaload.signers.pending/index.json";
+const SIGNERS_REL_PATH: &str = "acme/tool/asfaload.signers.pending/index.json";
+
+// Build on disk path, which includes scheme, host, port and path.
+fn signers_path(file_server: &mockito::Server) -> String {
+    let parsed = url::Url::parse(&file_server.url()).unwrap();
+    format!(
+        "{}/{}",
+        forge_url::path_prefix_from_url(&parsed).unwrap(),
+        SIGNERS_REL_PATH
+    )
+}
 
 #[test]
 fn sign_pending_rejects_signers_file_not_matching_metadata() {
     let source_content = br#"{"version":1}"#;
     let pending_content = br#"{"version":2}"#;
-    let metadata_path = common::fs::names::metadata_path_for(SIGNERS_PATH)
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
 
     // Use distinct mocks for the user's file server and the Asfaload backend.
     let mut file_server = mockito::Server::new();
     let mut backend = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+
+    let metadata_path = common::fs::names::metadata_path_for(&signers_path)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
 
     let source_path = "/acme/tool/asfaload.signers/index.json";
     // Mock file server where users publish their files
@@ -227,12 +239,12 @@ fn sign_pending_rejects_signers_file_not_matching_metadata() {
     let _files = backend
         .mock(
             "GET",
-            format!("/v1/files-to-sign/{}", SIGNERS_PATH).as_str(),
+            format!("/v1/files-to-sign/{}", signers_path).as_str(),
         )
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(files_response_json(&[
-            (SIGNERS_PATH, pending_content.as_slice()),
+            (signers_path.as_str(), pending_content.as_slice()),
             (metadata_path.as_str(), metadata.as_bytes()),
         ]))
         .create();
@@ -252,7 +264,7 @@ fn sign_pending_rejects_signers_file_not_matching_metadata() {
         .arg(fixture_key_path())
         .arg("-u")
         .arg(backend.url())
-        .arg(SIGNERS_PATH)
+        .arg(&signers_path)
         .arg("--digest")
         .arg(sha512_digest_str(pending_content))
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
@@ -267,14 +279,16 @@ fn sign_pending_rejects_signers_file_not_matching_metadata() {
 #[test]
 fn sign_pending_accepts_signers_file_matching_metadata() {
     let signers_content = br#"{"version":1}"#;
-    let metadata_path = common::fs::names::metadata_path_for(SIGNERS_PATH)
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
 
     // Use distinct mocks for the user's file server and the Asfaload backend.
     let mut file_server = mockito::Server::new();
     let mut backend = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+
+    let metadata_path = common::fs::names::metadata_path_for(&signers_path)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
 
     let source_path = "/acme/tool/asfaload.signers/index.json";
     // Mock file server where users publish their files
@@ -292,12 +306,12 @@ fn sign_pending_accepts_signers_file_matching_metadata() {
     let _files = backend
         .mock(
             "GET",
-            format!("/v1/files-to-sign/{}", SIGNERS_PATH).as_str(),
+            format!("/v1/files-to-sign/{}", signers_path).as_str(),
         )
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(files_response_json(&[
-            (SIGNERS_PATH, signers_content.as_slice()),
+            (signers_path.as_str(), signers_content.as_slice()),
             (metadata_path.as_str(), metadata.as_bytes()),
         ]))
         .create();
@@ -315,7 +329,7 @@ fn sign_pending_accepts_signers_file_matching_metadata() {
         .arg(fixture_key_path())
         .arg("-u")
         .arg(backend.url())
-        .arg(SIGNERS_PATH)
+        .arg(&signers_path)
         .arg("--digest")
         .arg(sha512_digest_str(signers_content))
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);

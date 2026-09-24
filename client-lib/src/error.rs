@@ -131,6 +131,34 @@ pub enum ClientLibError {
 
     #[error("Signers chain transition is invalid")]
     SignersChainTransitionInvalid,
+
+    #[error(
+        "Metadata source '{url}' {}",
+        url_outside_realm_detail(path, project_id)
+    )]
+    UrlOutsideRealm {
+        path: String,
+        url: String,
+        project_id: Option<String>,
+    },
+}
+
+/// Detail sentence for `UrlOutsideRealm`: name the forge project the URL
+/// resolved to when it could be resolved, state the parse failure when it
+/// could not.
+fn url_outside_realm_detail(path: &str, project_id: &Option<String>) -> String {
+    match project_id {
+        Some(project) => {
+            format!(
+                "resolves to the project '{project}', which is outside the realm of backend path '{path}'"
+            )
+        }
+        None => {
+            format!(
+                "cannot be resolved to a forge project, which is required for the source of backend path '{path}'"
+            )
+        }
+    }
 }
 
 pub type AsfaloadLibResult<T> = std::result::Result<T, ClientLibError>;

@@ -5,11 +5,22 @@ use predicates::prelude::*;
 use serde_json::Value;
 use sha2::{Digest, Sha512};
 
-const SIGNERS_PATH: &str = "acme/tool/asfaload.signers.pending/index.json";
+const SIGNERS_REL_PATH: &str = "acme/tool/asfaload.signers.pending/index.json";
+
 const SOURCE_CONTENT: &[u8] = br#"{"version":1}"#;
 const PENDING_CONTENT: &[u8] = br#"{"version":2}"#;
 
 const SOURCE_PATH: &str = "/acme/tool/asfaload.signers/index.json";
+
+// Build backend path, which include scheme, host and port as prefix.
+fn signers_path(file_server: &mockito::Server) -> String {
+    let parsed = url::Url::parse(&file_server.url()).unwrap();
+    format!(
+        "{}/{}",
+        forge_url::path_prefix_from_url(&parsed).unwrap(),
+        SIGNERS_REL_PATH
+    )
+}
 
 fn signers_metadata_json(source_url: &str) -> String {
     format!(
@@ -28,13 +39,14 @@ fn mock_backend_files(
     backend: &mut mockito::Server,
     signers_content: &[u8],
     source_url: &str,
+    signers_path: &str,
 ) -> (mockito::Mock, mockito::Mock) {
-    let metadata_path = metadata_path_for(SIGNERS_PATH)
+    let metadata_path = metadata_path_for(signers_path)
         .unwrap()
         .to_string_lossy()
         .to_string();
     let signers = backend
-        .mock("GET", format!("/v1/files/{SIGNERS_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{signers_path}").as_str())
         .with_status(200)
         .with_body(signers_content)
         .create();
@@ -56,10 +68,10 @@ fn mock_source(file_server: &mut mockito::Server, content: &[u8]) -> mockito::Mo
         .create()
 }
 
-fn check_pending_cmd(backend: &mockito::Server) -> assert_cmd::Command {
+fn check_pending_cmd(backend: &mockito::Server, signers_path: &str) -> assert_cmd::Command {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("check-pending-signers")
-        .arg(SIGNERS_PATH)
+        .arg(signers_path)
         .arg("-u")
         .arg(backend.url());
     cmd
@@ -79,11 +91,12 @@ fn check_pending_signers_help_lists_flags() {
 fn check_pending_signers_matching_source_succeeds() {
     let mut backend = mockito::Server::new();
     let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &source_url);
+    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &source_url, &signers_path);
     let _source = mock_source(&mut file_server, SOURCE_CONTENT);
 
-    check_pending_cmd(&backend)
+    check_pending_cmd(&backend, &signers_path)
         .assert()
         .success()
         .stdout(predicate::str::contains("matches the content published at"))
@@ -99,14 +112,18 @@ fn check_pending_signers_matching_source_succeeds() {
 fn check_pending_signers_json_output() {
     let mut backend = mockito::Server::new();
     let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &source_url);
+    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &source_url, &signers_path);
     let _source = mock_source(&mut file_server, SOURCE_CONTENT);
 
-    let output = check_pending_cmd(&backend).arg("--json").assert().success();
+    let output = check_pending_cmd(&backend, &signers_path)
+        .arg("--json")
+        .assert()
+        .success();
     let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     let v: Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(v["signers_path"], SIGNERS_PATH);
+    assert_eq!(v["signers_path"], signers_path);
     assert_eq!(v["retrieval_url"], source_url);
     assert_eq!(v["hash"], sha512_digest_str(SOURCE_CONTENT));
     let bishop_art = v["bishop_art"]
@@ -126,11 +143,12 @@ fn check_pending_signers_json_output() {
 fn check_pending_signers_mismatch_fails_naming_source() {
     let mut backend = mockito::Server::new();
     let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, PENDING_CONTENT, &source_url);
+    let _mocks = mock_backend_files(&mut backend, PENDING_CONTENT, &source_url, &signers_path);
     let _source = mock_source(&mut file_server, SOURCE_CONTENT);
 
-    check_pending_cmd(&backend)
+    check_pending_cmd(&backend, &signers_path)
         .assert()
         .failure()
         .stderr(predicate::str::contains("Hash mismatch"))
@@ -141,11 +159,15 @@ fn check_pending_signers_mismatch_fails_naming_source() {
 fn check_pending_signers_mismatch_json_error() {
     let mut backend = mockito::Server::new();
     let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, PENDING_CONTENT, &source_url);
+    let _mocks = mock_backend_files(&mut backend, PENDING_CONTENT, &source_url, &signers_path);
     let _source = mock_source(&mut file_server, SOURCE_CONTENT);
 
-    let output = check_pending_cmd(&backend).arg("--json").assert().failure();
+    let output = check_pending_cmd(&backend, &signers_path)
+        .arg("--json")
+        .assert()
+        .failure();
     let stderr = String::from_utf8(output.get_output().stderr.clone()).unwrap();
     let v: Value = serde_json::from_str(stderr.trim()).unwrap();
     assert!(
@@ -155,6 +177,78 @@ fn check_pending_signers_mismatch_json_error() {
             .contains(&source_url),
         "expected error naming the retrieval url, got: {stderr}"
     );
+}
+
+// Metadata JSON is parsed by the command itself, before the retrieval URL is
+// contacted: malformed metadata must fail the command on parsing alone. The
+// file server exists only to derive the mirror path prefix and has no routes.
+#[test]
+fn check_pending_signers_fails_on_malformed_metadata() {
+    let mut backend = mockito::Server::new();
+    let file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+    let metadata_path = metadata_path_for(&signers_path)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let _signers = backend
+        .mock("GET", format!("/v1/files/{signers_path}").as_str())
+        .with_status(200)
+        .with_body(SOURCE_CONTENT)
+        .create();
+    let _metadata = backend
+        .mock("GET", format!("/v1/files/{metadata_path}").as_str())
+        .with_status(200)
+        .with_body("not json")
+        .create();
+
+    check_pending_cmd(&backend, &signers_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to parse metadata"));
+}
+
+// The metadata's retrieval_url serves content identical to the pending file,
+// but sits outside the file's realm: a hash comparison alone accepts, so the
+// rejection must come from the location check. It must also happen before
+// any fetch of the out-of-realm source, and name the url, the project it
+// resolves to and the backend path, so the user can compare them.
+#[test]
+fn check_pending_signers_rejects_source_outside_realm() {
+    let mut backend = mockito::Server::new();
+    let file_server = mockito::Server::new();
+    let mut attacker_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+    let attacker_url = format!("{}{SOURCE_PATH}", attacker_server.url());
+    // The forge project the attacker url resolves to: its origin plus the
+    // owner/repo segments of the source route.
+    let attacker_project = {
+        let parsed = url::Url::parse(&attacker_server.url()).unwrap();
+        format!(
+            "{}/acme/tool",
+            forge_url::path_prefix_from_url(&parsed).unwrap()
+        )
+    };
+    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &attacker_url, &signers_path);
+    let fake_source = attacker_server
+        .mock("GET", SOURCE_PATH)
+        .with_status(200)
+        .with_body(SOURCE_CONTENT)
+        .expect(0)
+        .create();
+
+    check_pending_cmd(&backend, &signers_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "does not match the file's backend path",
+        ))
+        .stderr(predicate::str::contains(&attacker_url))
+        .stderr(predicate::str::contains(&attacker_project))
+        .stderr(predicate::str::contains(&signers_path))
+        .stderr(predicate::str::contains("tampered"));
+
+    fake_source.assert();
 }
 
 // A path that is not a pending signers file must be rejected before any
@@ -183,13 +277,15 @@ fn check_pending_signers_rejects_non_pending_path() {
 #[test]
 fn check_pending_signers_missing_signers_file_fails() {
     let mut backend = mockito::Server::new();
+    let file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
     let _signers = backend
-        .mock("GET", format!("/v1/files/{SIGNERS_PATH}").as_str())
+        .mock("GET", format!("/v1/files/{signers_path}").as_str())
         .with_status(404)
         .with_body("File not found")
         .create();
 
-    check_pending_cmd(&backend)
+    check_pending_cmd(&backend, &signers_path)
         .assert()
         .failure()
         .stderr(predicate::str::contains("404"));

@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Manual test environment mirroring the e2e basic_flow scenario, but with
+# only a backend running (no file server): everything is fetched from the
+# public e2e GitHub test repo (asfaload/repo_for_e2e_tests).
+#
+# State when the shell opens:
+#   - The signers file published in the GitHub repo (keys key_0, key_1,
+#     key_2, threshold 2) is registered AND activated.
+#   - Release v0.1 is registered and its index is signed to completion
+#     (artifact downloadable).
+#   - Release v0.2 is registered but its index has no signature yet
+#     (fully pending).
+#
+# Requires internet access: the backend fetches release info and signers
+# files from GitHub, and artifact downloads hit the GitHub release assets.
+#
+# Start with: ./setup
+# Type 'exit' in the spawned shell to stop the backend and clean up.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+. "$REPO_ROOT/tests/e2e_tests/lib/helpers.sh"
+. "$SCRIPT_DIR/../lib.sh"
+
+# Reuse the content published for the automated e2e basic_flow test: point
+# the URL builders (signers_file, release_url, release_index, artifact_url)
+# at the basic_flow directory of the e2e GitHub repo.
+TEST_NAME="basic_flow"
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [-h]
+
+Set up a backend-only manual test environment mirroring the e2e basic_flow
+scenario: the signers file hosted on GitHub is activated, release v0.1 is
+registered and fully signed, and release v0.2 is registered but unsigned.
+
+Requires internet access (GitHub API, release assets, raw content).
+
+Type 'exit' in the spawned shell to stop the backend and clean up.
+
+OPTIONS
+  -h, --help          Show this help message and exit
+
+ENVIRONMENT SET IN SPAWNED SHELL
+  ASFALOAD_BACKEND_URL   Backend REST API address
+  ASFALOAD_PASSWORD_FILE Path to file containing the key password
+  KEY_0 KEY_1 KEY_2      Paths to fixture private keys
+  BACKEND_REPO           Backend git repo working tree (mirror content)
+  RELEASE_URL_V01/V02    GitHub release URLs for v0.1 and v0.2
+  RELEASE_INDEX_V01/V02  Mirror-relative index paths for v0.1 and v0.2
+  ARTIFACT_URL_V01/V02   GitHub download URLs for the release artifacts
+  PATH                   target/debug prepended (asfaload-cli available directly)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf '%sUnknown argument: %s%s\n' "$RED" "$1" "$RESET" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+mt_init_workspace
+mt_build_binaries
+mt_start_backend
+
+# Locate a pending file by mirror-path substring and print "PATH --digest D",
+# ready to append to a sign-pending invocation.
+mt_pending_sign_args() {
+    local pattern="$1" key="$2"
+    local json path digest
+    json=$("$CLI" list-pending --secret-key "$key" -u "$BACKEND_URL" --json)
+    path=$(echo "$json" | jq -r \
+        ".pending_files[] | select(.path | contains(\"$pattern\")) | .path" \
+        | head -1)
+    digest=$(echo "$json" | jq -r \
+        ".pending_files[] | select(.path | contains(\"$pattern\")) | .digest" \
+        | head -1)
+    if [[ -z "$path" || -z "$digest" ]]; then
+        printf '%sSetup failed: no pending file matching %s%s\n' "$RED" "$pattern" "$RESET" >&2
+        exit 1
+    fi
+    printf '%s --digest %s' "$path" "$digest"
+}
+
+BACKEND_PROJECT_DIR="$BACKEND_REPO/https/github.com/443/${E2E_REPO}"
+
+# --- Activate the signers file hosted on GitHub ---
+
+printf '%sActivating signers file (from GitHub)...%s ' "$DIM" "$RESET"
+
+"$CLI" register-repo \
+    --secret-key "$KEY_0" \
+    -u "$BACKEND_URL" \
+    "$(signers_file 1)" \
+    --json > /dev/null
+
+# All three signers must sign the initial signers file to activate it
+for _KEY in "$KEY_0" "$KEY_1" "$KEY_2"; do
+    _ARGS=$(mt_pending_sign_args "$PENDING_SIGNERS_DIR" "$_KEY")
+    "$CLI" sign-pending \
+        --secret-key "$_KEY" \
+        -u "$BACKEND_URL" \
+        $_ARGS \
+        --json > /dev/null
+done
+unset _KEY _ARGS
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Register release v0.1 and sign its index to completion ---
+
+printf '%sRegistering and signing release v0.1...%s ' "$DIM" "$RESET"
+
+"$CLI" register-assets \
+    --secret-key "$KEY_2" \
+    -u "$BACKEND_URL" \
+    --github-release-url "$(release_url 0.1)" \
+    --json > /dev/null
+
+for _KEY in "$KEY_0" "$KEY_1"; do
+    _ARGS=$(mt_pending_sign_args "$(release_index 0.1)" "$_KEY")
+    "$CLI" sign-pending \
+        --secret-key "$_KEY" \
+        -u "$BACKEND_URL" \
+        $_ARGS \
+        --json > /dev/null
+done
+unset _KEY _ARGS
+
+V01_INDEX_FILE="$BACKEND_PROJECT_DIR/releases/tag/v0.1/$INDEX_FILE"
+if [[ ! -f "$V01_INDEX_FILE.signatures.json" || -f "$V01_INDEX_FILE.signatures.json.pending" ]]; then
+    printf '%sSetup failed: v0.1 index is not active on the backend.%s\n' "$RED" "$RESET" >&2
+    exit 1
+fi
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Register release v0.2, left fully unsigned ---
+
+printf '%sRegistering release v0.2 (unsigned)...%s ' "$DIM" "$RESET"
+
+"$CLI" register-assets \
+    --secret-key "$KEY_2" \
+    -u "$BACKEND_URL" \
+    --github-release-url "$(release_url 0.2)" \
+    --json > /dev/null
+
+V02_INDEX_FILE="$BACKEND_PROJECT_DIR/releases/tag/v0.2/$INDEX_FILE"
+if [[ ! -f "$V02_INDEX_FILE.signatures.json.pending" || -f "$V02_INDEX_FILE.signatures.json" ]]; then
+    printf '%sSetup failed: v0.2 index is not pending on the backend.%s\n' "$RED" "$RESET" >&2
+    exit 1
+fi
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Exports for the spawned shell ---
+
+MT_RC_EXTRA_EXPORTS+=(
+    "BACKEND_REPO=$BACKEND_REPO"
+    "RELEASE_URL_V01=$(release_url 0.1)"
+    "RELEASE_URL_V02=$(release_url 0.2)"
+    "RELEASE_INDEX_V01=$(release_index 0.1)"
+    "RELEASE_INDEX_V02=$(release_index 0.2)"
+    "RELEASE_INDEX_V01_FILE=$V01_INDEX_FILE"
+    "RELEASE_INDEX_V02_FILE=$V02_INDEX_FILE"
+    "ARTIFACT_URL_V01=$(artifact_url 0.1)"
+    "ARTIFACT_URL_V02=$(artifact_url 0.2)"
+)
+
+# --- Welcome message ---
+
+printf '\n'
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$BOLD" "$RESET"
+printf '%s  Manual test environment: GitHub releases (backend only)%s\n' "$GREEN" "$RESET"
+printf '\n'
+printf '  %-22s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
+printf '  %-22s %s\n' "ASFALOAD_PASSWORD_FILE" "$PASSWORD_FILE"
+printf '  %-22s %s\n' "BACKEND_REPO" "$BACKEND_REPO"
+printf '  %-22s %s\n' "KEY_0 KEY_1 KEY_2" "fixture keys"
+printf '\n'
+printf '  The signers file from the e2e GitHub repo (key_0, key_1, key_2;\n'
+printf '  threshold 2) is active. Release v0.1 is registered and fully\n'
+printf '  signed. Release v0.2 is registered but has no signature yet.\n'
+printf '\n'
+printf '%s  Try:%s\n' "$BOLD" "$RESET"
+printf '    asfaload-cli list-pending -K $KEY_0\n'
+printf '    asfaload-cli signature-status $RELEASE_INDEX_V02\n'
+printf '    asfaload-cli download -o /tmp/artifact.bin $ARTIFACT_URL_V01\n'
+printf '\n'
+printf '%s  Expected:%s the v0.1 download succeeds (index complete), the v0.2\n' "$BOLD" "$RESET"
+printf '  download fails (unsigned), and list-pending shows the v0.2 index.\n'
+printf '  Sign the v0.2 index with two keys to activate it:\n'
+printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_0 --json | \\\n'
+printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
+printf '    asfaload-cli sign-pending -K $KEY_0 $_ARGS\n'
+printf '\n'
+printf '%s  Type '"'"'exit'"'"' to stop the backend and clean up.%s\n' "$DIM" "$RESET"
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"
+
+mt_spawn_shell

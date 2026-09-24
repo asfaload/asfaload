@@ -131,7 +131,9 @@ mt_spawn_shell() {
         printf 'export KEY_0="%s"\n' "$KEY_0"
         printf 'export KEY_1="%s"\n' "$KEY_1"
         printf 'export KEY_2="%s"\n' "$KEY_2"
-        printf 'export FILE_SERVER_URL="%s"\n' "$FILE_SERVER_URL"
+        if [[ -n "${FILE_SERVER_URL:-}" ]]; then
+            printf 'export FILE_SERVER_URL="%s"\n' "$FILE_SERVER_URL"
+        fi
         printf 'export PATH="%s:$PATH"\n' "$REPO_ROOT/target/debug"
         if [[ ${#MT_RC_EXTRA_EXPORTS[@]} -gt 0 ]]; then
             printf '\n# Scenario-specific exports\n'

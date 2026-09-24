@@ -15,12 +15,13 @@ pub struct GitHubRepoInfo {
 }
 
 #[cfg(not(feature = "test-utils"))]
-pub const GITHUB_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
+pub const GITHUB_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com", "api.github.com"];
 
 #[cfg(feature = "test-utils")]
 pub const GITHUB_HOSTS: &[&str] = &[
     "github.com",
     "raw.githubusercontent.com",
+    "api.github.com",
     "localhost",
     "127.0.0.1",
 ];
@@ -83,6 +84,33 @@ impl ForgeTrait for GitHubRepoInfo {
                     .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
                 (owner, repo, branch, PathBuf::from(&file_path), raw_url)
             }
+            // Url of the form
+            // "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244"
+            // As found in index files built from Github releases.
+            Some("api.github.com") => {
+                if segments.len() < 5 {
+                    return Err(ForgeUrlError::InvalidFormat(
+                        "URL must have at least 5 path segments".to_string(),
+                    ));
+                }
+                if segments[0] != "repos" {
+                    return Err(ForgeUrlError::InvalidFormat(
+                        "GitHub api URL must start with /repos/".to_string(),
+                    ));
+                }
+                if segments[3] != "releases" {
+                    return Err(ForgeUrlError::InvalidFormat(
+                        "GitHub api URL exepected to include /releases/".to_string(),
+                    ));
+                }
+                let owner = segments[1].to_string();
+                let repo = segments[2].to_string();
+                let branch = segments[4].to_string();
+                let file_path = segments[5..].join("/");
+                let raw_url = url::Url::parse(url.as_str())
+                    .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
+                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
+            }
             #[cfg(feature = "test-utils")]
             Some("localhost") | Some("127.0.0.1") => {
                 if segments.len() < 4 {
@@ -116,7 +144,10 @@ impl ForgeTrait for GitHubRepoInfo {
         // raw.githubusercontent.com is GitHub's content host, but the project's
         // identity is the github.com repo. Canonicalise the prefix so blob and
         // raw URLs for the same repo share one project_id.
-        let path_prefix = if url.host_str() == Some("raw.githubusercontent.com") {
+        let host_str = url.host_str();
+        let path_prefix = if host_str == Some("raw.githubusercontent.com")
+            || host_str == Some("api.github.com")
+        {
             "https/github.com/443".to_string()
         } else {
             path_prefix_from_url(url)?

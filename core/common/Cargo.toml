@@ -14,7 +14,7 @@ thiserror = "2.0.17"
 anyhow = "1.0.99"
 tempfile = "3.21.0"
 constants = { path = "../constants/" }
-ed25519-dalek = "2.1"
+ed25519-dalek = "3.0"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 tokio = { version = "1", features = ["time"] }
 url = "2.5"

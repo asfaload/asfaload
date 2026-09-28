@@ -3,6 +3,7 @@ use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseInfos;
+use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use forge_url::path_prefix_from_url;
 use octocrab::models::repos::Release;
@@ -203,6 +204,7 @@ impl<C: GithubClientTrait> GithubReleaseAdder<C> {
                         // For a github release, the source is the url to get from the GH rest-api
                         // to retrieve the release info, incl. assets and their digest.
                         source: release.url.to_string(),
+                        source_format: ChecksumSourceFormat::GithubRelease,
                         hash: hash.to_string(),
                     })
                 });

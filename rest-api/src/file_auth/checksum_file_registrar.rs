@@ -1,5 +1,6 @@
 use crate::constants::{INDEX_FILE, MAX_CHECKSUM_FILE_SIZE, MAX_PARALLEL_CSUMS};
 use common::checksums_parser::parse_checksums;
+use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum};
 use futures::stream::{self, StreamExt};
 use rest_api_types::errors::ApiError;
@@ -79,6 +80,7 @@ impl ChecksumFileRegistrar {
                             file_name: c.file_name,
                             algo: c.algo,
                             source: url.to_string(),
+                            source_format: ChecksumSourceFormat::ShaSum,
                             hash: c.hash,
                         })
                         .collect())

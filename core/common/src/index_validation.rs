@@ -35,7 +35,7 @@ pub mod file_auth {
     // Validates that all digests present in the AsfaloadIndex can be found in the digests passed.
     // It does not ensure that all digests found in sources are present in the index.
     // The key of the digests HashMap is the url where the digests file can be found.
-    pub async fn validate_index_against_digests(
+    pub fn validate_index_against_digests(
         index: AsfaloadIndex,
         digests: HashMap<String, Vec<ParsedChecksum>>,
     ) -> Result<(), IndexValidationError> {
@@ -93,7 +93,7 @@ pub mod file_auth {
                 entry.insert(parsed);
             }
         }
-        validate_index_against_digests(index, cached_checksums).await
+        validate_index_against_digests(index, cached_checksums)
     }
 }
 
@@ -173,7 +173,7 @@ mod tests {
             vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         )]);
 
-        validate_index_against_digests(index, digests).await?;
+        validate_index_against_digests(index, digests)?;
         Ok(())
     }
 
@@ -190,7 +190,7 @@ mod tests {
             vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_B)],
         )]);
 
-        match validate_index_against_digests(index, digests).await {
+        match validate_index_against_digests(index, digests) {
             Err(IndexValidationError::DigestMismatch {
                 in_index,
                 in_source,
@@ -219,7 +219,7 @@ mod tests {
             vec![parsed("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         )]);
 
-        match validate_index_against_digests(index, digests).await {
+        match validate_index_against_digests(index, digests) {
             Err(IndexValidationError::InvalidSource(msg)) => {
                 assert!(
                     msg.contains(URL_A),
@@ -246,7 +246,7 @@ mod tests {
             vec![parsed("other.bin", HashAlgorithm::Sha256, SHA256_A)],
         )]);
 
-        match validate_index_against_digests(index, digests).await {
+        match validate_index_against_digests(index, digests) {
             Err(IndexValidationError::InvalidSource(msg)) => {
                 assert!(
                     msg.contains("Found 0 checksums"),
@@ -277,7 +277,7 @@ mod tests {
             vec![parsed("app.bin", HashAlgorithm::Sha512, &sha512_hash)],
         )]);
 
-        match validate_index_against_digests(index, digests).await {
+        match validate_index_against_digests(index, digests) {
             Err(IndexValidationError::InvalidSource(msg)) => {
                 assert!(
                     msg.contains("Found 0 checksums"),
@@ -308,7 +308,7 @@ mod tests {
             ],
         )]);
 
-        match validate_index_against_digests(index, digests).await {
+        match validate_index_against_digests(index, digests) {
             Err(IndexValidationError::InvalidSource(msg)) => {
                 assert!(
                     msg.contains("Found 2 checksums"),
@@ -342,7 +342,7 @@ mod tests {
             ),
         ]);
 
-        validate_index_against_digests(index, digests).await?;
+        validate_index_against_digests(index, digests)?;
         Ok(())
     }
 

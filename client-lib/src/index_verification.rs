@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+
 use features_lib::{
     AsfaloadIndex, ChecksumSourceFormat, HashAlgorithm, IndexValidationError, ParsedChecksum,
     fetch_sequentially_with_cache, new_sequential_cache, parse_checksums as parse_shasum_content,
@@ -45,41 +48,38 @@ fn parse_github_rest_api_answer(
         .collect())
 }
 
+/// Fetch and parse every digest source of the index, once per distinct url.
+/// The returned map is keyed by the source url and holds every entry the
+/// source provides: keeping only the entries of each published file is
+/// validate_index_against_digests' job.
 pub async fn extract_parsed_checksums_from_index(
-    index: AsfaloadIndex,
-) -> Result<Vec<ParsedChecksum>, IndexValidationError> {
-    let mut checksums = Vec::new();
+    index: &AsfaloadIndex,
+) -> Result<HashMap<String, Vec<ParsedChecksum>>, IndexValidationError> {
+    let mut parsed_checksums: HashMap<String, Vec<ParsedChecksum>> = HashMap::new();
     let mut cache = new_sequential_cache();
-    for published_file in index.published_files {
-        // A byte order mark is not whitespace: strip it before parsing,
-        // or it corrupts the first parsed line.
-        let body = fetch_sequentially_with_cache(&published_file.source, &mut cache).await?;
-        let content = body.trim_start_matches('\u{feff}');
-        match published_file.source_format {
-            ChecksumSourceFormat::ShaSum => {
-                checksums.extend(
-                    parse_shasum_content(content)
-                        .map_err(|e| IndexValidationError::DigestSourceParseError {
-                            url: published_file.source.clone(),
-                            reason: e.to_string(),
-                        })?
-                        .into_iter()
-                        .filter(|checksum| {
-                            checksum.file_name == published_file.file_name
-                                && checksum.algo == published_file.algo
-                        }),
-                );
-            }
-            ChecksumSourceFormat::GithubRelease => {
-                let source_digests = parse_github_rest_api_answer(content, &published_file.source)?;
-                checksums.extend(source_digests.into_iter().filter(|checksum| {
-                    checksum.file_name == published_file.file_name
-                        && checksum.algo == published_file.algo
-                }));
-            }
+    for published_file in &index.published_files {
+        if let Entry::Vacant(entry) = parsed_checksums.entry(published_file.source.clone()) {
+            let body = fetch_sequentially_with_cache(&published_file.source, &mut cache).await?;
+            // A byte order mark is not whitespace: strip it before parsing,
+            // or it corrupts the first parsed line.
+            let content = body.trim_start_matches('\u{feff}');
+            // The first occurrence of an url decides the format its content
+            // is parsed with.
+            let parsed = match published_file.source_format {
+                ChecksumSourceFormat::ShaSum => parse_shasum_content(content).map_err(|e| {
+                    IndexValidationError::DigestSourceParseError {
+                        url: published_file.source.clone(),
+                        reason: e.to_string(),
+                    }
+                })?,
+                ChecksumSourceFormat::GithubRelease => {
+                    parse_github_rest_api_answer(content, &published_file.source)?
+                }
+            };
+            entry.insert(parsed);
         }
     }
-    Ok(checksums)
+    Ok(parsed_checksums)
 }
 
 #[cfg(test)]
@@ -124,13 +124,20 @@ mod tests {
             format!("{}/checksums.txt", server.url()),
         );
 
-        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(&index).await.unwrap();
 
-        // Only the published file's own entry is kept, not the whole source.
+        // The whole source content is extracted: keeping only the published
+        // file's own entry is validate_index_against_digests' job.
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].file_name, "app.bin");
-        assert_eq!(parsed[0].algo, HashAlgorithm::Sha256);
-        assert_eq!(parsed[0].hash, SHA256_A);
+        let entries = parsed
+            .get(&format!("{}/checksums.txt", server.url()))
+            .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].file_name, "app.bin");
+        assert_eq!(entries[0].algo, HashAlgorithm::Sha256);
+        assert_eq!(entries[0].hash, SHA256_A);
+        assert_eq!(entries[1].file_name, "other.bin");
+        assert_eq!(entries[1].hash, SHA256_B);
     }
 
     #[tokio::test]
@@ -147,10 +154,13 @@ mod tests {
             format!("{}/checksums.txt", server.url()),
         );
 
-        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(&index).await.unwrap();
 
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].hash, SHA256_A);
+        let entries = parsed
+            .get(&format!("{}/checksums.txt", server.url()))
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hash, SHA256_A);
     }
 
     #[tokio::test]
@@ -166,7 +176,7 @@ mod tests {
             format!("{}/checksums.txt", server.url()),
         );
 
-        match extract_parsed_checksums_from_index(index).await {
+        match extract_parsed_checksums_from_index(&index).await {
             Err(IndexValidationError::FetchError(_)) => {}
             other => panic!("Expected FetchError, got {other:?}"),
         }
@@ -184,7 +194,7 @@ mod tests {
         let source_url = format!("{}/checksums.txt", server.url());
         let index = index_with_source_format(ChecksumSourceFormat::ShaSum, source_url.clone());
 
-        match extract_parsed_checksums_from_index(index).await {
+        match extract_parsed_checksums_from_index(&index).await {
             Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
@@ -251,14 +261,21 @@ mod tests {
             &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
-        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(&index).await.unwrap();
 
-        // Only the published file's own sha256 entry is kept: assets with
-        // other algorithms or without digest are not part of this index.
+        // The whole release content is extracted: assets without digest or
+        // with an unsupported algorithm are skipped, but keeping only the
+        // published file's own entry is validate_index_against_digests' job.
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].file_name, "app.bin");
-        assert_eq!(parsed[0].algo, HashAlgorithm::Sha256);
-        assert_eq!(parsed[0].hash, SHA256_A);
+        let entries = parsed
+            .get(&format!("{}{RELEASE_URL_PATH}", server.url()))
+            .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].file_name, "app.bin");
+        assert_eq!(entries[0].algo, HashAlgorithm::Sha256);
+        assert_eq!(entries[0].hash, SHA256_A);
+        assert_eq!(entries[1].file_name, "lib.tar");
+        assert_eq!(entries[1].algo, HashAlgorithm::Sha512);
     }
 
     #[tokio::test]
@@ -282,10 +299,13 @@ mod tests {
             &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
-        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(&index).await.unwrap();
 
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].hash, SHA256_A);
+        let entries = parsed
+            .get(&format!("{}{RELEASE_URL_PATH}", server.url()))
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hash, SHA256_A);
     }
 
     #[tokio::test]
@@ -304,7 +324,7 @@ mod tests {
             &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
-        match extract_parsed_checksums_from_index(index).await {
+        match extract_parsed_checksums_from_index(&index).await {
             Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
@@ -343,9 +363,17 @@ mod tests {
             ],
         );
 
-        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(&index).await.unwrap();
 
-        assert_eq!(parsed.len(), 2);
+        // One source url in the map, holding every asset of the release.
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(
+            parsed
+                .get(&format!("{}{RELEASE_URL_PATH}", server.url()))
+                .unwrap()
+                .len(),
+            2
+        );
         mock.assert_async().await;
     }
 }

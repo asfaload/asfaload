@@ -117,12 +117,35 @@ fn check_index_digest_mismatch_fails() {
         .stderr(predicate::str::contains("digest mismatch"));
 }
 
+// Mocks the file server so it rejects any request. Asserting the returned
+// mocks after the command proves the command fetched no digest source: a
+// request to the file server would panic in an assert. One mock per method
+// as mockito cannot match any method in one mock.
+fn mock_no_source_fetch(file_server: &mut mockito::Server) -> Vec<mockito::Mock> {
+    ["GET", "HEAD", "POST", "PUT", "DELETE"]
+        .iter()
+        .map(|method| {
+            file_server
+                .mock(method, mockito::Matcher::Any)
+                .expect(0)
+                .create()
+        })
+        .collect()
+}
+
+fn assert_no_source_fetch(mocks: &[mockito::Mock]) {
+    for mock in mocks {
+        mock.assert();
+    }
+}
+
 #[test]
 fn check_index_missing_index_fails() {
     let mut backend = mockito::Server::new();
     // The file server only provides the URL the index path is derived from;
-    // it serves nothing as the index fetch fails first.
-    let file_server = mockito::Server::new();
+    // the index fetch fails before any digest source is fetched.
+    let mut file_server = mockito::Server::new();
+    let no_source = mock_no_source_fetch(&mut file_server);
     let index_path = index_path_for(&file_server.url());
     let _index = backend
         .mock("GET", format!("/v1/files/{index_path}").as_str())
@@ -134,14 +157,16 @@ fn check_index_missing_index_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("404"));
+    assert_no_source_fetch(&no_source);
 }
 
 #[test]
 fn check_index_invalid_json_body_fails() {
     let mut backend = mockito::Server::new();
     // The file server only provides the URL the index path is derived from;
-    // it serves nothing as index parsing fails before any source is fetched.
-    let file_server = mockito::Server::new();
+    // index parsing fails before any digest source is fetched.
+    let mut file_server = mockito::Server::new();
+    let no_source = mock_no_source_fetch(&mut file_server);
     let index_path = index_path_for(&file_server.url());
     let _index = backend
         .mock("GET", format!("/v1/files/{index_path}").as_str())
@@ -154,6 +179,7 @@ fn check_index_invalid_json_body_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("not valid JSON"));
+    assert_no_source_fetch(&no_source);
 }
 
 #[test]
@@ -225,14 +251,15 @@ fn check_index_json_output() {
 }
 
 // An index with no published files has nothing to contradict, so validation
-// succeeds trivially. Pinning that behavior: exit 0, "0 file(s) verified".
-// The absence of source mocks also proves no digest source is fetched.
+// succeeds trivially. Pinning that behavior: exit 0, "0 file(s) verified",
+// and no digest source is fetched.
 #[test]
 fn check_index_empty_index_succeeds() {
     let mut backend = mockito::Server::new();
     // The file server only provides the URL the index path is derived from;
-    // it serves nothing as the empty index fetches no digest source.
-    let file_server = mockito::Server::new();
+    // the empty index lists no digest source to fetch.
+    let mut file_server = mockito::Server::new();
+    let no_source = mock_no_source_fetch(&mut file_server);
     let index_path = index_path_for(&file_server.url());
     let _index = backend
         .mock("GET", format!("/v1/files/{index_path}").as_str())
@@ -247,4 +274,5 @@ fn check_index_empty_index_succeeds() {
         .assert()
         .success()
         .stdout(predicate::str::contains("0 file(s)"));
+    assert_no_source_fetch(&no_source);
 }

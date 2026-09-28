@@ -35,7 +35,7 @@ pub mod file_auth {
     // Validates that all digests present in the AsfaloadIndex can be found in the digests passed.
     // It does not ensure that all digests found in sources are present in the index.
     // The key of the digests HashMap is the url where the digests file can be found.
-    pub(crate) async fn validate_index_against_digests(
+    pub async fn validate_index_against_digests(
         index: AsfaloadIndex,
         digests: HashMap<String, Vec<ParsedChecksum>>,
     ) -> Result<(), IndexValidationError> {

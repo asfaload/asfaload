@@ -3,6 +3,7 @@ mod backend;
 pub mod constants;
 mod download;
 mod error;
+pub mod index_verification;
 pub mod signers_chain;
 pub mod signers_metadata;
 mod types;

@@ -12,7 +12,11 @@ pub use common::{SignedFileLoader, SignedFileWithKind};
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file, to_posix_json};
 
+pub use common::checksums_parser::ParsedChecksum;
+pub use common::checksums_parser::parse_checksums;
+pub use common::http::{fetch_sequentially_with_cache, fetch_with_retry, new_sequential_cache};
 pub use common::index_types::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm};
+pub use common::index_validation::IndexValidationError;
 
 use ::constants::PENDING_SUFFIX;
 // Re-export traits for users

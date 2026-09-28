@@ -257,6 +257,37 @@ mod tests {
         let result = GitHubRepoInfo::new(&url);
         assert!(result.is_err());
     }
+
+    // Indexes built from github releases record the release api url as digest
+    // source. A plain release url ends with the release id: it has no file
+    // path, but it still resolves to the github project of the repo.
+    #[test]
+    fn test_parse_release_api_url_without_asset_path() {
+        let url = url::Url::parse(
+            "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893",
+        )
+        .unwrap();
+        let result = GitHubRepoInfo::new(&url).unwrap();
+        assert_eq!(result.owner(), "asfaload");
+        assert_eq!(result.repo(), "repo_for_e2e_tests");
+        assert_eq!(
+            result.project_id(),
+            "https/github.com/443/asfaload/repo_for_e2e_tests"
+        );
+    }
+
+    #[test]
+    fn test_parse_release_api_url_with_asset_path() {
+        let url = url::Url::parse(
+            "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893/assets/456",
+        )
+        .unwrap();
+        let result = GitHubRepoInfo::new(&url).unwrap();
+        assert_eq!(
+            result.project_id(),
+            "https/github.com/443/asfaload/repo_for_e2e_tests"
+        );
+    }
 }
 
 #[cfg(all(test, feature = "test-utils"))]

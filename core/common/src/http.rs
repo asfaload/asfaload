@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    time::Duration,
+};
 
 use reqwest::Client;
 
@@ -71,5 +74,25 @@ pub async fn fetch_with_retry(url: &str) -> Result<String, FetchError> {
             .text()
             .await
             .map_err(|e| FetchError::BodyReadError(format!("{}: {}", url, e)));
+    }
+}
+
+/// Returns a new empty cache to be used with fetch_sequentially_with_cache.
+pub fn new_sequential_cache() -> HashMap<String, String> {
+    HashMap::new()
+}
+/// Fetch url only if it is not found as a key in the cache, as it then returns the value found in
+/// the cache. Cache is meant to be used in sequential fetches only.
+pub async fn fetch_sequentially_with_cache(
+    url: &str,
+    cache: &mut HashMap<String, String>,
+) -> Result<String, FetchError> {
+    match cache.entry(url.into()) {
+        Entry::Vacant(entry) => {
+            let content = fetch_with_retry(url).await?;
+            entry.insert(content.clone());
+            Ok(content)
+        }
+        Entry::Occupied(entry) => Ok(entry.get().clone()),
     }
 }

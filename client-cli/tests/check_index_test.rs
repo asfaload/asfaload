@@ -13,7 +13,7 @@ fn index_json(source_url: &str, hash: &str) -> String {
         concat!(
             r#"{{"mirroredOn":"2026-09-12T12:00:00Z","publishedOn":"2026-09-12T12:00:00Z","#,
             r#""version":1,"publishedFiles":[{{"fileName":"file-a.tar.gz","#,
-            r#""algo":"Sha256","source":"{}","hash":"{}"}}]}}"#
+            r#""algo":"Sha256","source":"{}","sourceFormat":"ShaSum","hash":"{}"}}]}}"#
         ),
         source_url, hash
     )
@@ -179,6 +179,7 @@ fn check_index_json_output() {
     assert_eq!(index["publishedFiles"][0]["fileName"], "file-a.tar.gz");
     assert_eq!(index["publishedFiles"][0]["algo"], "Sha256");
     assert_eq!(index["publishedFiles"][0]["source"], source_url);
+    assert_eq!(index["publishedFiles"][0]["sourceFormat"], "ShaSum");
     assert_eq!(index["publishedFiles"][0]["hash"], SHA256_HASH);
 }
 

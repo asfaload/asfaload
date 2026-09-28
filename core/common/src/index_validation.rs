@@ -16,6 +16,8 @@ pub enum IndexValidationError {
         in_source: String,
         origin: String,
     },
+    #[error("Digest source at {url} is not a recognised digests document: {reason}")]
+    DigestSourceParseError { url: String, reason: String },
 }
 
 // This module covers usage of Asfaload for file downloads authentication.

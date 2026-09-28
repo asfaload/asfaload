@@ -96,3 +96,111 @@ pub async fn fetch_sequentially_with_cache(
         Entry::Occupied(entry) => Ok(entry.get().clone()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BODY: &str = "body served by the mock server";
+
+    #[tokio::test]
+    async fn cache_hit_serves_body_without_second_fetch() -> anyhow::Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        // Panics on assert if hit any other number of times than once.
+        let mock = server
+            .mock("GET", "/data")
+            .with_status(200)
+            .with_body(BODY)
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/data", server.url());
+        let mut cache = new_sequential_cache();
+
+        let first = fetch_sequentially_with_cache(&url, &mut cache).await?;
+        let second = fetch_sequentially_with_cache(&url, &mut cache).await?;
+
+        assert_eq!(first, BODY);
+        assert_eq!(second, BODY);
+        mock.assert_async().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn distinct_urls_are_fetched_once_each() -> anyhow::Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let mock_a = server
+            .mock("GET", "/a")
+            .with_status(200)
+            .with_body("body a")
+            .expect(1)
+            .create_async()
+            .await;
+        let mock_b = server
+            .mock("GET", "/b")
+            .with_status(200)
+            .with_body("body b")
+            .expect(1)
+            .create_async()
+            .await;
+        let url_a = format!("{}/a", server.url());
+        let url_b = format!("{}/b", server.url());
+        let mut cache = new_sequential_cache();
+
+        let first = fetch_sequentially_with_cache(&url_a, &mut cache).await?;
+        let second = fetch_sequentially_with_cache(&url_b, &mut cache).await?;
+        // Repeating the first url must be served from the cache.
+        let again_a = fetch_sequentially_with_cache(&url_a, &mut cache).await?;
+
+        assert_eq!(first, "body a");
+        assert_eq!(second, "body b");
+        assert_eq!(again_a, "body a");
+        mock_a.assert_async().await;
+        mock_b.assert_async().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_fetch_is_not_cached() -> anyhow::Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let failing = server
+            .mock("GET", "/flaky")
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/flaky", server.url());
+        let mut cache = new_sequential_cache();
+
+        match fetch_sequentially_with_cache(&url, &mut cache).await {
+            Err(FetchError::HttpError {
+                status,
+                url: err_url,
+            }) => {
+                assert_eq!(status, 500);
+                assert_eq!(err_url, url);
+            }
+            Err(e) => panic!("Expected FetchError::HttpError but got {}", e),
+            Ok(v) => panic!("Expected error, got {v}"),
+        }
+        assert!(
+            cache.is_empty(),
+            "a failed fetch must not populate the cache"
+        );
+        failing.assert_async().await;
+
+        // The failed url can be retried afterwards.
+        server.reset();
+        let working = server
+            .mock("GET", "/flaky")
+            .with_status(200)
+            .with_body(BODY)
+            .expect(1)
+            .create_async()
+            .await;
+        let retried = fetch_sequentially_with_cache(&url, &mut cache).await?;
+        assert_eq!(retried, BODY);
+        working.assert_async().await;
+        Ok(())
+    }
+}

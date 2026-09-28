@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shasum_source_parse_error_propagates() {
+    async fn shasum_source_parse_error_names_source_url() {
         let mut server = mockito::Server::new_async().await;
         let _m = server
             .mock("GET", "/checksums.txt")
@@ -181,14 +181,171 @@ mod tests {
             .with_body("not-a-valid-checksum-line")
             .create_async()
             .await;
-        let index = index_with_source_format(
-            ChecksumSourceFormat::ShaSum,
-            format!("{}/checksums.txt", server.url()),
+        let source_url = format!("{}/checksums.txt", server.url());
+        let index = index_with_source_format(ChecksumSourceFormat::ShaSum, source_url.clone());
+
+        match parse_checksums(index).await {
+            Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
+                assert_eq!(url, source_url);
+            }
+            other => panic!("Expected DigestSourceParseError, got {other:?}"),
+        }
+    }
+
+    // A github release API url serves one json document listing every asset
+    // with its digest, as "<algo>:<hex>".
+    const RELEASE_URL_PATH: &str = "/repos/acme/tool/releases/123";
+
+    fn release_body(entries: &[(&str, Option<&str>)]) -> String {
+        let assets: Vec<String> = entries
+            .iter()
+            .map(|(name, digest)| match digest {
+                Some(d) => format!(r#"{{"name":"{name}","digest":"{d}"}}"#),
+                None => format!(r#"{{"name":"{name}","digest":null}}"#),
+            })
+            .collect();
+        format!(
+            r#"{{"url":"the-release-url","assets":[{}]}}"#,
+            assets.join(",")
+        )
+    }
+
+    fn index_with_files(
+        source_format: ChecksumSourceFormat,
+        source_url: String,
+        files: &[(&str, HashAlgorithm, &str)],
+    ) -> AsfaloadIndex {
+        AsfaloadIndex {
+            mirrored_on: chrono::Utc::now(),
+            published_on: chrono::Utc::now(),
+            version: 1,
+            published_files: files
+                .iter()
+                .map(|(file_name, algo, hash)| FileChecksum {
+                    file_name: file_name.to_string(),
+                    algo: algo.clone(),
+                    source: source_url.clone(),
+                    source_format: source_format.clone(),
+                    hash: hash.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn release_source_parses_entry_of_matching_published_file() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", RELEASE_URL_PATH)
+            .with_status(200)
+            .with_body(release_body(&[
+                ("app.bin", Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
+                ("lib.tar", Some("sha512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")),
+                ("unsigned.bin", None),
+            ]))
+            .create_async()
+            .await;
+        let index = index_with_files(
+            ChecksumSourceFormat::GithubRelease,
+            format!("{}{RELEASE_URL_PATH}", server.url()),
+            &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
+        );
+
+        let parsed = parse_checksums(index).await.unwrap();
+
+        // Only the published file's own sha256 entry is kept: assets with
+        // other algorithms or without digest are not part of this index.
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].file_name, "app.bin");
+        assert_eq!(parsed[0].algo, HashAlgorithm::Sha256);
+        assert_eq!(parsed[0].hash, SHA256_A);
+    }
+
+    #[tokio::test]
+    async fn release_source_with_leading_bom_parses() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", RELEASE_URL_PATH)
+            .with_status(200)
+            .with_body(format!(
+                "\u{feff}{}",
+                release_body(&[(
+                    "app.bin",
+                    Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                )])
+            ))
+            .create_async()
+            .await;
+        let index = index_with_files(
+            ChecksumSourceFormat::GithubRelease,
+            format!("{}{RELEASE_URL_PATH}", server.url()),
+            &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
+        );
+
+        let parsed = parse_checksums(index).await.unwrap();
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].hash, SHA256_A);
+    }
+
+    #[tokio::test]
+    async fn release_source_malformed_json_names_source_url() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", RELEASE_URL_PATH)
+            .with_status(200)
+            .with_body("not a release response")
+            .create_async()
+            .await;
+        let source_url = format!("{}{RELEASE_URL_PATH}", server.url());
+        let index = index_with_files(
+            ChecksumSourceFormat::GithubRelease,
+            source_url.clone(),
+            &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
         match parse_checksums(index).await {
-            Err(IndexValidationError::ChecksumParseError(_)) => {}
-            other => panic!("Expected ChecksumParseError, got {other:?}"),
+            Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
+                assert_eq!(url, source_url);
+            }
+            other => panic!("Expected DigestSourceParseError, got {other:?}"),
         }
+    }
+
+    // All files of a github release share the release api url, so it must be
+    // fetched once for the whole index, not once per published file.
+    #[tokio::test]
+    async fn release_source_shared_by_files_is_fetched_once() {
+        let mut server = mockito::Server::new_async().await;
+        // Panics on assert if hit any other number of times than once.
+        let mock = server
+            .mock("GET", RELEASE_URL_PATH)
+            .with_status(200)
+            .with_body(release_body(&[
+                (
+                    "app.bin",
+                    Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                ),
+                (
+                    "lib.tar",
+                    Some("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                ),
+            ]))
+            .expect(1)
+            .create_async()
+            .await;
+        let index = index_with_files(
+            ChecksumSourceFormat::GithubRelease,
+            format!("{}{RELEASE_URL_PATH}", server.url()),
+            &[
+                ("app.bin", HashAlgorithm::Sha256, SHA256_A),
+                ("lib.tar", HashAlgorithm::Sha256, SHA256_B),
+            ],
+        );
+
+        let parsed = parse_checksums(index).await.unwrap();
+
+        assert_eq!(parsed.len(), 2);
+        mock.assert_async().await;
     }
 }

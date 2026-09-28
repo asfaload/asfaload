@@ -45,7 +45,7 @@ fn parse_github_rest_api_answer(
         .collect())
 }
 
-pub async fn parse_checksums(
+pub async fn extract_parsed_checksums_from_index(
     index: AsfaloadIndex,
 ) -> Result<Vec<ParsedChecksum>, IndexValidationError> {
     let mut checksums = Vec::new();
@@ -124,7 +124,7 @@ mod tests {
             format!("{}/checksums.txt", server.url()),
         );
 
-        let parsed = parse_checksums(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
 
         // Only the published file's own entry is kept, not the whole source.
         assert_eq!(parsed.len(), 1);
@@ -147,7 +147,7 @@ mod tests {
             format!("{}/checksums.txt", server.url()),
         );
 
-        let parsed = parse_checksums(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].hash, SHA256_A);
@@ -166,7 +166,7 @@ mod tests {
             format!("{}/checksums.txt", server.url()),
         );
 
-        match parse_checksums(index).await {
+        match extract_parsed_checksums_from_index(index).await {
             Err(IndexValidationError::FetchError(_)) => {}
             other => panic!("Expected FetchError, got {other:?}"),
         }
@@ -184,7 +184,7 @@ mod tests {
         let source_url = format!("{}/checksums.txt", server.url());
         let index = index_with_source_format(ChecksumSourceFormat::ShaSum, source_url.clone());
 
-        match parse_checksums(index).await {
+        match extract_parsed_checksums_from_index(index).await {
             Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
@@ -251,7 +251,7 @@ mod tests {
             &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
-        let parsed = parse_checksums(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
 
         // Only the published file's own sha256 entry is kept: assets with
         // other algorithms or without digest are not part of this index.
@@ -282,7 +282,7 @@ mod tests {
             &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
-        let parsed = parse_checksums(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].hash, SHA256_A);
@@ -304,7 +304,7 @@ mod tests {
             &[("app.bin", HashAlgorithm::Sha256, SHA256_A)],
         );
 
-        match parse_checksums(index).await {
+        match extract_parsed_checksums_from_index(index).await {
             Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
@@ -343,7 +343,7 @@ mod tests {
             ],
         );
 
-        let parsed = parse_checksums(index).await.unwrap();
+        let parsed = extract_parsed_checksums_from_index(index).await.unwrap();
 
         assert_eq!(parsed.len(), 2);
         mock.assert_async().await;

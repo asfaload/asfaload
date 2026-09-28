@@ -108,7 +108,7 @@ mod tests {
     };
     use crate::{
         checksums_parser::ParsedChecksum,
-        index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm},
+        index_types::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm},
     };
 
     // Two distinct, valid SHA-256 hex digests so a mismatch is detectable.
@@ -127,6 +127,7 @@ mod tests {
             file_name: file_name.to_string(),
             algo,
             source: source.to_string(),
+            source_format: ChecksumSourceFormat::ShaSum,
             hash: hash.to_string(),
         }
     }

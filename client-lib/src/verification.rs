@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn get_file_hash_info_sha256() {
         use chrono::Utc;
-        use features_lib::{AsfaloadIndex, FileChecksum};
+        use features_lib::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum};
 
         let index = AsfaloadIndex {
             mirrored_on: Utc::now(),
@@ -159,6 +159,7 @@ mod tests {
                 file_name: "test.txt".to_string(),
                 algo: HashAlgorithm::Sha256,
                 source: "http://example.com/test.txt".to_string(),
+                source_format: ChecksumSourceFormat::ShaSum,
                 hash: "abc123def456".to_string(),
             }],
         };
@@ -173,7 +174,7 @@ mod tests {
     #[test]
     fn get_file_hash_info_unsupported_algo() {
         use chrono::Utc;
-        use features_lib::{AsfaloadIndex, FileChecksum};
+        use features_lib::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum};
 
         let index = AsfaloadIndex {
             mirrored_on: Utc::now(),
@@ -183,6 +184,7 @@ mod tests {
                 file_name: "test.txt".to_string(),
                 algo: HashAlgorithm::Sha1,
                 source: "http://example.com/test.txt".to_string(),
+                source_format: ChecksumSourceFormat::ShaSum,
                 hash: "old_hash".to_string(),
             }],
         };

@@ -1,9 +1,19 @@
 use std::path::Path;
 
-use crate::error::ForgeUrlError;
+use crate::error::{ForgeUrlError, UrlInfoError};
 use crate::path_prefix_from_url;
 use constants::INDEX_FILE;
 use url::Url;
+
+pub trait UrlInfoTrait
+where
+    Self: Sized,
+{
+    fn new(url: &url::Url) -> Result<Self, UrlInfoError>;
+
+    // Identity
+    fn project_id(&self) -> String;
+}
 
 pub trait ForgeTrait
 where
@@ -11,15 +21,11 @@ where
 {
     fn new(url: &url::Url) -> Result<Self, ForgeUrlError>;
 
-    // Identity
-    fn project_id(&self) -> String;
-
     // Accessors
     fn owner(&self) -> &str;
     fn repo(&self) -> &str;
     fn branch(&self) -> &str;
-    fn file_path(&self) -> &Path;
-    fn raw_url(&self) -> &url::Url;
+    fn url_info(&self) -> &impl UrlInfoTrait;
 }
 
 /// Build repository paths from artifact *download* URLs.

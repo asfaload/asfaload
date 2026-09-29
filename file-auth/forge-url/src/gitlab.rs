@@ -157,7 +157,7 @@ impl ForgeTrait for GitLabRepoInfo {
         let url_info = GitLabRepoUrlInfo::new(url)?;
         Ok(GitLabRepoInfo { url_info })
     }
-    fn url_info(&self) -> &impl UrlInfoTrait {
+    fn url_info(&self) -> &dyn UrlInfoTrait {
         &self.url_info
     }
     fn owner(&self) -> &str {

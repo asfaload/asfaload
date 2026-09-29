@@ -5,11 +5,10 @@ use crate::path_prefix_from_url;
 use constants::INDEX_FILE;
 use url::Url;
 
-pub trait UrlInfoTrait
-where
-    Self: Sized,
-{
-    fn new(url: &url::Url) -> Result<Self, UrlInfoError>;
+pub trait UrlInfoTrait {
+    fn new(url: &url::Url) -> Result<Self, UrlInfoError>
+    where
+        Self: Sized;
 
     // Identity
     fn project_id(&self) -> String;
@@ -25,7 +24,7 @@ where
     fn owner(&self) -> &str;
     fn repo(&self) -> &str;
     fn branch(&self) -> &str;
-    fn url_info(&self) -> &impl UrlInfoTrait;
+    fn url_info(&self) -> &dyn UrlInfoTrait;
 }
 
 /// Build repository paths from artifact *download* URLs.

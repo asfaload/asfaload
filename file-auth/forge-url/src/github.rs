@@ -253,7 +253,7 @@ impl ForgeTrait for GitHubRepoInfo {
         &self.url_info.branch
     }
 
-    fn url_info(&self) -> &impl UrlInfoTrait {
+    fn url_info(&self) -> &dyn UrlInfoTrait {
         &self.url_info
     }
 }

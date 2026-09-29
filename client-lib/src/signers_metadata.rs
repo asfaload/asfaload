@@ -62,7 +62,7 @@ pub fn verify_remote_url_in_path_realm(path: &str, url: &str) -> AsfaloadLibResu
 
     let parsed = url::Url::parse(url).map_err(|_| reject(url.to_string(), None))?;
     let project_id = ForgeInfo::new(&parsed)
-        .map(|info| info.project_id())
+        .map(|info| info.url_info().project_id())
         .map_err(|_| reject(url.to_string(), None))?;
 
     // Important to test against a '/'-ending string, to prevent issues with repo names prefix of

@@ -71,7 +71,7 @@ pub async fn register_repo_handler(
         ApiError::InvalidRequestBody(format!("Invalid GitHub URL: {}", e))
     })?;
 
-    let project_id = repo_info.project_id();
+    let project_id = repo_info.url_info().project_id();
     let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
         .await
         .map_err(|e| {
@@ -243,7 +243,7 @@ pub async fn update_signers_handler(
         ApiError::InvalidRequestBody(format!("Invalid forge URL: {}", e))
     })?;
 
-    let project_id = repo_info.project_id();
+    let project_id = repo_info.url_info().project_id();
     let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
         .await
         .map_err(|e| {

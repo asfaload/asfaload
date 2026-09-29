@@ -1,29 +1,27 @@
 use std::path::{Path, PathBuf};
 
-use crate::{ForgeTrait, ForgeUrlError};
+use url::Url;
+
+use crate::{ForgeTrait, ForgeUrlError, error::UrlInfoError, traits::UrlInfoTrait};
 
 #[derive(Debug, Clone)]
-pub struct GitLabRepoInfo {
+pub struct GitLabRepoUrlInfo {
+    original_url: Url,
+    raw_url: Url,
+    segments: Vec<String>,
     namespace: String,
     project: String,
     branch: String,
     file_path: PathBuf,
-    raw_url: url::Url,
     path_prefix: String,
 }
 
-#[cfg(not(feature = "test-utils"))]
-pub const GITLAB_HOSTS: &[&str] = &["gitlab.com"];
-
-#[cfg(feature = "test-utils")]
-pub const GITLAB_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
-
-impl ForgeTrait for GitLabRepoInfo {
-    fn new(url: &url::Url) -> Result<GitLabRepoInfo, ForgeUrlError> {
+impl UrlInfoTrait for GitLabRepoUrlInfo {
+    fn new(url: &url::Url) -> Result<Self, crate::error::UrlInfoError> {
         let host = url.host_str().unwrap_or("");
 
         if !GITLAB_HOSTS.contains(&host) {
-            return Err(ForgeUrlError::InvalidFormat(format!(
+            return Err(UrlInfoError::InvalidFormat(format!(
                 "URL must be one of {}",
                 GITLAB_HOSTS.join(","),
             )));
@@ -32,7 +30,7 @@ impl ForgeTrait for GitLabRepoInfo {
         let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
 
         if segments.len() < 5 {
-            return Err(ForgeUrlError::InvalidFormat(
+            return Err(UrlInfoError::InvalidFormat(
                 "URL must have at least 5 path segments".to_string(),
             ));
         }
@@ -40,10 +38,10 @@ impl ForgeTrait for GitLabRepoInfo {
         let dash_idx = segments
             .iter()
             .position(|&s| s == "-")
-            .ok_or_else(|| ForgeUrlError::InvalidFormat("Invalid GitLab URL format".to_string()))?;
+            .ok_or_else(|| UrlInfoError::InvalidFormat("Invalid GitLab URL format".to_string()))?;
 
         if dash_idx == 0 {
-            return Err(ForgeUrlError::InvalidFormat(
+            return Err(UrlInfoError::InvalidFormat(
                 "GitLab URL must contain a namespace and project".to_string(),
             ));
         }
@@ -53,7 +51,7 @@ impl ForgeTrait for GitLabRepoInfo {
         let namespace = if dash_idx > 1 {
             segments[..dash_idx - 1].join("/")
         } else {
-            return Err(ForgeUrlError::InvalidFormat(
+            return Err(UrlInfoError::InvalidFormat(
                 "Namespace cannot be empty".to_string(),
             ));
         };
@@ -62,7 +60,7 @@ impl ForgeTrait for GitLabRepoInfo {
         let action = match action {
             Some(&a) if a == "blob" || a == "raw" => a,
             _ => {
-                return Err(ForgeUrlError::InvalidFormat(
+                return Err(UrlInfoError::InvalidFormat(
                     "URL must contain /blob/ or /raw/".to_string(),
                 ));
             }
@@ -70,27 +68,40 @@ impl ForgeTrait for GitLabRepoInfo {
 
         let branch = segments
             .get(dash_idx + 2)
-            .ok_or(ForgeUrlError::MissingBranch)?
+            .ok_or(UrlInfoError::InvalidFormat(format!(
+                "Branch not found in url {}",
+                url
+            )))?
             .to_string();
 
-        let file_path_segments = segments
-            .get(dash_idx + 3..)
-            .ok_or(ForgeUrlError::MissingFilePath)?;
+        let file_path_segments =
+            segments
+                .get(dash_idx + 3..)
+                .ok_or(UrlInfoError::InvalidFormat(format!(
+                    "file_path not found in url {}",
+                    url
+                )))?;
 
         let file_path = file_path_segments.join("/");
 
         if project.is_empty() {
-            return Err(ForgeUrlError::InvalidFormat(
+            return Err(UrlInfoError::InvalidFormat(
                 "Project cannot be empty".to_string(),
             ));
         }
 
         if branch.is_empty() {
-            return Err(ForgeUrlError::MissingBranch);
+            return Err(UrlInfoError::InvalidFormat(format!(
+                "Missing branch in url {}",
+                url
+            )));
         }
 
         if file_path.is_empty() {
-            return Err(ForgeUrlError::MissingFilePath);
+            return Err(UrlInfoError::InvalidFormat(format!(
+                "Missing file_path in url {}",
+                url
+            )));
         }
 
         let raw_url = if action == "raw" {
@@ -103,12 +114,19 @@ impl ForgeTrait for GitLabRepoInfo {
                 )
                 .as_str(),
             )
-            .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?
+            .map_err(|e| UrlInfoError::InvalidFormat(e.to_string()))?
         };
 
-        let path_prefix = crate::path_prefix_from_url(url)?;
+        let path_prefix = crate::path_prefix_from_url(url).map_err(|e| {
+            UrlInfoError::InvalidFormat(format!(
+                "Path prefix could not be determined for {}: {}",
+                url, e
+            ))
+        })?;
 
-        Ok(GitLabRepoInfo {
+        Ok(GitLabRepoUrlInfo {
+            original_url: url.clone(),
+            segments: segments.iter().map(|s| s.to_string()).collect(),
             namespace,
             project,
             branch,
@@ -121,25 +139,49 @@ impl ForgeTrait for GitLabRepoInfo {
     fn project_id(&self) -> String {
         format!("{}/{}/{}", self.path_prefix, self.namespace, self.project)
     }
+}
 
+#[derive(Debug, Clone)]
+pub struct GitLabRepoInfo {
+    url_info: GitLabRepoUrlInfo,
+}
+
+#[cfg(not(feature = "test-utils"))]
+pub const GITLAB_HOSTS: &[&str] = &["gitlab.com"];
+
+#[cfg(feature = "test-utils")]
+pub const GITLAB_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
+
+impl ForgeTrait for GitLabRepoInfo {
+    fn new(url: &url::Url) -> Result<GitLabRepoInfo, ForgeUrlError> {
+        let url_info = GitLabRepoUrlInfo::new(url)?;
+        Ok(GitLabRepoInfo { url_info })
+    }
+    fn url_info(&self) -> &impl UrlInfoTrait {
+        &self.url_info
+    }
     fn owner(&self) -> &str {
-        &self.namespace
+        &self.url_info.namespace
     }
 
     fn repo(&self) -> &str {
-        &self.project
+        &self.url_info.project
     }
 
     fn branch(&self) -> &str {
-        &self.branch
+        &self.url_info.branch
     }
-
+}
+impl GitLabRepoInfo {
+    fn project_id(&self) -> String {
+        self.url_info.project_id()
+    }
     fn file_path(&self) -> &Path {
-        &self.file_path
+        &self.url_info.file_path
     }
 
     fn raw_url(&self) -> &url::Url {
-        &self.raw_url
+        &self.url_info.raw_url
     }
 }
 

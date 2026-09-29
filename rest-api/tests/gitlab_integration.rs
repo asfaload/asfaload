@@ -1,5 +1,7 @@
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
+    use std::path::PathBuf;
+
     use forge_url::{ForgeTrait, github::GitHubRepoInfo, gitlab::GitLabRepoInfo};
 
     #[test]
@@ -111,10 +113,14 @@ mod tests {
         fn process_forge_url<F: ForgeTrait>(forge: &F) -> String {
             format!(
                 "{}: {} on branch {} at {}",
-                forge.project_id(),
+                forge.url_info().project_id(),
                 forge.repo(),
                 forge.branch(),
-                forge.file_path().display()
+                forge
+                    .url_info()
+                    .file_path()
+                    .unwrap_or(&PathBuf::new())
+                    .display()
             )
         }
 
@@ -142,7 +148,7 @@ mod tests {
     #[test]
     fn test_github_and_gitlab_implement_same_trait() {
         fn validate_trait_impl<T: ForgeTrait>(info: &T, expected_project_id: &str) {
-            assert_eq!(info.project_id(), expected_project_id);
+            assert_eq!(info.url_info().project_id(), expected_project_id);
             assert!(!info.owner().is_empty());
             assert!(!info.repo().is_empty());
         }
@@ -164,9 +170,13 @@ mod tests {
     fn test_trait_methods_work_identically() {
         fn get_branch_info<T: ForgeTrait>(info: &T) -> (String, String, String) {
             (
-                info.project_id(),
+                info.url_info().project_id(),
                 info.branch().to_string(),
-                info.file_path().to_string_lossy().to_string(),
+                info.url_info()
+                    .file_path()
+                    .unwrap_or(&PathBuf::new())
+                    .to_string_lossy()
+                    .to_string(),
             )
         }
 

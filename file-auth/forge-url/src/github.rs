@@ -12,8 +12,23 @@ pub struct GitHubRepoInfo {
 }
 
 #[cfg(not(feature = "test-utils"))]
+pub const GITHUB_REPO_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
+#[cfg(not(feature = "test-utils"))]
+pub const GITHUB_API_HOSTS: &[&str] = &["api.github.com"];
+#[cfg(not(feature = "test-utils"))]
 pub const GITHUB_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com", "api.github.com"];
 
+// In this case, localhost is accepted as both repo host and api host to be able to mock both
+// locally
+#[cfg(feature = "test-utils")]
+pub const GITHUB_REPO_HOSTS: &[&str] = &[
+    "github.com",
+    "raw.githubusercontent.com",
+    "localhost",
+    "127.0.0.1",
+];
+#[cfg(feature = "test-utils")]
+pub const GITHUB_API_HOSTS: &[&str] = &["api.github.com", "localhost", "127.0.0.1"];
 #[cfg(feature = "test-utils")]
 pub const GITHUB_HOSTS: &[&str] = &[
     "github.com",

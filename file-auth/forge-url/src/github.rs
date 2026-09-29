@@ -162,12 +162,15 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
     fn project_id(&self) -> String {
         format!("{}/{}/{}", self.path_prefix, self.owner, self.repo)
     }
+
+    fn raw_url(&self) -> &Url {
+        &self.raw_url
+    }
+    fn file_path(&self) -> Option<&PathBuf> {
+        Some(&self.file_path)
+    }
 }
 impl GithubRepoUrlInfo {
-    fn file_path(&self) -> &Path {
-        &self.file_path
-    }
-
     fn raw_url(&self) -> &url::Url {
         &self.raw_url
     }
@@ -219,6 +222,16 @@ impl UrlInfoTrait for GithubApiReleaseUrlInfo {
 
     fn project_id(&self) -> String {
         format!("{}/{}/{}", self.path_prefix, self.owner, self.repo)
+    }
+
+    // For an api url, the raw url, which is the url returning the raw document, is the original
+    // url itself.
+    fn raw_url(&self) -> &Url {
+        &self.original_url
+    }
+
+    fn file_path(&self) -> Option<&PathBuf> {
+        None
     }
 }
 

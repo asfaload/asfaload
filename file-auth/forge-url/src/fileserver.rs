@@ -88,6 +88,13 @@ impl UrlInfoTrait for FileServerUrlInfo {
             }
         }
     }
+
+    fn raw_url(&self) -> &Url {
+        &self.original_url
+    }
+    fn file_path(&self) -> Option<&PathBuf> {
+        Some(&self.file_path)
+    }
 }
 #[derive(Debug, Clone)]
 pub struct FileServerRepoInfo {

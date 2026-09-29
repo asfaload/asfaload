@@ -139,6 +139,14 @@ impl UrlInfoTrait for GitLabRepoUrlInfo {
     fn project_id(&self) -> String {
         format!("{}/{}/{}", self.path_prefix, self.namespace, self.project)
     }
+
+    fn raw_url(&self) -> &Url {
+        &self.raw_url
+    }
+
+    fn file_path(&self) -> Option<&PathBuf> {
+        Some(&self.file_path)
+    }
 }
 
 #[derive(Debug, Clone)]

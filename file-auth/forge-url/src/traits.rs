@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::{ForgeUrlError, UrlInfoError};
 use crate::path_prefix_from_url;
@@ -12,6 +12,8 @@ pub trait UrlInfoTrait {
 
     // Identity
     fn project_id(&self) -> String;
+    fn raw_url(&self) -> &Url;
+    fn file_path(&self) -> Option<&PathBuf>;
 }
 
 pub trait ForgeTrait

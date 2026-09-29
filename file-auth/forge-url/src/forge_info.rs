@@ -23,19 +23,11 @@ impl ForgeTrait for ForgeInfo {
         }
     }
 
-    fn project_id(&self) -> String {
-        match self {
-            Self::Github(info) => info.project_id(),
-            Self::Gitlab(info) => info.project_id(),
-            Self::FileServer(info) => info.project_id(),
-        }
-    }
-
     fn owner(&self) -> &str {
         match self {
             Self::Github(info) => info.owner(),
             Self::Gitlab(info) => info.owner(),
-            Self::FileServer(info) => info.owner(),
+            Self::FileServer(_info) => "",
         }
     }
 
@@ -43,7 +35,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.repo(),
             Self::Gitlab(info) => info.repo(),
-            Self::FileServer(info) => info.repo(),
+            Self::FileServer(_info) => "",
         }
     }
 
@@ -51,23 +43,15 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.branch(),
             Self::Gitlab(info) => info.branch(),
-            Self::FileServer(info) => info.branch(),
+            Self::FileServer(_info) => "",
         }
     }
 
-    fn file_path(&self) -> &std::path::Path {
+    fn url_info(&self) -> &dyn crate::traits::UrlInfoTrait {
         match self {
-            Self::Github(info) => info.file_path(),
-            Self::Gitlab(info) => info.file_path(),
-            Self::FileServer(info) => info.file_path(),
-        }
-    }
-
-    fn raw_url(&self) -> &url::Url {
-        match self {
-            Self::Github(info) => info.raw_url(),
-            Self::Gitlab(info) => info.raw_url(),
-            Self::FileServer(info) => info.raw_url(),
+            Self::Github(info) => info.url_info(),
+            Self::Gitlab(info) => info.url_info(),
+            Self::FileServer(info) => info.url_info(),
         }
     }
 }

@@ -271,6 +271,8 @@ impl ForgeTrait for GitHubRepoInfo {
     }
 }
 
+// Implement some accessors to url_info fields to limit changes to app code in a refactoring
+// introducing trait UrlInfoTrait
 impl GitHubRepoInfo {
     pub fn project_id(&self) -> String {
         self.url_info.project_id()

@@ -112,9 +112,18 @@ impl FileServerRepoInfo {
         &self.url_info
     }
 }
+// Implement some accessors to url_info fields to limit changes to app code in a refactoring
+// introducing trait UrlInfoTrait
 impl FileServerRepoInfo {
     pub fn file_path(&self) -> &Path {
         &self.url_info.file_path
+    }
+    pub fn project_id(&self) -> String {
+        self.url_info.project_id()
+    }
+
+    pub fn raw_url(&self) -> &url::Url {
+        &self.url_info.original_url
     }
 }
 

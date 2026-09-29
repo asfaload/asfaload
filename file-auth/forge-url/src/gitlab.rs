@@ -180,15 +180,19 @@ impl ForgeTrait for GitLabRepoInfo {
         &self.url_info.branch
     }
 }
+
+// Implement some accessors to url_info fields to limit changes to app code in a refactoring
+// introducing trait UrlInfoTrait
 impl GitLabRepoInfo {
-    fn project_id(&self) -> String {
+    pub fn project_id(&self) -> String {
         self.url_info.project_id()
     }
-    fn file_path(&self) -> &Path {
+
+    pub fn file_path(&self) -> &Path {
         &self.url_info.file_path
     }
 
-    fn raw_url(&self) -> &url::Url {
+    pub fn raw_url(&self) -> &url::Url {
         &self.url_info.raw_url
     }
 }

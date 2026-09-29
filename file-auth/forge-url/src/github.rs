@@ -147,6 +147,20 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
             )));
         }
 
+        // Only manually map to the github prefix for raw urls. If we set it to the prefix
+        // "https/github.com/443" for all executions, tests won't pass as the test-utils feature
+        // considers locahost as github urls, but still writes http/localhost/$port to disk!
+        let path_prefix = if url.host_str() == Some("raw.githubusercontent.com") {
+            "https/github.com/443".to_string()
+        } else {
+            path_prefix_from_url(url).map_err(|e| {
+                UrlInfoError::InvalidFormat(format!(
+                    "Could not determine prefix from url {}: {}",
+                    url, e
+                ))
+            })?
+        };
+
         Ok(GithubRepoUrlInfo {
             original_url: url.clone(),
             raw_url,
@@ -155,7 +169,7 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
             repo,
             branch,
             file_path,
-            path_prefix: "https/github.com/443".to_string(),
+            path_prefix,
         })
     }
 

@@ -2,16 +2,13 @@ use std::path::{Path, PathBuf};
 
 use url::Url;
 
-use crate::{ForgeTrait, ForgeUrlError, path_prefix_from_url};
+use crate::{
+    ForgeTrait, ForgeUrlError, error::UrlInfoError, path_prefix_from_url, traits::UrlInfoTrait,
+};
 
 #[derive(Debug, Clone)]
 pub struct GitHubRepoInfo {
-    owner: String,
-    repo: String,
-    branch: String,
-    file_path: PathBuf,
-    raw_url: Url,
-    path_prefix: String,
+    url_info: GithubRepoUrlInfo,
 }
 
 #[cfg(not(feature = "test-utils"))]
@@ -26,6 +23,140 @@ pub const GITHUB_HOSTS: &[&str] = &[
     "127.0.0.1",
 ];
 
+#[derive(Debug, Clone)]
+struct GithubRepoUrlInfo {
+    original_url: Url,
+    raw_url: Url,
+    segments: Vec<String>,
+    owner: String,
+    repo: String,
+    branch: String,
+    file_path: PathBuf,
+    path_prefix: String,
+}
+impl UrlInfoTrait for GithubRepoUrlInfo {
+    fn new(url: &url::Url) -> Result<Self, UrlInfoError> {
+        let host = url.host_str().unwrap_or("");
+
+        if !GITHUB_HOSTS.contains(&host) {
+            return Err(UrlInfoError::InvalidFormat(format!(
+                "URL must be one of {}",
+                GITHUB_HOSTS.join(","),
+            )));
+        }
+
+        let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
+        let (owner, repo, branch, file_path, raw_url) = match url.host_str() {
+            // Url of the form
+            // "https://github.com/asfaload/repo_for_e2e_tests/blob/master/basic_flow/signers_file_1_asfaload.json"
+            // The url in the browser of a signers file in a repo
+            Some("github.com") => {
+                if segments.len() < 5 {
+                    return Err(UrlInfoError::InvalidFormat(
+                        "URL must have at least 5 path segments".to_string(),
+                    ));
+                }
+                let owner = segments[0].to_string();
+                let repo = segments[1].to_string();
+                if segments[2] != "blob" {
+                    return Err(UrlInfoError::InvalidFormat(
+                        "GitHub URL must contain /blob/".to_string(),
+                    ));
+                }
+                let branch = segments[3].to_string();
+                let file_path = segments[4..].join("/");
+                let raw_url = url::Url::parse(
+                    format!(
+                        "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                        owner, repo, branch, file_path
+                    )
+                    .as_str(),
+                )
+                .map_err(|e| UrlInfoError::InvalidFormat(e.to_string()))?;
+                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
+            }
+            Some("raw.githubusercontent.com") => {
+                if segments.len() < 4 {
+                    return Err(UrlInfoError::InvalidFormat(
+                        "URL must have at least 4 path segments".to_string(),
+                    ));
+                }
+                let owner = segments[0].to_string();
+                let repo = segments[1].to_string();
+                let branch = segments[2].to_string();
+                let file_path = segments[3..].join("/");
+                let raw_url = url::Url::parse(url.as_str())
+                    .map_err(|e| UrlInfoError::InvalidFormat(e.to_string()))?;
+                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
+            }
+
+            #[cfg(feature = "test-utils")]
+            Some("localhost") | Some("127.0.0.1") => {
+                if segments.len() < 4 {
+                    return Err(UrlInfoError::InvalidFormat(
+                        "URL must have at least 4 path segments".to_string(),
+                    ));
+                }
+                let owner = segments[0].to_string();
+                let repo = segments[1].to_string();
+                let branch = segments[2].to_string();
+                let file_path = segments[3..].join("/");
+                let raw_url = url::Url::parse(url.as_str())
+                    .map_err(|e| UrlInfoError::InvalidFormat(e.to_string()))?;
+                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
+            }
+            Some(other) => {
+                return Err(UrlInfoError::InvalidFormat(format!(
+                    "Unsupported hostname {} for Github repo url",
+                    other
+                )));
+            }
+            None => {
+                return Err(UrlInfoError::InvalidFormat(format!(
+                    "Unsupported absent host name for Github repo url"
+                )));
+            }
+        };
+
+        if branch.is_empty() {
+            return Err(UrlInfoError::InvalidFormat(format!(
+                "Missing branch in url {}",
+                url
+            )));
+        }
+
+        if file_path.as_os_str().is_empty() {
+            return Err(UrlInfoError::InvalidFormat(format!(
+                "Missing file_path in url {}",
+                url
+            )));
+        }
+
+        Ok(GithubRepoUrlInfo {
+            original_url: url.clone(),
+            raw_url,
+            segments: segments.iter().map(|s| s.to_string()).collect(),
+            owner,
+            repo,
+            branch,
+            file_path,
+            path_prefix: "https/github.com/443".to_string(),
+        })
+    }
+
+    fn project_id(&self) -> String {
+        format!("{}/{}/{}", self.path_prefix, self.owner, self.repo)
+    }
+}
+impl GithubRepoUrlInfo {
+    fn file_path(&self) -> &Path {
+        &self.file_path
+    }
+
+    fn raw_url(&self) -> &url::Url {
+        &self.raw_url
+    }
+}
 impl ForgeTrait for GitHubRepoInfo {
     /// Parse a GitHub URL (blob or raw format) and extract repo information
     /// Accepts both:
@@ -41,157 +172,38 @@ impl ForgeTrait for GitHubRepoInfo {
                 GITHUB_HOSTS.join(","),
             )));
         }
-
-        let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
-
-        let (owner, repo, branch, file_path, raw_url) = match url.host_str() {
-            // Url of the form
-            // "https://github.com/asfaload/repo_for_e2e_tests/blob/master/basic_flow/signers_file_1_asfaload.json"
-            // The url in the browser of a signers file in a repo
-            Some("github.com") => {
-                if segments.len() < 5 {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "URL must have at least 5 path segments".to_string(),
-                    ));
-                }
-                let owner = segments[0].to_string();
-                let repo = segments[1].to_string();
-                if segments[2] != "blob" {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "GitHub URL must contain /blob/".to_string(),
-                    ));
-                }
-                let branch = segments[3].to_string();
-                let file_path = segments[4..].join("/");
-                let raw_url = url::Url::parse(
-                    format!(
-                        "https://raw.githubusercontent.com/{}/{}/{}/{}",
-                        owner, repo, branch, file_path
-                    )
-                    .as_str(),
-                )
-                .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
-                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
-            }
-            // Url of the form
-            // "https://raw.githubusercontent.com/asfaload/repo_for_e2e_tests/master/basic_flow/signers_file_1_asfaload.json"
-            // Found in signers files' metadata files (effective retrieval url corresponding to a
-            // browser url's raw content url).
-            Some("raw.githubusercontent.com") => {
-                if segments.len() < 4 {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "URL must have at least 4 path segments".to_string(),
-                    ));
-                }
-                let owner = segments[0].to_string();
-                let repo = segments[1].to_string();
-                let branch = segments[2].to_string();
-                let file_path = segments[3..].join("/");
-                let raw_url = url::Url::parse(url.as_str())
-                    .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
-                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
-            }
-            // Url of the form
-            // "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244"
-            // As found in index files built from Github releases.
-            Some("api.github.com") => {
-                if segments.len() < 5 {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "URL must have at least 5 path segments".to_string(),
-                    ));
-                }
-                if segments[0] != "repos" {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "GitHub api URL must start with /repos/".to_string(),
-                    ));
-                }
-                if segments[3] != "releases" {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "GitHub api URL exepected to include /releases/".to_string(),
-                    ));
-                }
-                let owner = segments[1].to_string();
-                let repo = segments[2].to_string();
-                let branch = segments[4].to_string();
-                let file_path = segments[5..].join("/");
-                let raw_url = url::Url::parse(url.as_str())
-                    .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
-                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
-            }
-            #[cfg(feature = "test-utils")]
-            Some("localhost") | Some("127.0.0.1") => {
-                if segments.len() < 4 {
-                    return Err(ForgeUrlError::InvalidFormat(
-                        "URL must have at least 4 path segments".to_string(),
-                    ));
-                }
-                let owner = segments[0].to_string();
-                let repo = segments[1].to_string();
-                let branch = segments[2].to_string();
-                let file_path = segments[3..].join("/");
-                let raw_url = url::Url::parse(url.as_str())
-                    .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
-                (owner, repo, branch, PathBuf::from(&file_path), raw_url)
-            }
-            _ => {
-                return Err(ForgeUrlError::InvalidFormat(
-                    "Unsupported GitHub URL format".to_string(),
-                ));
-            }
-        };
-
-        if branch.is_empty() {
-            return Err(ForgeUrlError::MissingBranch);
-        }
-
-        if file_path.as_os_str().is_empty() {
-            return Err(ForgeUrlError::MissingFilePath);
-        }
-
-        // raw.githubusercontent.com is GitHub's content host, but the project's
-        // identity is the github.com repo. Canonicalise the prefix so blob and
-        // raw URLs for the same repo share one project_id.
-        let host_str = url.host_str();
-        let path_prefix = if host_str == Some("raw.githubusercontent.com")
-            || host_str == Some("api.github.com")
-        {
-            "https/github.com/443".to_string()
-        } else {
-            path_prefix_from_url(url)?
-        };
-
-        Ok(GitHubRepoInfo {
-            owner,
-            repo,
-            branch,
-            file_path,
-            raw_url,
-            path_prefix,
-        })
-    }
-
-    fn project_id(&self) -> String {
-        format!("{}/{}/{}", self.path_prefix, self.owner, self.repo)
+        let url_info = GithubRepoUrlInfo::new(url)?;
+        Ok(GitHubRepoInfo { url_info })
     }
 
     fn owner(&self) -> &str {
-        &self.owner
+        &self.url_info.owner
     }
 
     fn repo(&self) -> &str {
-        &self.repo
+        &self.url_info.repo
     }
 
     fn branch(&self) -> &str {
-        &self.branch
+        &self.url_info.branch
     }
 
-    fn file_path(&self) -> &Path {
-        &self.file_path
+    fn url_info(&self) -> &impl UrlInfoTrait {
+        &self.url_info
+    }
+}
+
+impl GitHubRepoInfo {
+    pub fn project_id(&self) -> String {
+        self.url_info.project_id()
     }
 
-    fn raw_url(&self) -> &url::Url {
-        &self.raw_url
+    pub fn file_path(&self) -> &Path {
+        &self.url_info.file_path
+    }
+
+    pub fn raw_url(&self) -> &url::Url {
+        &self.url_info.raw_url
     }
 }
 

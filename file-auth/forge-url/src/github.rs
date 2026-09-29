@@ -172,6 +172,56 @@ impl GithubRepoUrlInfo {
         &self.raw_url
     }
 }
+
+struct GithubApiReleaseUrlInfo {
+    original_url: Url,
+    segments: Vec<String>,
+    path_prefix: String,
+    owner: String,
+    repo: String,
+}
+
+impl UrlInfoTrait for GithubApiReleaseUrlInfo {
+    fn new(url: &url::Url) -> Result<Self, UrlInfoError> {
+        let host = url.host_str().unwrap_or("");
+
+        if !GITHUB_API_HOSTS.contains(&host) {
+            return Err(UrlInfoError::InvalidFormat(format!(
+                "URL must be one of {}",
+                GITHUB_API_HOSTS.join(","),
+            )));
+        }
+
+        let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
+        if segments.len() < 5 {
+            return Err(UrlInfoError::InvalidFormat(
+                "URL must have at least 5 path segments".to_string(),
+            ));
+        }
+        if segments[0] != "repos" {
+            return Err(UrlInfoError::InvalidFormat(
+                "GitHub api URL must start with /repos/".to_string(),
+            ));
+        }
+        if segments[3] != "releases" {
+            return Err(UrlInfoError::InvalidFormat(
+                "GitHub api URL exepected to include /releases/".to_string(),
+            ));
+        }
+        Ok(GithubApiReleaseUrlInfo {
+            original_url: url.clone(),
+            segments: segments.iter().map(|s| s.to_string()).collect(),
+            path_prefix: "https/github.com/443".into(),
+            owner: segments[1].to_string(),
+            repo: segments[2].to_string(),
+        })
+    }
+
+    fn project_id(&self) -> String {
+        format!("{}/{}/{}", self.path_prefix, self.owner, self.repo)
+    }
+}
+
 impl ForgeTrait for GitHubRepoInfo {
     /// Parse a GitHub URL (blob or raw format) and extract repo information
     /// Accepts both:

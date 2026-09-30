@@ -8,7 +8,6 @@ use crate::{ForgeTrait, ForgeUrlError, error::UrlInfoError, traits::UrlInfoTrait
 pub struct GitLabRepoUrlInfo {
     original_url: Url,
     raw_url: Url,
-    segments: Vec<String>,
     namespace: String,
     project: String,
     branch: String,
@@ -126,7 +125,6 @@ impl UrlInfoTrait for GitLabRepoUrlInfo {
 
         Ok(GitLabRepoUrlInfo {
             original_url: url.clone(),
-            segments: segments.iter().map(|s| s.to_string()).collect(),
             namespace,
             project,
             branch,

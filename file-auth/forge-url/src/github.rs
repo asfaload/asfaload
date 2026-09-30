@@ -44,7 +44,6 @@ pub const GITHUB_HOSTS: &[&str] = &[
 pub struct GithubRepoUrlInfo {
     original_url: Url,
     raw_url: Url,
-    segments: Vec<String>,
     owner: String,
     repo: String,
     branch: String,
@@ -166,7 +165,6 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
         Ok(GithubRepoUrlInfo {
             original_url: url.clone(),
             raw_url,
-            segments: segments.iter().map(|s| s.to_string()).collect(),
             owner,
             repo,
             branch,
@@ -199,7 +197,6 @@ impl GithubRepoUrlInfo {
 #[derive(Debug, Clone)]
 pub struct GithubApiReleaseUrlInfo {
     original_url: Url,
-    segments: Vec<String>,
     path_prefix: String,
     owner: String,
     repo: String,
@@ -234,7 +231,6 @@ impl UrlInfoTrait for GithubApiReleaseUrlInfo {
         }
         Ok(GithubApiReleaseUrlInfo {
             original_url: url.clone(),
-            segments: segments.iter().map(|s| s.to_string()).collect(),
             path_prefix: "https/github.com/443".into(),
             owner: segments[1].to_string(),
             repo: segments[2].to_string(),

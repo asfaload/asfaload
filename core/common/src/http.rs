@@ -33,6 +33,8 @@ pub async fn fetch_with_retry(url: &str) -> Result<String, FetchError> {
 
     loop {
         let client = Client::builder()
+            // user agent is required as Github rest api rejects requests without one set
+            .user_agent("asfaload")
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SEC))
             .build()
             .map_err(|e| FetchError::ClientError(e.to_string()))?;

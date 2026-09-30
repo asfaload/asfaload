@@ -128,9 +128,9 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
                 )));
             }
             None => {
-                return Err(UrlInfoError::InvalidFormat(format!(
-                    "Unsupported absent host name for Github repo url"
-                )));
+                return Err(UrlInfoError::InvalidFormat(
+                    "Unsupported absent host name for Github repo url".into(),
+                ));
             }
         };
 

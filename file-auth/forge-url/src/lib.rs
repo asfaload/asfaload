@@ -6,6 +6,7 @@ pub mod github;
 pub mod gitlab;
 mod origin;
 mod traits;
+pub mod url_info;
 
 pub use error::ForgeUrlError;
 pub use forge_info::ForgeInfo;

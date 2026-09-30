@@ -39,7 +39,7 @@ pub const GITHUB_HOSTS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone)]
-struct GithubRepoUrlInfo {
+pub struct GithubRepoUrlInfo {
     original_url: Url,
     raw_url: Url,
     segments: Vec<String>,
@@ -190,7 +190,8 @@ impl GithubRepoUrlInfo {
     }
 }
 
-struct GithubApiReleaseUrlInfo {
+#[derive(Debug, Clone)]
+pub struct GithubApiReleaseUrlInfo {
     original_url: Url,
     segments: Vec<String>,
     path_prefix: String,

@@ -12,7 +12,7 @@ use crate::{ForgeUrlError, error::UrlInfoError, traits::UrlInfoTrait};
 const SIGNERS_DIRS_ON_SERVER: &[&str] = &[HIDDEN_SIGNERS_DIR, SIGNERS_DIR];
 
 #[derive(Debug, Clone)]
-struct FileServerUrlInfo {
+pub struct FileServerUrlInfo {
     host: String,
     file_path: PathBuf,
     original_url: Url,

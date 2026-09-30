@@ -320,6 +320,25 @@ assert_release_index_exists "0.1"
 assert_release_index_pending "0.1"
 assert_last_commit_contains "$INDEX_FILE"
 
+run_step_json "Check index digests against digest sources" \
+    '.files_checked == 1' \
+    cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
+
+# Tamper the digest source served by the file server: the checksums no longer
+# match the digests recorded in the index, and check-index must detect it.
+# The original content is restored so the flow can continue.
+CSUM_SOURCE_FILE="$FS_PROJECT_DIR/releases/v0.1/SHA256SUMS"
+CSUM_SOURCE_BACKUP=$(mktemp)
+to_delete_on_filesystem+=("$CSUM_SOURCE_BACKUP")
+cp "$CSUM_SOURCE_FILE" "$CSUM_SOURCE_BACKUP"
+printf 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef  artifact.bin\n' > "$CSUM_SOURCE_FILE"
+
+expect_fail_json "Check index against modified digest source" \
+    '.error | contains("digest mismatch")' \
+    cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
+
+cp "$CSUM_SOURCE_BACKUP" "$CSUM_SOURCE_FILE"
+
 # A never-registered release has no index file at all.
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download never-registered artifact (v9.9)" \

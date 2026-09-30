@@ -193,11 +193,33 @@ assert_release_index_exists "0.1"
 assert_release_index_pending "0.1"
 assert_last_commit_contains "$INDEX_FILE"
 
+run_step_json "Check index digests against digest sources" \
+    '.files_checked > 0' \
+    cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
+
 # Validate that the source of the digest is the github rest api url to retrieve release info.
 # This is a one-time test, not warranting a helper. We also hard-code the expected url as it is
 # set by GH. Should not be a problem as we don't expect to replace this v0.1 release.
 published_files_digest_source="$(jq -r '.publishedFiles[0].source' < "$(_release_dir "0.1")/$INDEX_FILE")"
 [[ "$published_files_digest_source" == "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244" ]] || { echo "Unexpected published file's digest source"; exit 1; }
+
+# Tamper the index held by the backend: one recorded digest no longer matches
+# the digest computed from its source, and check-index must detect it. The
+# original content is restored so the flow can continue.
+if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
+    V01_INDEX_PATH="$(_release_dir "0.1")/$INDEX_FILE"
+    V01_INDEX_BACKUP=$(mktemp)
+    to_delete_on_filesystem+=("$V01_INDEX_BACKUP")
+    cp "$V01_INDEX_PATH" "$V01_INDEX_BACKUP"
+    jq '(.publishedFiles[0].hash) = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"' \
+        "$V01_INDEX_BACKUP" > "$V01_INDEX_PATH"
+
+    expect_fail_json "Check index with tampered digest" \
+        '.error | contains("digest mismatch")' \
+        cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
+
+    cp "$V01_INDEX_BACKUP" "$V01_INDEX_PATH"
+fi
 
 # A never-registered release has no index file at all.
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")

@@ -446,7 +446,7 @@ mod feature_gated_tests {
         let assets = adder.extract_assets(&release);
 
         assert_eq!(assets.len(), 2);
-        for (asset_info, asset) in assets.iter().zip(release.assets.iter()) {
+        for (asset_info, _asset) in assets.iter().zip(release.assets.iter()) {
             let checksum = asset_info
                 .hash
                 .as_ref()

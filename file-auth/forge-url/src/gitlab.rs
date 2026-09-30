@@ -157,8 +157,10 @@ pub struct GitLabRepoInfo {
 #[cfg(not(feature = "test-utils"))]
 pub const GITLAB_HOSTS: &[&str] = &["gitlab.com"];
 
+// Mock gitlab servers listen on 127.0.0.10 so their host does not overlap with the github
+// test hosts (localhost, 127.0.0.1), else host-based dispatch takes all test urls for github.
 #[cfg(feature = "test-utils")]
-pub const GITLAB_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
+pub const GITLAB_HOSTS: &[&str] = &["gitlab.com", "127.0.0.10"];
 
 impl ForgeTrait for GitLabRepoInfo {
     fn new(url: &url::Url) -> Result<GitLabRepoInfo, ForgeUrlError> {

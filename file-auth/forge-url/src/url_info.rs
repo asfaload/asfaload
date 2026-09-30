@@ -190,4 +190,30 @@ mod tests {
         let url = url::Url::parse("https://github.com/owner/repo/main/file.json").unwrap();
         assert!(UrlInfo::new(&url).is_err());
     }
+
+    // Github is checked before gitlab in the dispatch. The gitlab test host
+    // 127.0.0.10 is kept out of the github host lists precisely so a gitlab
+    // mock is not taken for a github repo url.
+    #[cfg(feature = "test-utils")]
+    #[test]
+    fn test_dispatch_gitlab_mock_host_not_taken_for_github() {
+        let url = url::Url::parse("http://127.0.0.10:8099/namespace/project/-/blob/main/file.json")
+            .unwrap();
+        let url_info = UrlInfo::new(&url).unwrap();
+
+        match &url_info {
+            UrlInfo::Gitlab(_info) => {}
+            other => panic!("Expected Gitlab variant, got {:?}", other),
+        }
+        assert_eq!(
+            url_info.project_id(),
+            "http/127.0.0.10/8099/namespace/project"
+        );
+        assert_eq!(
+            url_info.raw_url(),
+            &url::Url::parse("http://127.0.0.10:8099/namespace/project/-/raw/main/file.json")
+                .unwrap()
+        );
+        assert_eq!(url_info.file_path(), Some(&PathBuf::from("file.json")));
+    }
 }

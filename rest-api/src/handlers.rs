@@ -24,7 +24,7 @@ use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
 use forge_url::ForgesPathMethods;
 use forge_url::forges::{Forges, get_forge};
-use forge_url::github::GITHUB_HOSTS;
+use forge_url::github::GITHUB_REPO_HOSTS;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -71,7 +71,7 @@ pub async fn register_repo_handler(
         ApiError::InvalidRequestBody(format!("Invalid GitHub URL: {}", e))
     })?;
 
-    let project_id = repo_info.project_id();
+    let project_id = repo_info.url_info().project_id();
     let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
         .await
         .map_err(|e| {
@@ -243,7 +243,7 @@ pub async fn update_signers_handler(
         ApiError::InvalidRequestBody(format!("Invalid forge URL: {}", e))
     })?;
 
-    let project_id = repo_info.project_id();
+    let project_id = repo_info.url_info().project_id();
     let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
         .await
         .map_err(|e| {
@@ -1121,7 +1121,7 @@ async fn register_github_release(
     let host = parsed_url
         .host_str()
         .ok_or_else(|| ApiError::InvalidRequestBody("Release URL missing host".to_string()))?;
-    if !GITHUB_HOSTS.contains(&host) {
+    if !GITHUB_REPO_HOSTS.contains(&host) {
         return Err(ApiError::InvalidRequestBody(format!(
             "github_release_url must be a GitHub URL. Host '{}' is not a known GitHub host",
             host

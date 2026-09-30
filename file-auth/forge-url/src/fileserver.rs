@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use constants::{HIDDEN_SIGNERS_DIR, SIGNERS_DIR};
 use url::Url;
 
-use crate::{ForgeTrait, ForgeUrlError};
+use crate::{ForgeUrlError, error::UrlInfoError, traits::UrlInfoTrait};
 
 /// Directory names on the file server that are transparent for project_id computation.
 /// Both the hidden (dot-prefixed) and visible variants of the canonical signers directory
@@ -12,19 +12,18 @@ use crate::{ForgeTrait, ForgeUrlError};
 const SIGNERS_DIRS_ON_SERVER: &[&str] = &[HIDDEN_SIGNERS_DIR, SIGNERS_DIR];
 
 #[derive(Debug, Clone)]
-pub struct FileServerRepoInfo {
-    host: String,
+pub struct FileServerUrlInfo {
     file_path: PathBuf,
-    raw_url: Url,
+    original_url: Url,
     path_prefix: String,
 }
 
-impl ForgeTrait for FileServerRepoInfo {
-    fn new(url: &Url) -> Result<Self, ForgeUrlError> {
+impl UrlInfoTrait for FileServerUrlInfo {
+    fn new(url: &url::Url) -> Result<Self, crate::error::UrlInfoError> {
         let host = url.host_str().unwrap_or("").to_string();
 
         if host.is_empty() {
-            return Err(ForgeUrlError::InvalidFormat(
+            return Err(UrlInfoError::InvalidFormat(
                 "URL must have a host".to_string(),
             ));
         }
@@ -33,17 +32,23 @@ impl ForgeTrait for FileServerRepoInfo {
         // Reject empty or root-only paths
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         if segments.is_empty() {
-            return Err(ForgeUrlError::MissingFilePath);
+            return Err(UrlInfoError::InvalidFormat(
+                "Url must have segments in path".into(),
+            ));
         }
 
         let file_path = PathBuf::from(segments.join("/"));
 
-        let path_prefix = crate::path_prefix_from_url(url)?;
+        let path_prefix = crate::path_prefix_from_url(url).map_err(|e| {
+            UrlInfoError::InvalidFormat(format!(
+                "Path prefix could not be determined for {}: {}",
+                url, e
+            ))
+        })?;
 
-        Ok(FileServerRepoInfo {
-            host,
+        Ok(FileServerUrlInfo {
             file_path,
-            raw_url: url.clone(),
+            original_url: url.clone(),
             path_prefix,
         })
     }
@@ -82,29 +87,45 @@ impl ForgeTrait for FileServerRepoInfo {
         }
     }
 
-    fn owner(&self) -> &str {
-        &self.host
-    }
-
-    fn repo(&self) -> &str {
-        let path_str = self.file_path.to_str().unwrap_or("");
-        // If file_path has no directory component, there's no "repo"
-        if !path_str.contains('/') {
-            return "";
-        }
-        path_str.split('/').next().unwrap_or("")
-    }
-
-    fn branch(&self) -> &str {
-        ""
-    }
-
-    fn file_path(&self) -> &Path {
-        &self.file_path
-    }
-
     fn raw_url(&self) -> &Url {
-        &self.raw_url
+        &self.original_url
+    }
+    fn file_path(&self) -> Option<&PathBuf> {
+        Some(&self.file_path)
+    }
+
+    fn original_url(&self) -> &Url {
+        &self.original_url
+    }
+}
+#[derive(Debug, Clone)]
+pub struct FileServerRepoInfo {
+    url_info: FileServerUrlInfo,
+}
+
+impl FileServerRepoInfo {
+    pub fn new(url: &Url) -> Result<Self, ForgeUrlError> {
+        let url_info = FileServerUrlInfo::new(url)?;
+
+        Ok(FileServerRepoInfo { url_info })
+    }
+
+    pub fn url_info(&self) -> &impl UrlInfoTrait {
+        &self.url_info
+    }
+}
+// Implement some accessors to url_info fields to limit changes to app code in a refactoring
+// introducing trait UrlInfoTrait
+impl FileServerRepoInfo {
+    pub fn file_path(&self) -> &Path {
+        &self.url_info.file_path
+    }
+    pub fn project_id(&self) -> String {
+        self.url_info.project_id()
+    }
+
+    pub fn raw_url(&self) -> &url::Url {
+        &self.url_info.original_url
     }
 }
 
@@ -115,20 +136,15 @@ mod tests {
     #[test]
     fn test_basic_url() {
         let url = Url::parse("http://localhost:8080/myproject/signers.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/localhost/8080/myproject");
-        assert_eq!(info.owner(), "localhost");
-        assert_eq!(info.repo(), "myproject");
-        assert_eq!(info.branch(), "");
-        assert_eq!(info.file_path(), Path::new("myproject/signers.json"));
-        assert_eq!(info.raw_url(), &url);
     }
 
     #[test]
     fn test_hidden_signers_dir_stripped() {
         let url =
             Url::parse("http://localhost:8080/myproject/.asfaload.signers/signers1.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/localhost/8080/myproject");
     }
 
@@ -136,14 +152,14 @@ mod tests {
     fn test_visible_signers_dir_stripped() {
         let url =
             Url::parse("http://localhost:8080/myproject/asfaload.signers/signers1.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/localhost/8080/myproject");
     }
 
     #[test]
     fn test_nested_path() {
         let url = Url::parse("http://files.example.com/org/project/deep/file.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(
             info.project_id(),
             "http/files.example.com/80/org/project/deep"
@@ -153,18 +169,16 @@ mod tests {
     #[test]
     fn test_no_port() {
         let url = Url::parse("http://files.example.com/project/signers.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/files.example.com/80/project");
     }
 
     #[test]
     fn test_root_file() {
         let url = Url::parse("http://localhost:8080/signers.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/localhost/8080");
-        assert_eq!(info.owner(), "localhost");
-        assert_eq!(info.repo(), "");
-        assert_eq!(info.file_path(), Path::new("signers.json"));
+        assert_eq!(info.file_path, Path::new("signers.json"));
     }
 
     #[test]
@@ -177,14 +191,14 @@ mod tests {
     #[test]
     fn test_only_hidden_signers_dir_parent() {
         let url = Url::parse("http://localhost:8080/.asfaload.signers/signers.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/localhost/8080");
     }
 
     #[test]
     fn test_only_visible_signers_dir_parent() {
         let url = Url::parse("http://localhost:8080/asfaload.signers/signers.json").unwrap();
-        let info = FileServerRepoInfo::new(&url).unwrap();
+        let info = FileServerUrlInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "http/localhost/8080");
     }
 }

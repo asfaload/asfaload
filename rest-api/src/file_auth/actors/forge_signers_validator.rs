@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use reqwest::Client;
@@ -170,29 +172,28 @@ impl ForgeProjectValidator {
             owner = %repo_info.owner(),
             repo = %repo_info.repo(),
             branch = %repo_info.branch(),
-            file_path = %repo_info.file_path().display(),
+            file_path = %repo_info.url_info().file_path().unwrap_or(&PathBuf::new()).display(),
             "Parsed Forge URL successfully"
         );
 
-        validate_file_extension(repo_info.file_path()).map_err(|e| {
+        validate_file_extension(repo_info.url_info().file_path().unwrap_or(&PathBuf::new())).map_err(|e| {
             tracing::error!(actor_name = ACTOR_NAME,request_id = %request_id, error = %e, "Invalid file extension");
             ApiError::InvalidRequestBody(e)
         })?;
 
-        let verified_content =
-            signers_file_types::VerifiedForgeContent::new(repo_info.raw_url().to_string())
-                .await
-                .map_err(|e| {
-                    tracing::error!(
-                        actor_name = ACTOR_NAME,
-                        request_id = %request_id,
-                        error = %e,
-                        "Failed to fetch and verify forge content"
-                    );
-                    ApiError::ActorOperationFailed(
-                        "Failed to fetch signers file from forge".to_string(),
-                    )
-                })?;
+        let verified_content = signers_file_types::VerifiedForgeContent::new(
+            repo_info.url_info().raw_url().to_string(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                actor_name = ACTOR_NAME,
+                request_id = %request_id,
+                error = %e,
+                "Failed to fetch and verify forge content"
+            );
+            ApiError::ActorOperationFailed("Failed to fetch signers file from forge".to_string())
+        })?;
 
         let content = verified_content.content().await.map_err(|e| {
             tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, error = %e, "Failed to read content");
@@ -215,7 +216,7 @@ impl ForgeProjectValidator {
         let signers_info: SignersInfo = SignersInfo::from_string(&content).map_err(|e| {
             tracing::error!(
                 request_id = %request_id,
-                raw_url = %repo_info.raw_url(),
+                raw_url = %repo_info.url_info().raw_url(),
                 error = %e,
                 "Failed to parse signers config JSON"
             );
@@ -229,7 +230,7 @@ impl ForgeProjectValidator {
             "Signers config validated successfully"
         );
 
-        let project_id = repo_info.project_id();
+        let project_id = repo_info.url_info().project_id();
 
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %request_id,

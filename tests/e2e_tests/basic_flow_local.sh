@@ -229,6 +229,10 @@ run_step_json "List pending for key0 (should show pending signers)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
+run_step_json "Check pending signers match forge source" \
+    '.hash | startswith("sha512:")' \
+    cargo run --quiet -- check-pending-signers -u "$backend" $(pending_signers_file)
+
 SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 
 # Only run this if we started the backend ourselves, giving us direct access
@@ -253,6 +257,10 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
     expect_fail_json "Sign pending signers differing from forge source" \
         '.error | contains("Hash mismatch")' \
         cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $TAMPERED_SIGNERS_SIGN_ARGS
+
+    expect_fail_json "Check pending signers differing from forge source" \
+        '.error | contains("Hash mismatch")' \
+        cargo run --quiet -- check-pending-signers -u "$backend" $(pending_signers_file)
 
     # Restore the original content so the rest of the flow proceeds unchanged.
     cp "$PENDING_SIGNERS_BACKUP" "$PENDING_SIGNERS_FILE"
@@ -311,6 +319,25 @@ run_step_json "Register release with key2 (does not sign it)" \
 assert_release_index_exists "0.1"
 assert_release_index_pending "0.1"
 assert_last_commit_contains "$INDEX_FILE"
+
+run_step_json "Check index digests against digest sources" \
+    '.files_checked == 1' \
+    cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
+
+# Tamper the digest source served by the file server: the checksums no longer
+# match the digests recorded in the index, and check-index must detect it.
+# The original content is restored so the flow can continue.
+CSUM_SOURCE_FILE="$FS_PROJECT_DIR/releases/v0.1/SHA256SUMS"
+CSUM_SOURCE_BACKUP=$(mktemp)
+to_delete_on_filesystem+=("$CSUM_SOURCE_BACKUP")
+cp "$CSUM_SOURCE_FILE" "$CSUM_SOURCE_BACKUP"
+printf 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef  artifact.bin\n' > "$CSUM_SOURCE_FILE"
+
+expect_fail_json "Check index against modified digest source" \
+    '.error | contains("digest mismatch")' \
+    cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
+
+cp "$CSUM_SOURCE_BACKUP" "$CSUM_SOURCE_FILE"
 
 # A never-registered release has no index file at all.
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")

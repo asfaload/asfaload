@@ -1,25 +1,40 @@
-use std::path::Path;
+use std::path::PathBuf;
 
-use crate::error::ForgeUrlError;
+use crate::error::{ForgeUrlError, UrlInfoError};
 use crate::path_prefix_from_url;
 use constants::INDEX_FILE;
 use url::Url;
 
+/// Trait implemented for structs handling any url type.
+// Before its introduction, even github rest api urls were handled by structs implementing
+// ForgeTrait, but this introduced tension as the api url is not related to a publishing platform
+// path. Now a distinct struct was introduced for github api urls. This struct also implements this
+// trait, but all forge related functions are found in the ForgeTrait
+pub trait UrlInfoTrait {
+    fn new(url: &url::Url) -> Result<Self, UrlInfoError>
+    where
+        Self: Sized;
+
+    // Identity
+    fn project_id(&self) -> String;
+    fn original_url(&self) -> &Url;
+    fn raw_url(&self) -> &Url;
+    fn file_path(&self) -> Option<&PathBuf>;
+}
+
+/// Trait to be implemented for each forge we support (eg github, gitlab,....) where the url
+/// includes components indicating the owner and the repo.
 pub trait ForgeTrait
 where
     Self: Sized,
 {
     fn new(url: &url::Url) -> Result<Self, ForgeUrlError>;
 
-    // Identity
-    fn project_id(&self) -> String;
-
     // Accessors
     fn owner(&self) -> &str;
     fn repo(&self) -> &str;
     fn branch(&self) -> &str;
-    fn file_path(&self) -> &Path;
-    fn raw_url(&self) -> &url::Url;
+    fn url_info(&self) -> &dyn UrlInfoTrait;
 }
 
 /// Build repository paths from artifact *download* URLs.

@@ -3,6 +3,7 @@ use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseInfos;
+use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use forge_url::path_prefix_from_url;
 use octocrab::models::repos::Release;
@@ -203,6 +204,7 @@ impl<C: GithubClientTrait> GithubReleaseAdder<C> {
                         // For a github release, the source is the url to get from the GH rest-api
                         // to retrieve the release info, incl. assets and their digest.
                         source: release.url.to_string(),
+                        source_format: ChecksumSourceFormat::GithubRelease,
                         hash: hash.to_string(),
                     })
                 });
@@ -444,7 +446,7 @@ mod feature_gated_tests {
         let assets = adder.extract_assets(&release);
 
         assert_eq!(assets.len(), 2);
-        for (asset_info, asset) in assets.iter().zip(release.assets.iter()) {
+        for (asset_info, _asset) in assets.iter().zip(release.assets.iter()) {
             let checksum = asset_info
                 .hash
                 .as_ref()

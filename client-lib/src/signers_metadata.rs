@@ -1,6 +1,6 @@
 use crate::{AsfaloadLibResult, ClientLibError};
 use features_lib::{SignersConfigMetadata, SignersConfigOrigin, sha512_for_content};
-use forge_url::{ForgeInfo, ForgeTrait};
+use forge_url::{UrlInfoTrait, url_info::UrlInfo};
 
 /// Verify that a file's bytes are identical to the source content served by the
 /// forge URL recorded in its metadata.
@@ -59,9 +59,8 @@ pub fn verify_remote_url_in_path_realm(path: &str, url: &str) -> AsfaloadLibResu
         url,
         project_id,
     };
-
     let parsed = url::Url::parse(url).map_err(|_| reject(url.to_string(), None))?;
-    let project_id = ForgeInfo::new(&parsed)
+    let project_id = UrlInfo::new(&parsed)
         .map(|info| info.project_id())
         .map_err(|_| reject(url.to_string(), None))?;
 

@@ -206,6 +206,16 @@ mod tests {
     // with its digest, as "<algo>:<hex>".
     const RELEASE_URL_PATH: &str = "/repos/acme/tool/releases/123";
 
+    // The api mocks listen on 127.0.0.2: with the forge-url test-utils feature
+    // it is the github api test host, while 127.0.0.1 stands for repo urls.
+    async fn api_server() -> mockito::Server {
+        mockito::Server::new_with_opts_async(mockito::ServerOpts {
+            host: "127.0.0.2",
+            ..Default::default()
+        })
+        .await
+    }
+
     fn release_body(entries: &[(&str, Option<&str>)]) -> String {
         let assets: Vec<String> = entries
             .iter()
@@ -244,7 +254,7 @@ mod tests {
 
     #[tokio::test]
     async fn release_source_parses_entry_of_matching_published_file() {
-        let mut server = mockito::Server::new_async().await;
+        let mut server = api_server().await;
         let _m = server
             .mock("GET", RELEASE_URL_PATH)
             .with_status(200)
@@ -280,7 +290,7 @@ mod tests {
 
     #[tokio::test]
     async fn release_source_with_leading_bom_parses() {
-        let mut server = mockito::Server::new_async().await;
+        let mut server = api_server().await;
         let _m = server
             .mock("GET", RELEASE_URL_PATH)
             .with_status(200)
@@ -310,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn release_source_malformed_json_names_source_url() {
-        let mut server = mockito::Server::new_async().await;
+        let mut server = api_server().await;
         let _m = server
             .mock("GET", RELEASE_URL_PATH)
             .with_status(200)
@@ -336,7 +346,7 @@ mod tests {
     // fetched once for the whole index, not once per published file.
     #[tokio::test]
     async fn release_source_shared_by_files_is_fetched_once() {
-        let mut server = mockito::Server::new_async().await;
+        let mut server = api_server().await;
         // Panics on assert if hit any other number of times than once.
         let mock = server
             .mock("GET", RELEASE_URL_PATH)

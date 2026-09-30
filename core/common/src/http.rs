@@ -106,6 +106,26 @@ mod tests {
     const BODY: &str = "body served by the mock server";
 
     #[tokio::test]
+    async fn requests_carry_the_asfaload_cli_user_agent() -> anyhow::Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/data")
+            .match_header("User-Agent", "asfaload")
+            .with_status(200)
+            .with_body(BODY)
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/data", server.url());
+
+        let body = fetch_with_retry(&url).await?;
+
+        assert_eq!(body, BODY);
+        mock.assert_async().await;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn cache_hit_serves_body_without_second_fetch() -> anyhow::Result<()> {
         let mut server = mockito::Server::new_async().await;
         // Panics on assert if hit any other number of times than once.

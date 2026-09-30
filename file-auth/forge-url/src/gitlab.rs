@@ -106,14 +106,12 @@ impl UrlInfoTrait for GitLabRepoUrlInfo {
         let raw_url = if action == "raw" {
             url.clone()
         } else {
-            url::Url::parse(
-                format!(
-                    "https://gitlab.com/{}/{}/-/raw/{}/{}",
-                    namespace, project, branch, file_path
-                )
-                .as_str(),
-            )
-            .map_err(|e| UrlInfoError::InvalidFormat(e.to_string()))?
+            // The raw url keeps the original scheme, host and port: building it
+            // around a hard-coded gitlab.com would break self-hosted instances
+            // and the 127.0.0.10 mock host of the test-utils feature.
+            let mut raw_url = url.clone();
+            raw_url.set_path(&format!("{namespace}/{project}/-/raw/{branch}/{file_path}"));
+            raw_url
         };
 
         let path_prefix = crate::path_prefix_from_url(url).map_err(|e| {

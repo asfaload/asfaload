@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};

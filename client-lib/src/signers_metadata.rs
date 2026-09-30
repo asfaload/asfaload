@@ -1,6 +1,6 @@
 use crate::{AsfaloadLibResult, ClientLibError};
 use features_lib::{SignersConfigMetadata, SignersConfigOrigin, sha512_for_content};
-use forge_url::{ForgeTrait, UrlInfoTrait, url_info::UrlInfo};
+use forge_url::{UrlInfoTrait, url_info::UrlInfo};
 
 /// Verify that a file's bytes are identical to the source content served by the
 /// forge URL recorded in its metadata.

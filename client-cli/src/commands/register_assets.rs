@@ -69,3 +69,26 @@ pub(crate) fn determine_registration_mode(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The github rest api serves release info, but a release url must target
+    // the project's release pages: the api host is not a repo host.
+    #[test]
+    fn github_api_release_url_is_rejected() {
+        let release_url = Some("https://api.github.com/repos/owner/repo/releases/123".to_string());
+
+        match determine_registration_mode(&release_url, &[]) {
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("not a known GitHub host"),
+                    "unexpected error message: {msg}"
+                );
+            }
+            Ok(_) => panic!("expected github api release url to be rejected"),
+        }
+    }
+}

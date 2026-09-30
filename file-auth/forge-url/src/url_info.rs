@@ -59,6 +59,15 @@ impl UrlInfoTrait for UrlInfo {
             Self::FileServer(info) => info.file_path(),
         }
     }
+
+    fn original_url(&self) -> &url::Url {
+        match self {
+            Self::GithubRepo(info) => info.original_url(),
+            Self::GithubReleaseApi(info) => info.original_url(),
+            Self::Gitlab(info) => info.original_url(),
+            Self::FileServer(info) => info.original_url(),
+        }
+    }
 }
 
 #[cfg(test)]

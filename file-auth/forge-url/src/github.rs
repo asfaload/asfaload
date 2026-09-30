@@ -185,6 +185,10 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
     fn file_path(&self) -> Option<&PathBuf> {
         Some(&self.file_path)
     }
+
+    fn original_url(&self) -> &Url {
+        &self.original_url
+    }
 }
 impl GithubRepoUrlInfo {
     fn raw_url(&self) -> &url::Url {
@@ -249,6 +253,10 @@ impl UrlInfoTrait for GithubApiReleaseUrlInfo {
 
     fn file_path(&self) -> Option<&PathBuf> {
         None
+    }
+
+    fn original_url(&self) -> &Url {
+        &self.original_url
     }
 }
 

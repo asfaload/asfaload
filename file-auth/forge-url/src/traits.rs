@@ -17,6 +17,7 @@ pub trait UrlInfoTrait {
 
     // Identity
     fn project_id(&self) -> String;
+    fn original_url(&self) -> &Url;
     fn raw_url(&self) -> &Url;
     fn file_path(&self) -> Option<&PathBuf>;
 }

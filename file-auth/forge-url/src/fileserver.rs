@@ -93,6 +93,10 @@ impl UrlInfoTrait for FileServerUrlInfo {
     fn file_path(&self) -> Option<&PathBuf> {
         Some(&self.file_path)
     }
+
+    fn original_url(&self) -> &Url {
+        &self.original_url
+    }
 }
 #[derive(Debug, Clone)]
 pub struct FileServerRepoInfo {

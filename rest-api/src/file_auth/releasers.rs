@@ -4,7 +4,7 @@ use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
-use forge_url::github::{GITHUB_HOSTS, GITHUB_REPO_HOSTS};
+use forge_url::github::GITHUB_REPO_HOSTS;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 #[cfg(all(test, feature = "test-utils"))]
@@ -134,6 +134,41 @@ mod tests {
 mod test_utils_tests {
     use super::*;
     use rest_api_test_helpers::get_random_port;
+
+    // The github rest api serves release info, but a release url must target
+    // the project's release pages: the api host is not a repo host.
+    #[tokio::test]
+    async fn test_release_adders_reject_github_api_url() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let release_url =
+            url::Url::parse("https://api.github.com/repos/owner/repo/releases/123").unwrap();
+
+        let port = get_random_port().await.unwrap();
+        let mock_config = crate::config::AppConfig {
+            server_port: port,
+            server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            git_repo_path: temp_dir.path().to_path_buf(),
+            log_level: "info".to_string(),
+            git_backend: crate::config::GitBackendConfig::Sha256,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        match ReleaseAdders::new(&release_url, temp_dir.path().to_path_buf(), &mock_config).await {
+            Err(ReleaseError::ReleaseUrlError(ReleaseUrlError::UnsupportedPlatform(host))) => {
+                assert!(
+                    host.contains("api.github.com"),
+                    "unexpected rejected host: {host}"
+                );
+            }
+            Err(e) => panic!("Expected UnsupportedPlatform but got {e}"),
+            Ok(_) => panic!("Expected UnsupportedPlatform error, but an adder was built!"),
+        }
+    }
 
     #[tokio::test]
     async fn test_release_adders_github_release() {

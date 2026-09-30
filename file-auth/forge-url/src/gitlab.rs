@@ -281,7 +281,7 @@ mod tests {
         let url = url::Url::parse("https://gitlab.com/-/project/repo/blob/main/file.json").unwrap();
         let result = GitLabRepoInfo::new(&url);
         match result {
-            Err(ForgeUrlError::InvalidFormat(msg)) => {
+            Err(ForgeUrlError::UrlParsingError(UrlInfoError::InvalidFormat(msg))) => {
                 if !msg.contains("GitLab URL must contain a namespace and project") {
                     panic!(
                         "Expected message to contain \"GitLab URL must contain a namespace and project\" but was \"{}\"",
@@ -289,8 +289,11 @@ mod tests {
                     )
                 }
             }
-            Err(e) => panic!("Expected InvalidFormat error, got {}", e),
-            Ok(v) => panic!("Expected InvalidFormat error, got ok value {:?}", v),
+            Err(e) => panic!("Expected UrlParsingError with InvalidFormat, got {}", e),
+            Ok(v) => panic!(
+                "Expected UrlParsingError with InvalidFormat, got ok value {:?}",
+                v
+            ),
         }
     }
 }

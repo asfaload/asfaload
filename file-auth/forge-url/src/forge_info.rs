@@ -59,6 +59,7 @@ impl ForgeTrait for ForgeInfo {
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
+    use crate::traits::UrlInfoTrait;
     use std::path::PathBuf;
 
     #[test]
@@ -154,14 +155,17 @@ mod tests {
 
     #[test]
     fn test_unsupported_domain_falls_back_to_fileserver() {
-        let url = url::Url::parse("https://bitbucket.org/owner/repo/src/main/file.json").unwrap();
-        let result = ForgeInfo::new(&url).unwrap();
-        match result {
-            ForgeInfo::FileServer(info) => {
-                assert_eq!(info.owner(), "bitbucket.org");
+        let url = url::Url::parse("https://example.org/company/dept/src/main/file.json").unwrap();
+        let forge = ForgeInfo::new(&url).unwrap();
+        match &forge {
+            ForgeInfo::FileServer(_info) => {
+                // A file server url is not tied to a repo: no owner, repo or branch.
+                assert_eq!(forge.owner(), "");
+                assert_eq!(forge.repo(), "");
+                assert_eq!(forge.branch(), "");
                 assert_eq!(
-                    info.file_path(),
-                    PathBuf::from("owner/repo/src/main/file.json")
+                    forge.url_info().file_path(),
+                    Some(&PathBuf::from("company/dept/src/main/file.json"))
                 );
             }
             _ => panic!("Expected FileServer variant"),
@@ -195,13 +199,17 @@ mod tests {
         assert_eq!(forge.repo(), expected_repo, "repo mismatch");
         assert_eq!(forge.branch(), expected_branch, "branch mismatch");
         assert_eq!(
-            forge.file_path(),
-            PathBuf::from(expected_path),
+            forge.url_info().file_path(),
+            Some(&PathBuf::from(expected_path)),
             "file_path mismatch"
         );
-        assert_eq!(forge.raw_url(), expected_raw_url, "raw_url mismatch");
         assert_eq!(
-            forge.project_id(),
+            forge.url_info().raw_url(),
+            expected_raw_url,
+            "raw_url mismatch"
+        );
+        assert_eq!(
+            forge.url_info().project_id(),
             expected_project_id,
             "project_id mismatch"
         );
@@ -363,22 +371,28 @@ mod tests {
         assert_eq!(github.owner(), "owner");
         assert_eq!(github.repo(), "repo");
         assert_eq!(github.branch(), "main");
-        assert_eq!(github.file_path(), PathBuf::from("file.json"));
         assert_eq!(
-            github.raw_url(),
+            github.url_info().file_path(),
+            Some(&PathBuf::from("file.json"))
+        );
+        assert_eq!(
+            github.url_info().raw_url(),
             &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json")
                 .unwrap()
         );
-        assert_eq!(github.project_id(), "https/github.com/443/owner/repo");
+        assert_eq!(
+            github.url_info().project_id(),
+            "https/github.com/443/owner/repo"
+        );
 
         match &github {
             ForgeInfo::Github(info) => {
                 assert_eq!(info.owner(), github.owner());
                 assert_eq!(info.repo(), github.repo());
                 assert_eq!(info.branch(), github.branch());
-                assert_eq!(info.file_path(), github.file_path());
-                assert_eq!(info.raw_url(), github.raw_url());
-                assert_eq!(info.project_id(), github.project_id());
+                assert_eq!(info.url_info().file_path(), github.url_info().file_path());
+                assert_eq!(info.url_info().raw_url(), github.url_info().raw_url());
+                assert_eq!(info.url_info().project_id(), github.url_info().project_id());
             }
             _ => panic!("Expected GitHub variant"),
         }
@@ -394,23 +408,69 @@ mod tests {
         assert_eq!(gitlab.owner(), "ns");
         assert_eq!(gitlab.repo(), "proj");
         assert_eq!(gitlab.branch(), "main");
-        assert_eq!(gitlab.file_path(), PathBuf::from("file.json"));
         assert_eq!(
-            gitlab.raw_url(),
+            gitlab.url_info().file_path(),
+            Some(&PathBuf::from("file.json"))
+        );
+        assert_eq!(
+            gitlab.url_info().raw_url(),
             &url::Url::parse("https://gitlab.com/ns/proj/-/raw/main/file.json").unwrap()
         );
-        assert_eq!(gitlab.project_id(), "https/gitlab.com/443/ns/proj");
+        assert_eq!(
+            gitlab.url_info().project_id(),
+            "https/gitlab.com/443/ns/proj"
+        );
 
         match &gitlab {
             ForgeInfo::Gitlab(info) => {
                 assert_eq!(info.owner(), gitlab.owner());
                 assert_eq!(info.repo(), gitlab.repo());
                 assert_eq!(info.branch(), gitlab.branch());
-                assert_eq!(info.file_path(), gitlab.file_path());
-                assert_eq!(info.raw_url(), gitlab.raw_url());
-                assert_eq!(info.project_id(), gitlab.project_id());
+                assert_eq!(info.url_info().file_path(), gitlab.url_info().file_path());
+                assert_eq!(info.url_info().raw_url(), gitlab.url_info().raw_url());
+                assert_eq!(info.url_info().project_id(), gitlab.url_info().project_id());
             }
             _ => panic!("Expected GitLab variant"),
+        }
+    }
+
+    #[test]
+    fn test_forge_trait_methods_delegation_fileserver() {
+        let fileserver = ForgeInfo::new(
+            &url::Url::parse("https://files.example.com/project/releases/v1/SHA256SUMS").unwrap(),
+        )
+        .unwrap();
+
+        // A file server url is not tied to a repo: no owner, repo or branch.
+        assert_eq!(fileserver.owner(), "");
+        assert_eq!(fileserver.repo(), "");
+        assert_eq!(fileserver.branch(), "");
+        assert_eq!(
+            fileserver.url_info().file_path(),
+            Some(&PathBuf::from("project/releases/v1/SHA256SUMS"))
+        );
+        assert_eq!(
+            fileserver.url_info().raw_url(),
+            &url::Url::parse("https://files.example.com/project/releases/v1/SHA256SUMS").unwrap()
+        );
+        assert_eq!(
+            fileserver.url_info().project_id(),
+            "https/files.example.com/443/project/releases/v1"
+        );
+
+        match &fileserver {
+            ForgeInfo::FileServer(info) => {
+                assert_eq!(
+                    info.url_info().file_path(),
+                    fileserver.url_info().file_path()
+                );
+                assert_eq!(info.url_info().raw_url(), fileserver.url_info().raw_url());
+                assert_eq!(
+                    info.url_info().project_id(),
+                    fileserver.url_info().project_id()
+                );
+            }
+            _ => panic!("Expected FileServer variant"),
         }
     }
 }

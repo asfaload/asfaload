@@ -368,17 +368,20 @@ mod tests {
     // Indexes built from github releases record the release api url as digest
     // source. A plain release url ends with the release id: it has no file
     // path, but it still resolves to the github project of the repo.
+    // Release api urls are handled by UrlInfo's GithubReleaseApi variant.
     #[test]
     fn test_parse_release_api_url_without_asset_path() {
         let url = url::Url::parse(
             "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893",
         )
         .unwrap();
-        let result = GitHubRepoInfo::new(&url).unwrap();
-        assert_eq!(result.owner(), "asfaload");
-        assert_eq!(result.repo(), "repo_for_e2e_tests");
+        let url_info = crate::url_info::UrlInfo::new(&url).unwrap();
+        match &url_info {
+            crate::url_info::UrlInfo::GithubReleaseApi(_info) => {}
+            other => panic!("Expected GithubReleaseApi variant, got {:?}", other),
+        }
         assert_eq!(
-            result.project_id(),
+            url_info.project_id(),
             "https/github.com/443/asfaload/repo_for_e2e_tests"
         );
     }
@@ -389,9 +392,13 @@ mod tests {
             "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893/assets/456",
         )
         .unwrap();
-        let result = GitHubRepoInfo::new(&url).unwrap();
+        let url_info = crate::url_info::UrlInfo::new(&url).unwrap();
+        match &url_info {
+            crate::url_info::UrlInfo::GithubReleaseApi(_info) => {}
+            other => panic!("Expected GithubReleaseApi variant, got {:?}", other),
+        }
         assert_eq!(
-            result.project_id(),
+            url_info.project_id(),
             "https/github.com/443/asfaload/repo_for_e2e_tests"
         );
     }

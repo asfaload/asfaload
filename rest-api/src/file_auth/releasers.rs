@@ -4,7 +4,7 @@ use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
-use forge_url::github::GITHUB_HOSTS;
+use forge_url::github::{GITHUB_HOSTS, GITHUB_REPO_HOSTS};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 #[cfg(all(test, feature = "test-utils"))]
@@ -44,14 +44,14 @@ impl ReleaseAdder for ReleaseAdders {
             .host_str()
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
-        if GITHUB_HOSTS.contains(&host) {
+        if GITHUB_REPO_HOSTS.contains(&host) {
             let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
                 "{}. Supported: GitHub ({})",
                 host,
-                GITHUB_HOSTS.join(", "),
+                GITHUB_REPO_HOSTS.join(", "),
             ))
             .into())
         }
@@ -120,13 +120,13 @@ mod tests {
     fn test_github_release_host_detection() {
         let github_url =
             url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
-        assert!(GITHUB_HOSTS.contains(&github_url.host_str().unwrap()));
+        assert!(GITHUB_REPO_HOSTS.contains(&github_url.host_str().unwrap()));
     }
 
     #[test]
     fn test_unsupported_host() {
         let bitbucket_url = url::Url::parse("https://bitbucket.org/owner/repo/v1.0.0").unwrap();
-        assert!(!GITHUB_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
+        assert!(!GITHUB_REPO_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
     }
 }
 

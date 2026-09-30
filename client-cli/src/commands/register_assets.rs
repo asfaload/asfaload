@@ -2,6 +2,7 @@ use crate::error::Result;
 use admin_lib::v1::RegistrationMode;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
+use forge_url::github::GITHUB_REPO_HOSTS;
 
 pub async fn handle_register_assets_command(
     backend_url: &str,
@@ -32,8 +33,6 @@ pub(crate) fn determine_registration_mode(
     github_release_url: &Option<String>,
     csum_file: &[String],
 ) -> anyhow::Result<admin_lib::v1::RegistrationMode> {
-    use forge_url::github::GITHUB_HOSTS;
-
     match (github_release_url.as_ref(), csum_file.is_empty()) {
         (Some(url), true) => {
             let parsed =
@@ -41,7 +40,7 @@ pub(crate) fn determine_registration_mode(
             let host = parsed
                 .host_str()
                 .ok_or_else(|| anyhow::anyhow!("Release URL missing host"))?;
-            if !GITHUB_HOSTS.contains(&host) {
+            if !GITHUB_REPO_HOSTS.contains(&host) {
                 anyhow::bail!(
                     "--github-release-url must be a GitHub URL. Host '{}' is not a known GitHub host",
                     host

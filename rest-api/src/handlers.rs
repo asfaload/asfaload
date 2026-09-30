@@ -24,7 +24,7 @@ use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
 use forge_url::ForgesPathMethods;
 use forge_url::forges::{Forges, get_forge};
-use forge_url::github::GITHUB_HOSTS;
+use forge_url::github::GITHUB_REPO_HOSTS;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -1121,7 +1121,7 @@ async fn register_github_release(
     let host = parsed_url
         .host_str()
         .ok_or_else(|| ApiError::InvalidRequestBody("Release URL missing host".to_string()))?;
-    if !GITHUB_HOSTS.contains(&host) {
+    if !GITHUB_REPO_HOSTS.contains(&host) {
         return Err(ApiError::InvalidRequestBody(format!(
             "github_release_url must be a GitHub URL. Host '{}' is not a known GitHub host",
             host

@@ -60,3 +60,125 @@ impl UrlInfoTrait for UrlInfo {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_dispatch_github_blob_url() {
+        let url = url::Url::parse("https://github.com/owner/repo/blob/main/file.json").unwrap();
+        let url_info = UrlInfo::new(&url).unwrap();
+
+        match &url_info {
+            UrlInfo::GithubRepo(info) => {
+                assert_eq!(info.project_id(), url_info.project_id());
+                assert_eq!(info.raw_url(), url_info.raw_url());
+                assert_eq!(info.file_path(), url_info.file_path());
+            }
+            other => panic!("Expected GithubRepo variant, got {:?}", other),
+        }
+        assert_eq!(url_info.project_id(), "https/github.com/443/owner/repo");
+        assert_eq!(
+            url_info.raw_url(),
+            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json")
+                .unwrap()
+        );
+        assert_eq!(url_info.file_path(), Some(&PathBuf::from("file.json")));
+    }
+
+    #[test]
+    fn test_dispatch_github_raw_url() {
+        let url =
+            url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json").unwrap();
+        let url_info = UrlInfo::new(&url).unwrap();
+
+        match &url_info {
+            UrlInfo::GithubRepo(info) => {
+                assert_eq!(info.project_id(), url_info.project_id());
+                assert_eq!(info.raw_url(), url_info.raw_url());
+                assert_eq!(info.file_path(), url_info.file_path());
+            }
+            other => panic!("Expected GithubRepo variant, got {:?}", other),
+        }
+        assert_eq!(url_info.project_id(), "https/github.com/443/owner/repo");
+        assert_eq!(url_info.raw_url(), &url);
+        assert_eq!(url_info.file_path(), Some(&PathBuf::from("file.json")));
+    }
+
+    // api.github.com belongs to both GITHUB_API_HOSTS and GITHUB_HOSTS: the api
+    // hosts must be checked first, else the release url would be handed to the
+    // repo url parser and rejected.
+    #[test]
+    fn test_dispatch_github_api_release_url() {
+        let url =
+            url::Url::parse("https://api.github.com/repos/owner/repo/releases/286360893").unwrap();
+        let url_info = UrlInfo::new(&url).unwrap();
+
+        match &url_info {
+            UrlInfo::GithubReleaseApi(info) => {
+                assert_eq!(info.project_id(), url_info.project_id());
+                assert_eq!(info.raw_url(), url_info.raw_url());
+            }
+            other => panic!("Expected GithubReleaseApi variant, got {:?}", other),
+        }
+        assert_eq!(url_info.project_id(), "https/github.com/443/owner/repo");
+        assert_eq!(url_info.raw_url(), &url);
+        assert_eq!(url_info.file_path(), None);
+    }
+
+    #[test]
+    fn test_dispatch_gitlab_blob_url() {
+        let url =
+            url::Url::parse("https://gitlab.com/namespace/project/-/blob/main/file.json").unwrap();
+        let url_info = UrlInfo::new(&url).unwrap();
+
+        match &url_info {
+            UrlInfo::Gitlab(info) => {
+                assert_eq!(info.project_id(), url_info.project_id());
+                assert_eq!(info.raw_url(), url_info.raw_url());
+                assert_eq!(info.file_path(), url_info.file_path());
+            }
+            other => panic!("Expected Gitlab variant, got {:?}", other),
+        }
+        assert_eq!(
+            url_info.project_id(),
+            "https/gitlab.com/443/namespace/project"
+        );
+        assert_eq!(
+            url_info.raw_url(),
+            &url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/file.json").unwrap()
+        );
+        assert_eq!(url_info.file_path(), Some(&PathBuf::from("file.json")));
+    }
+
+    #[test]
+    fn test_dispatch_unknown_host_falls_back_to_fileserver() {
+        let url = url::Url::parse("https://files.example.com/project/file.json").unwrap();
+        let url_info = UrlInfo::new(&url).unwrap();
+
+        match &url_info {
+            UrlInfo::FileServer(info) => {
+                assert_eq!(info.project_id(), url_info.project_id());
+                assert_eq!(info.raw_url(), url_info.raw_url());
+                assert_eq!(info.file_path(), url_info.file_path());
+            }
+            other => panic!("Expected FileServer variant, got {:?}", other),
+        }
+        assert_eq!(url_info.project_id(), "https/files.example.com/443/project");
+        assert_eq!(url_info.raw_url(), &url);
+        assert_eq!(
+            url_info.file_path(),
+            Some(&PathBuf::from("project/file.json"))
+        );
+    }
+
+    // A known forge url that does not match its url shape must error, not fall
+    // back to the file server parser.
+    #[test]
+    fn test_invalid_github_url_propagates_error() {
+        let url = url::Url::parse("https://github.com/owner/repo/main/file.json").unwrap();
+        assert!(UrlInfo::new(&url).is_err());
+    }
+}

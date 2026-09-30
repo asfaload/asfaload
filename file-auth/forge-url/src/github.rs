@@ -27,8 +27,9 @@ pub const GITHUB_REPO_HOSTS: &[&str] = &[
     "localhost",
     "127.0.0.1",
 ];
+// Mock api servers need to listen on 127.0.0.2 to avoid test failures.
 #[cfg(feature = "test-utils")]
-pub const GITHUB_API_HOSTS: &[&str] = &["api.github.com", "localhost", "127.0.0.1"];
+pub const GITHUB_API_HOSTS: &[&str] = &["api.github.com", "127.0.0.2"];
 #[cfg(feature = "test-utils")]
 pub const GITHUB_HOSTS: &[&str] = &[
     "github.com",
@@ -36,6 +37,7 @@ pub const GITHUB_HOSTS: &[&str] = &[
     "api.github.com",
     "localhost",
     "127.0.0.1",
+    "127.0.0.2",
 ];
 
 #[derive(Debug, Clone)]

@@ -13,7 +13,6 @@ const SIGNERS_DIRS_ON_SERVER: &[&str] = &[HIDDEN_SIGNERS_DIR, SIGNERS_DIR];
 
 #[derive(Debug, Clone)]
 pub struct FileServerUrlInfo {
-    host: String,
     file_path: PathBuf,
     original_url: Url,
     path_prefix: String,
@@ -48,7 +47,6 @@ impl UrlInfoTrait for FileServerUrlInfo {
         })?;
 
         Ok(FileServerUrlInfo {
-            host,
             file_path,
             original_url: url.clone(),
             path_prefix,

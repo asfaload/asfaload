@@ -124,6 +124,27 @@ run_step_json "List pending for key0 (should show pending signers)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
+run_step_json "Check pending signers match forge source" \
+    '.hash | startswith("sha512:")' \
+    cargo run --quiet -- check-pending-signers -u "$backend" $(pending_signers_file)
+
+# Tamper the pending signers file held by the backend: the mirror content no
+# longer matches the signers file published on the forge, and the divergence
+# must be detected. The original content is restored so the flow can continue.
+if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
+    PENDING_SIGNERS_FILE="$(_project_dir)/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+    PENDING_SIGNERS_BACKUP=$(mktemp)
+    to_delete_on_filesystem+=("$PENDING_SIGNERS_BACKUP")
+    cp "$PENDING_SIGNERS_FILE" "$PENDING_SIGNERS_BACKUP"
+    printf '\n' >> "$PENDING_SIGNERS_FILE"
+
+    expect_fail_json "Check pending signers differing from forge source" \
+        '.error | contains("Hash mismatch")' \
+        cargo run --quiet -- check-pending-signers -u "$backend" $(pending_signers_file)
+
+    cp "$PENDING_SIGNERS_BACKUP" "$PENDING_SIGNERS_FILE"
+fi
+
 SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 run_step_json "Sign signers file with key0 (submitter signs in second phase)" \
     '.is_complete == false' \

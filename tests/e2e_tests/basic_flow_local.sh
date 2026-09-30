@@ -229,6 +229,10 @@ run_step_json "List pending for key0 (should show pending signers)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
+run_step_json "Check pending signers match forge source" \
+    '.hash | startswith("sha512:")' \
+    cargo run --quiet -- check-pending-signers -u "$backend" $(pending_signers_file)
+
 SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 
 # Only run this if we started the backend ourselves, giving us direct access
@@ -253,6 +257,10 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
     expect_fail_json "Sign pending signers differing from forge source" \
         '.error | contains("Hash mismatch")' \
         cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $TAMPERED_SIGNERS_SIGN_ARGS
+
+    expect_fail_json "Check pending signers differing from forge source" \
+        '.error | contains("Hash mismatch")' \
+        cargo run --quiet -- check-pending-signers -u "$backend" $(pending_signers_file)
 
     # Restore the original content so the rest of the flow proceeds unchanged.
     cp "$PENDING_SIGNERS_BACKUP" "$PENDING_SIGNERS_FILE"

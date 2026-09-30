@@ -188,12 +188,6 @@ impl UrlInfoTrait for GithubRepoUrlInfo {
         &self.original_url
     }
 }
-impl GithubRepoUrlInfo {
-    fn raw_url(&self) -> &url::Url {
-        &self.raw_url
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct GithubApiReleaseUrlInfo {
     original_url: Url,

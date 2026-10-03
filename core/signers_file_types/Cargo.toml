@@ -9,7 +9,7 @@ signatures = { path = "../signatures/" }
 serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.17"
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4.42", features = ["serde"] }
 tempfile = "3.23.0"
 

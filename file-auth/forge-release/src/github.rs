@@ -1,3 +1,4 @@
+use crate::common::ReleaseInfo;
 use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
 
 // Minimal shape of a github release api response ignoring irrelevant fields.
@@ -47,6 +48,38 @@ pub fn parse_github_rest_api_answer(
         })
         .collect())
 }
+
+// Originally in rest-api, but made available to client to generate index for release registration
+// -----------------------------------------------------------------------------------------------
+
+/// Information of a Github release
+#[derive(Debug, Clone)]
+pub struct GithubReleaseInfo {
+    pub origin_prefix: String,
+    pub owner: String,
+    pub repo: String,
+    pub tag: String,
+}
+
+impl ReleaseInfo for GithubReleaseInfo {
+    fn origin_prefix(&self) -> &str {
+        &self.origin_prefix
+    }
+
+    fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    fn repo(&self) -> &str {
+        &self.repo
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

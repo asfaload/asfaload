@@ -1,5 +1,6 @@
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::fs::names::find_global_signers_for;
+use forge_release::common::ReleaseInfo;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::PathBuf;
@@ -26,12 +27,6 @@ pub enum ReleaseUrlError {
     MissingComponent(String),
 }
 
-pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
-    fn origin_prefix(&self) -> &str;
-    fn owner(&self) -> &str;
-    fn repo(&self) -> &str;
-    fn tag(&self) -> &str;
-}
 pub trait BackendReleaseInfo: ReleaseInfo + std::fmt::Debug + Send + Sync {
     fn release_path(&self) -> &NormalisedPaths;
 }

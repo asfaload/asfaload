@@ -1,11 +1,12 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo,
-    ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
+use forge_release::common::ReleaseInfo;
+use forge_release::github::GithubReleaseInfo;
 use forge_url::path_prefix_from_url;
 use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
@@ -95,38 +96,11 @@ pub struct GithubReleaseAdder<C: GithubClientTrait> {
     release_info: BackendGithubReleaseInfo,
 }
 
-/// Information of a Github release
-#[derive(Debug, Clone)]
-pub struct GithubReleaseInfo {
-    pub origin_prefix: String,
-    pub owner: String,
-    pub repo: String,
-    pub tag: String,
-}
-
 /// Information of a release on the backend
 #[derive(Debug, Clone)]
 pub struct BackendGithubReleaseInfo {
     pub release_info: GithubReleaseInfo,
     pub release_path: NormalisedPaths,
-}
-
-impl ReleaseInfo for GithubReleaseInfo {
-    fn origin_prefix(&self) -> &str {
-        &self.origin_prefix
-    }
-
-    fn owner(&self) -> &str {
-        &self.owner
-    }
-
-    fn repo(&self) -> &str {
-        &self.repo
-    }
-
-    fn tag(&self) -> &str {
-        &self.tag
-    }
 }
 
 impl ReleaseInfo for BackendGithubReleaseInfo {

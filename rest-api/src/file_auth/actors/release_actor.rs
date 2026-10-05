@@ -1,9 +1,10 @@
 use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::helpers::create_empty_aggregate_signature;
+use forge_release::common::ReleaseInfo;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;

@@ -2,9 +2,9 @@
 use crate::file_auth::github_release::ProductionGithubClient;
 use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo,
-    ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
+use forge_release::common::ReleaseInfo;
 use forge_url::github::GITHUB_REPO_HOSTS;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;

@@ -1,6 +1,7 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo,
+    ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseInfos;
 use common::index_types::ChecksumSourceFormat;
@@ -110,23 +111,43 @@ pub struct BackendGithubReleaseInfo {
     pub release_path: NormalisedPaths,
 }
 
-impl BackendReleaseInfo for BackendGithubReleaseInfo {
+impl ReleaseInfo for GithubReleaseInfo {
     fn origin_prefix(&self) -> &str {
-        &self.release_info.origin_prefix
+        &self.origin_prefix
     }
 
     fn owner(&self) -> &str {
-        &self.release_info.owner
+        &self.owner
     }
 
     fn repo(&self) -> &str {
-        &self.release_info.repo
+        &self.repo
     }
 
     fn tag(&self) -> &str {
-        &self.release_info.tag
+        &self.tag
+    }
+}
+
+impl ReleaseInfo for BackendGithubReleaseInfo {
+    fn origin_prefix(&self) -> &str {
+        self.release_info.origin_prefix()
     }
 
+    fn owner(&self) -> &str {
+        self.release_info.owner()
+    }
+
+    fn repo(&self) -> &str {
+        self.release_info.repo()
+    }
+
+    fn tag(&self) -> &str {
+        self.release_info.tag()
+    }
+}
+
+impl BackendReleaseInfo for BackendGithubReleaseInfo {
     fn release_path(&self) -> &NormalisedPaths {
         &self.release_path
     }

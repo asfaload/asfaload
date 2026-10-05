@@ -1,6 +1,6 @@
 use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::helpers::create_empty_aggregate_signature;

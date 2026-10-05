@@ -2,7 +2,8 @@
 use crate::file_auth::github_release::ProductionGithubClient;
 use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo,
+    ReleaseUrlError,
 };
 use forge_url::github::GITHUB_REPO_HOSTS;
 use rest_api_types::errors::ApiError;
@@ -81,7 +82,7 @@ pub enum ReleaseInfos {
     Github(BackendGithubReleaseInfo),
 }
 
-impl BackendReleaseInfo for ReleaseInfos {
+impl ReleaseInfo for ReleaseInfos {
     fn origin_prefix(&self) -> &str {
         match self {
             Self::Github(github) => github.origin_prefix(),
@@ -105,7 +106,9 @@ impl BackendReleaseInfo for ReleaseInfos {
             Self::Github(github) => github.tag(),
         }
     }
+}
 
+impl BackendReleaseInfo for ReleaseInfos {
     fn release_path(&self) -> &NormalisedPaths {
         match self {
             Self::Github(github) => github.release_path(),

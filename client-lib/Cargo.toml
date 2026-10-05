@@ -18,12 +18,12 @@ serde_json = "1.0"
 futures-util = "0.3"
 tempfile = "3"
 serde = "1.0.228"
+chrono = "0.4"
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-chrono = "0.4.43"
 mockito = "1.7"
 test_helpers = { path = "../core/test_helpers/" }
 features_lib = { path = "../core/features_lib/", features = ["test-utils"] }

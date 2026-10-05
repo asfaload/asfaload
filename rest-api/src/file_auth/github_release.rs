@@ -216,10 +216,6 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
 }
 
 impl<C: GithubClientTrait> GithubReleaseAdder<C> {
-    pub fn release_info_concrete(&self) -> &BackendGithubReleaseInfo {
-        &self.release_info
-    }
-
     fn extract_assets(&self, release: &Release) -> Vec<ReleaseAssetInfo> {
         release
             .assets

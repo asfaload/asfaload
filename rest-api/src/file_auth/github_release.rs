@@ -3,7 +3,7 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo,
     ReleaseUrlError,
 };
-use crate::file_auth::releasers::ReleaseInfos;
+use crate::file_auth::releasers::BackendReleaseInfos;
 use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use forge_url::path_prefix_from_url;
@@ -210,8 +210,8 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
         self.generate_index_json(&assets, &release)
     }
 
-    fn release_info(&self) -> ReleaseInfos {
-        ReleaseInfos::Github(self.release_info.clone())
+    fn release_info(&self) -> BackendReleaseInfos {
+        BackendReleaseInfos::Github(self.release_info.clone())
     }
 }
 

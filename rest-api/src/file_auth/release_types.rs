@@ -1,4 +1,4 @@
-use crate::file_auth::releasers::ReleaseInfos;
+use crate::file_auth::releasers::BackendReleaseInfos;
 use common::fs::names::find_global_signers_for;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -93,5 +93,5 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
         }
     }
 
-    fn release_info(&self) -> ReleaseInfos;
+    fn release_info(&self) -> BackendReleaseInfos;
 }

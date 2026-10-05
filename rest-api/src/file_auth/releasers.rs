@@ -70,7 +70,7 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    fn release_info(&self) -> ReleaseInfos {
+    fn release_info(&self) -> BackendReleaseInfos {
         match self {
             Self::Github(github) => github.release_info(),
         }
@@ -78,11 +78,11 @@ impl ReleaseAdder for ReleaseAdders {
 }
 
 #[derive(Debug)]
-pub enum ReleaseInfos {
+pub enum BackendReleaseInfos {
     Github(BackendGithubReleaseInfo),
 }
 
-impl ReleaseInfo for ReleaseInfos {
+impl ReleaseInfo for BackendReleaseInfos {
     fn origin_prefix(&self) -> &str {
         match self {
             Self::Github(github) => github.origin_prefix(),
@@ -108,7 +108,7 @@ impl ReleaseInfo for ReleaseInfos {
     }
 }
 
-impl BackendReleaseInfo for ReleaseInfos {
+impl BackendReleaseInfo for BackendReleaseInfos {
     fn release_path(&self) -> &NormalisedPaths {
         match self {
             Self::Github(github) => github.release_path(),

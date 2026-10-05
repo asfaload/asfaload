@@ -31,6 +31,12 @@ pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
     fn owner(&self) -> &str;
     fn repo(&self) -> &str;
     fn tag(&self) -> &str;
+}
+pub trait BackendReleaseInfo: std::fmt::Debug + Send + Sync {
+    fn origin_prefix(&self) -> &str;
+    fn owner(&self) -> &str;
+    fn repo(&self) -> &str;
+    fn tag(&self) -> &str;
     fn release_path(&self) -> &NormalisedPaths;
 }
 

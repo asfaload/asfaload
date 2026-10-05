@@ -1,8 +1,8 @@
 #[cfg(not(feature = "test-utils"))]
 use crate::file_auth::github_release::ProductionGithubClient;
-use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
+use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
-    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use forge_url::github::GITHUB_REPO_HOSTS;
 use rest_api_types::errors::ApiError;
@@ -78,10 +78,10 @@ impl ReleaseAdder for ReleaseAdders {
 
 #[derive(Debug)]
 pub enum ReleaseInfos {
-    Github(GithubReleaseInfo),
+    Github(BackendGithubReleaseInfo),
 }
 
-impl ReleaseInfo for ReleaseInfos {
+impl BackendReleaseInfo for ReleaseInfos {
     fn origin_prefix(&self) -> &str {
         match self {
             Self::Github(github) => github.origin_prefix(),

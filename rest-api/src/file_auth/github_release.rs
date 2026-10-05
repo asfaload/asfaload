@@ -1,6 +1,6 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
-    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseInfos;
 use common::index_types::ChecksumSourceFormat;
@@ -91,33 +91,40 @@ pub struct GithubReleaseAdder<C: GithubClientTrait> {
     release_url: url::Url,
     git_repo_path: PathBuf,
     pub client: C,
-    release_info: GithubReleaseInfo,
+    release_info: BackendGithubReleaseInfo,
 }
 
+/// Information of a Github release
 #[derive(Debug, Clone)]
 pub struct GithubReleaseInfo {
     pub origin_prefix: String,
     pub owner: String,
     pub repo: String,
     pub tag: String,
+}
+
+/// Information of a release on the backend
+#[derive(Debug, Clone)]
+pub struct BackendGithubReleaseInfo {
+    pub release_info: GithubReleaseInfo,
     pub release_path: NormalisedPaths,
 }
 
-impl ReleaseInfo for GithubReleaseInfo {
+impl BackendReleaseInfo for BackendGithubReleaseInfo {
     fn origin_prefix(&self) -> &str {
-        &self.origin_prefix
+        &self.release_info.origin_prefix
     }
 
     fn owner(&self) -> &str {
-        &self.owner
+        &self.release_info.owner
     }
 
     fn repo(&self) -> &str {
-        &self.repo
+        &self.release_info.repo
     }
 
     fn tag(&self) -> &str {
-        &self.tag
+        &self.release_info.tag
     }
 
     fn release_path(&self) -> &NormalisedPaths {
@@ -164,9 +171,9 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
         let release: Release = self
             .client
             .get_release_by_tag(
-                &self.release_info.owner,
-                &self.release_info.repo,
-                &self.release_info.tag,
+                self.release_info.owner(),
+                self.release_info.repo(),
+                self.release_info.tag(),
             )
             .await?;
 
@@ -188,7 +195,7 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
 }
 
 impl<C: GithubClientTrait> GithubReleaseAdder<C> {
-    pub fn release_info_concrete(&self) -> &GithubReleaseInfo {
+    pub fn release_info_concrete(&self) -> &BackendGithubReleaseInfo {
         &self.release_info
     }
 
@@ -256,19 +263,22 @@ impl<C: GithubClientTrait> std::fmt::Debug for GithubReleaseAdder<C> {
 pub async fn parse_release_url(
     url: &url::Url,
     git_repo: &Path,
-) -> Result<GithubReleaseInfo, ApiError> {
+) -> Result<BackendGithubReleaseInfo, ApiError> {
     let (_host, owner, repo, tag) = validate_github_url(url)?;
     let origin_prefix =
         path_prefix_from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
     let url_path = format!("{}{}", origin_prefix, url.path());
     let release_path =
         NormalisedPaths::new(git_repo.to_path_buf(), PathBuf::from(&url_path)).await?;
-
-    Ok(GithubReleaseInfo {
+    let release_info = GithubReleaseInfo {
         origin_prefix,
         owner,
         repo,
         tag,
+    };
+
+    Ok(BackendGithubReleaseInfo {
+        release_info,
         release_path,
     })
 }
@@ -535,10 +545,10 @@ mod tests {
             url::Url::parse("https://github.com/asfaload/asfald/releases/tag/v0.9.0").unwrap();
         let result = parse_release_url(&url, &git_repo).await.unwrap();
 
-        assert_eq!(result.owner, "asfaload");
-        assert_eq!(result.repo, "asfald");
-        assert_eq!(result.tag, "v0.9.0");
-        assert_eq!(result.origin_prefix, "https/github.com/443");
+        assert_eq!(result.owner(), "asfaload");
+        assert_eq!(result.repo(), "asfald");
+        assert_eq!(result.tag(), "v0.9.0");
+        assert_eq!(result.origin_prefix(), "https/github.com/443");
         assert_eq!(
             result.release_path.relative_path(),
             PathBuf::from("https/github.com/443/asfaload/asfald/releases/tag/v0.9.0")

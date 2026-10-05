@@ -49,6 +49,8 @@ uuid = "1.19.0"
 futures = "0.3.31"
 url = "2.5"
 forge-url = { path = "../file-auth/forge-url" }
+github-release = { path = "../file-auth/github-release/" }
+index-verification = { path = "../file-auth/index-verification/" }
 walkdir = "2.5"
 octocrab = { version = "0.53.0", features = ["rustls-ring"] }
 rustls = { version = "0.23.36", features = ["ring"] }

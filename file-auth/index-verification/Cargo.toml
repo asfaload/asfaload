@@ -1,0 +1,16 @@
+[package]
+name = "index-verification"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+features_lib = { path = "../../core/features_lib/" }
+github-release = { path = "../github-release/" }
+
+[dev-dependencies]
+chrono = "0.4"
+mockito = "1.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "github-release"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+features_lib = { path = "../../core/features_lib/" }
+forge-url = { path = "../forge-url/" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+reqwest = { version = "0.13", features = ["json", "stream"] }
+url = "2.5"
+
+[lints]
+workspace = true

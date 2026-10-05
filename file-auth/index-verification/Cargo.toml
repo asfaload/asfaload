@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 features_lib = { path = "../../core/features_lib/" }
-github-release = { path = "../github-release/" }
+forge-release = { path = "../forge-release/" }
 
 [dev-dependencies]
 chrono = "0.4"

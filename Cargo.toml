@@ -20,7 +20,7 @@ members = [
   "tests/client-server-integration-tests",
   "tests/test-file-server",
   "file-auth/forge-url",
-  "file-auth/github-release",
+  "file-auth/forge-release",
   "file-auth/index-verification",
 ]
 exclude = ["rest_api_auth", "client_cli"]

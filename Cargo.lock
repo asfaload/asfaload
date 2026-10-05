@@ -688,9 +688,9 @@ dependencies = [
  "chrono",
  "digest",
  "features_lib",
+ "forge-release",
  "forge-url",
  "futures-util",
- "github-release",
  "hex",
  "index-verification",
  "mockito",
@@ -1406,6 +1406,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "forge-release"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "features_lib",
+ "forge-url",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "forge-url"
 version = "0.1.0"
 dependencies = [
@@ -1610,19 +1623,6 @@ checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
 dependencies = [
  "opaque-debug",
  "polyval",
-]
-
-[[package]]
-name = "github-release"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "features_lib",
- "forge-url",
- "reqwest",
- "serde",
- "serde_json",
- "url",
 ]
 
 [[package]]
@@ -2059,7 +2059,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "features_lib",
- "github-release",
+ "forge-release",
  "mockito",
  "tokio",
 ]
@@ -3121,10 +3121,10 @@ dependencies = [
  "config",
  "constants",
  "features_lib",
+ "forge-release",
  "forge-url",
  "futures",
  "futures-util",
- "github-release",
  "httpmock",
  "hyper",
  "index-verification",

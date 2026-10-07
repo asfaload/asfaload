@@ -626,6 +626,36 @@ pub mod github_helpers {
         }
         Ok((host.to_string(), owner, repo, tag))
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        // A suffix match on "github.com" would accept the lookalike host
+        // "evilgithub.com". Validation must use the exact host allowlist.
+        #[test]
+        fn validate_github_url_rejects_lookalike_host() {
+            let url =
+                url::Url::parse("https://evilgithub.com/owner/repo/releases/tag/v1.0.0").unwrap();
+            let result = validate_github_url(&url);
+            assert!(matches!(
+                result,
+                Err(crate::errors::ApiError::InvalidGitHubUrl(_))
+            ));
+        }
+
+        // Guards the allowlist against being inverted or narrowed: a real
+        // github.com release url must still validate and yield its fields.
+        #[test]
+        fn validate_github_url_accepts_github_release_url() {
+            let url = url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
+            let (host, owner, repo, tag) = validate_github_url(&url).unwrap();
+            assert_eq!(host, "github.com");
+            assert_eq!(owner, "owner");
+            assert_eq!(repo, "repo");
+            assert_eq!(tag, "v1.0.0");
+        }
+    }
 }
 pub mod rustls {
     pub fn setup_crypto_provider() {

@@ -579,7 +579,7 @@ pub mod models {
 
 pub mod github_helpers {
 
-    use forge_url::github::GITHUB_RELEASE_HOSTS;
+    use forge_url::github::is_github_release_host;
 
     use crate::errors::ApiError;
 
@@ -590,7 +590,7 @@ pub mod github_helpers {
             .host_str()
             .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
 
-        if !GITHUB_RELEASE_HOSTS.contains(&host) {
+        if !is_github_release_host(host) {
             return Err(ApiError::InvalidGitHubUrl(
                 "Only github.com URLs are supported".to_string(),
             ));

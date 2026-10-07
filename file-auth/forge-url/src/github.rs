@@ -44,6 +44,10 @@ pub const GITHUB_HOSTS: &[&str] = &[
     "127.0.0.2",
 ];
 
+pub fn is_github_release_host(host: &str) -> bool {
+    GITHUB_RELEASE_HOSTS.contains(&host)
+}
+
 #[derive(Debug, Clone)]
 pub struct GithubRepoUrlInfo {
     original_url: Url,

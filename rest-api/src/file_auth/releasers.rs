@@ -5,7 +5,7 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use forge_release::common::ReleaseInfo;
-use forge_url::github::GITHUB_REPO_HOSTS;
+use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 #[cfg(all(test, feature = "test-utils"))]
@@ -45,14 +45,13 @@ impl ReleaseAdder for ReleaseAdders {
             .host_str()
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
-        if GITHUB_REPO_HOSTS.contains(&host) {
+        if is_github_release_host(host) {
             let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
-                "{}. Supported: GitHub ({})",
+                "Host {} is not recognised as a Github Relaese host",
                 host,
-                GITHUB_REPO_HOSTS.join(", "),
             ))
             .into())
         }
@@ -118,6 +117,7 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
+    use forge_url::github::GITHUB_REPO_HOSTS;
 
     #[test]
     fn test_github_release_host_detection() {

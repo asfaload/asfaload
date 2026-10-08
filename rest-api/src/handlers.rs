@@ -5,6 +5,7 @@ use common::fs::names::{
 use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
+use forge_release::github::GithubReleaseInfo;
 use rest_api_types::models::{
     GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
@@ -24,7 +25,6 @@ use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
 use forge_url::ForgesPathMethods;
 use forge_url::forges::{Forges, get_forge};
-use forge_url::github::is_github_release_host;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -1109,6 +1109,8 @@ async fn register_github_release(
     request_id: &str,
     github_release_url: &str,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
+    let convert_github_release_error =
+        |e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e));
     tracing::info!(
         request_id = %request_id,
         github_release_url = %github_release_url,
@@ -1118,15 +1120,9 @@ async fn register_github_release(
     let parsed_url = url::Url::parse(github_release_url)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
 
-    let host = parsed_url
-        .host_str()
-        .ok_or_else(|| ApiError::InvalidRequestBody("Release URL missing host".to_string()))?;
-    if !is_github_release_host(host) {
-        return Err(ApiError::InvalidRequestBody(format!(
-            "github_release_url must be a GitHub URL. Host '{}' is not a known GitHub host",
-            host
-        )));
-    }
+    // Validate the url by parsing it as a release info
+    let _release_info =
+        GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
     let result = state
         .release_actor

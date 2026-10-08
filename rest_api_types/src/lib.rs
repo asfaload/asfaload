@@ -146,6 +146,9 @@ pub mod errors {
 
         #[error("Nonce cache error: {0}")]
         NonceCacheError(String),
+
+        #[error("An error occurred: {0}")]
+        Generic(String),
     }
 
     #[derive(Error, Debug)]
@@ -248,6 +251,7 @@ pub mod errors {
                 ApiError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::SignersConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NonceCacheError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::Generic(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

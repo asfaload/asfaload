@@ -79,6 +79,23 @@ pub async fn fetch_with_retry(url: &str) -> Result<String, FetchError> {
     }
 }
 
+pub async fn fetch_request(req: reqwest::RequestBuilder) -> Result<String, FetchError> {
+    let response = req
+        .send()
+        .await
+        .map_err(|e| FetchError::RequestFailed(format!("fetch_request failed with {}", e)))?;
+    if !response.status().is_success() {
+        return Err(FetchError::RequestFailed(format!(
+            "fetch_request go error status back: {}",
+            response.status().as_u16()
+        )));
+    }
+
+    return response
+        .text()
+        .await
+        .map_err(|e| FetchError::BodyReadError(format!("fetch_request failed with: {}", e)));
+}
 /// Returns a new empty cache to be used with fetch_sequentially_with_cache.
 pub fn new_sequential_cache() -> HashMap<String, String> {
     HashMap::new()

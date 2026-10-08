@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 features_lib = { path = "../../core/features_lib/" }
 forge-url = { path = "../forge-url/" }
+common = { path = "../../core/common/" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4"

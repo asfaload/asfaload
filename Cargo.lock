@@ -1410,6 +1410,7 @@ name = "forge-release"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "common",
  "features_lib",
  "forge-url",
  "reqwest",

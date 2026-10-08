@@ -1,5 +1,3 @@
-#[cfg(not(feature = "test-utils"))]
-use crate::file_auth::github_release::ProductionGithubClient;
 use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
@@ -13,12 +11,9 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use tokio::fs::File;
 
-#[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::test_utils::MockGithubClient;
-
 #[derive(Debug)]
 pub enum ReleaseAdders {
-    Github(Box<GithubReleaseAdder>),
+    Github(Box<GithubReleaseAdder<crate::file_auth::github_release::GithubFetcher>>),
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {

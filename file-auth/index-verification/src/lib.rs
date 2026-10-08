@@ -26,13 +26,18 @@ pub async fn extract_parsed_checksums_from_index(
             // is parsed with.
             let parsed = match published_file.source_format {
                 ChecksumSourceFormat::ShaSum => parse_shasum_content(content).map_err(|e| {
-                    IndexValidationError::DigestSourceParseError {
+                    IndexValidationError::DigestSourceError {
                         url: published_file.source.clone(),
                         reason: e.to_string(),
                     }
                 })?,
                 ChecksumSourceFormat::GithubRelease => {
-                    get_checksums_from_github_rest_api_answer(content, &published_file.source)?
+                    get_checksums_from_github_rest_api_answer(content).map_err(|e| {
+                        IndexValidationError::DigestSourceError {
+                            url: published_file.source.clone(),
+                            reason: e.to_string(),
+                        }
+                    })?
                 }
             };
             entry.insert(parsed);
@@ -154,7 +159,7 @@ mod tests {
         let index = index_with_source_format(ChecksumSourceFormat::ShaSum, source_url.clone());
 
         match extract_parsed_checksums_from_index(&index).await {
-            Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
+            Err(IndexValidationError::DigestDocumentParseError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
             other => panic!("Expected DigestSourceParseError, got {other:?}"),
@@ -294,7 +299,7 @@ mod tests {
         );
 
         match extract_parsed_checksums_from_index(&index).await {
-            Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
+            Err(IndexValidationError::DigestDocumentParseError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
             other => panic!("Expected DigestSourceParseError, got {other:?}"),

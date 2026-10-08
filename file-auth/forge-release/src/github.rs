@@ -21,7 +21,7 @@ pub struct GithubReleaseAsset {
 
 // Extract the digests of a github release api response, skipping assets
 // without digest or with an algorithm we cannot record in an index.
-pub fn parse_github_rest_api_answer(
+pub fn get_checksums_from_github_rest_api_answer(
     body: &str,
     source_url: &str,
 ) -> Result<Vec<ParsedChecksum>, IndexValidationError> {

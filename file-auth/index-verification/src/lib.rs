@@ -5,7 +5,7 @@ use features_lib::{
     AsfaloadIndex, ChecksumSourceFormat, IndexValidationError, ParsedChecksum,
     fetch_sequentially_with_cache, new_sequential_cache, parse_checksums as parse_shasum_content,
 };
-use forge_release::github::parse_github_rest_api_answer;
+use forge_release::github::get_checksums_from_github_rest_api_answer;
 
 /// Fetch and parse every digest source of the index, once per distinct url.
 /// The returned map is keyed by the source url and holds every entry the
@@ -32,7 +32,7 @@ pub async fn extract_parsed_checksums_from_index(
                     }
                 })?,
                 ChecksumSourceFormat::GithubRelease => {
-                    parse_github_rest_api_answer(content, &published_file.source)?
+                    get_checksums_from_github_rest_api_answer(content, &published_file.source)?
                 }
             };
             entry.insert(parsed);

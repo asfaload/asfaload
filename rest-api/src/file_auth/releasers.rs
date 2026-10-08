@@ -13,7 +13,7 @@ use tokio::fs::File;
 
 #[derive(Debug)]
 pub enum ReleaseAdders {
-    Github(Box<GithubReleaseAdder<crate::file_auth::github_release::GithubFetcher>>),
+    Github(Box<GithubReleaseAdder>),
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {

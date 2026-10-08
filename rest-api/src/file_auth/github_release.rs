@@ -7,10 +7,10 @@ use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use forge_release::common::ReleaseInfo;
 use forge_release::github::GithubReleaseInfo;
+use forge_url::github::validate_github_release_url;
 use forge_url::path_prefix_from_url;
 use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
-use rest_api_types::github_helpers::validate_github_release_url;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
 
@@ -255,7 +255,8 @@ pub async fn parse_release_url(
     url: &url::Url,
     git_repo: &Path,
 ) -> Result<BackendGithubReleaseInfo, ApiError> {
-    let (_host, owner, repo, tag) = validate_github_release_url(url)?;
+    let (_host, owner, repo, tag) =
+        validate_github_release_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
     let origin_prefix =
         path_prefix_from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
     let url_path = format!("{}{}", origin_prefix, url.path());

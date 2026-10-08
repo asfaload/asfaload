@@ -583,7 +583,7 @@ pub mod github_helpers {
 
     use crate::errors::ApiError;
 
-    pub fn validate_github_url(
+    pub fn validate_github_release_url(
         url: &url::Url,
     ) -> Result<(String, String, String, String), ApiError> {
         let host = url
@@ -637,7 +637,7 @@ pub mod github_helpers {
         fn validate_github_url_rejects_lookalike_host() {
             let url =
                 url::Url::parse("https://evilgithub.com/owner/repo/releases/tag/v1.0.0").unwrap();
-            let result = validate_github_url(&url);
+            let result = validate_github_release_url(&url);
             assert!(matches!(
                 result,
                 Err(crate::errors::ApiError::InvalidGitHubUrl(_))
@@ -649,7 +649,7 @@ pub mod github_helpers {
         #[test]
         fn validate_github_url_accepts_github_release_url() {
             let url = url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
-            let (host, owner, repo, tag) = validate_github_url(&url).unwrap();
+            let (host, owner, repo, tag) = validate_github_release_url(&url).unwrap();
             assert_eq!(host, "github.com");
             assert_eq!(owner, "owner");
             assert_eq!(repo, "repo");

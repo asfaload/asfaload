@@ -1,5 +1,6 @@
-use crate::common::ReleaseInfo;
+use crate::common::{ReleaseHandlingError, ReleaseInfo};
 use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
+use forge_url::path_prefix_from_url;
 
 // Minimal shape of a github release api response ignoring irrelevant fields.
 #[derive(serde::Deserialize)]
@@ -74,6 +75,21 @@ impl ReleaseInfo for GithubReleaseInfo {
 
     fn tag(&self) -> &str {
         &self.tag
+    }
+}
+
+impl GithubReleaseInfo {
+    pub fn from_url(url: &url::Url) -> Result<Self, ReleaseHandlingError> {
+        let (_host, owner, repo, tag) = forge_url::github::validate_github_release_url(url)
+            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
+        let origin_prefix = path_prefix_from_url(url)
+            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
+        Ok(GithubReleaseInfo {
+            origin_prefix,
+            owner,
+            repo,
+            tag,
+        })
     }
 }
 

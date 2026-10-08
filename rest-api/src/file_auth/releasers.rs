@@ -18,10 +18,7 @@ use crate::file_auth::github_release::test_utils::MockGithubClient;
 
 #[derive(Debug)]
 pub enum ReleaseAdders {
-    #[cfg(not(feature = "test-utils"))]
-    Github(Box<GithubReleaseAdder<ProductionGithubClient>>),
-    #[cfg(feature = "test-utils")]
-    Github(Box<GithubReleaseAdder<MockGithubClient>>),
+    Github(Box<GithubReleaseAdder>),
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {

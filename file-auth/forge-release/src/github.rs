@@ -1,8 +1,10 @@
 use std::fmt::{self};
 
-use crate::common::{ReleaseHandlingError, ReleaseInfo};
-use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
+use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
+use common::http::{FetchError, fetch_request};
+use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum, fetch_with_retry};
 use forge_url::path_prefix_from_url;
+use url::Url;
 
 // Minimal shape of a github release api response ignoring irrelevant fields.
 #[derive(serde::Deserialize)]
@@ -120,6 +122,37 @@ impl fmt::Display for GithubReleaseInfo {
                 self.origin_prefix, self.owner, self.repo, self.tag
             ))
         )
+    }
+}
+
+#[derive(Debug)]
+pub struct GithubReleaseFetcher {
+    client: reqwest::Client,
+    token: Option<String>,
+}
+
+impl GithubReleaseFetcher {
+    pub fn new(token: Option<String>) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            token,
+        }
+    }
+}
+
+impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
+    async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+        let mut request = self
+            .client
+            .get(url.clone())
+            .header(reqwest::header::USER_AGENT, "asfaload");
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+        let body = fetch_request(request).await.map_err(|e| {
+            ReleaseHandlingError::Generic(format!("failed fetching release at {}", e))
+        })?;
+        Ok(serde_json::from_str(&body)?)
     }
 }
 

@@ -5,8 +5,8 @@ use crate::file_auth::release_types::{
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
-use forge_release::common::ReleaseInfo;
-use forge_release::github::GithubReleaseInfo;
+use forge_release::common::{ReleaseFetcher, ReleaseInfo};
+use forge_release::github::{GithubReleaseFetcher, GithubReleaseInfo, GithubReleaseResponse};
 use forge_url::github::validate_github_release_url;
 use forge_url::path_prefix_from_url;
 use octocrab::models::repos::Release;
@@ -89,10 +89,10 @@ fn create_github_client(
     Ok(test_utils::MockGithubClient::new())
 }
 
-pub struct GithubReleaseAdder<C: GithubClientTrait> {
+pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    pub client: C,
+    pub fetcher: GithubReleaseFetcher,
     release_info: BackendGithubReleaseInfo,
 }
 
@@ -131,9 +131,9 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
-impl ReleaseIndexWriter for GithubReleaseAdder<GithubClient> {}
+impl ReleaseIndexWriter for GithubReleaseAdder {}
 
-impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
+impl ReleaseAdder for GithubReleaseAdder {
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
@@ -146,14 +146,12 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
             .await
             .map_err(|e| ReleaseUrlError::InvalidFormat(e.to_string()))?;
 
-        let client = create_github_client(config).map_err(|e| {
-            ReleaseError::ClientError(format!("Failed to create GitHub client: {}", e))
-        })?;
+        let fetcher = GithubReleaseFetcher::new(config.github_api_key.clone());
 
         Ok(Self {
             release_url: release_url.clone(),
             git_repo_path,
-            client,
+            fetcher,
             release_info,
         })
     }
@@ -163,14 +161,11 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
         Ok(full_index_path)
     }
     async fn index_content(&self) -> Result<String, ApiError> {
-        let release: Release = self
-            .client
-            .get_release_by_tag(
-                self.release_info.owner(),
-                self.release_info.repo(),
-                self.release_info.tag(),
-            )
-            .await?;
+        let release: GithubReleaseResponse = self
+            .fetcher
+            .fetch(self.release_url.clone())
+            .await
+            .map_err(|e| ApiError::Generic(format!("Could not retrieve github release: {}", e)))?;
 
         let assets = self.extract_assets(&release);
 
@@ -189,8 +184,8 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
     }
 }
 
-impl<C: GithubClientTrait> GithubReleaseAdder<C> {
-    fn extract_assets(&self, release: &Release) -> Vec<ReleaseAssetInfo> {
+impl GithubReleaseAdder {
+    fn extract_assets(&self, release: &GithubReleaseResponse) -> Vec<ReleaseAssetInfo> {
         release
             .assets
             .iter()
@@ -214,7 +209,7 @@ impl<C: GithubClientTrait> GithubReleaseAdder<C> {
     fn generate_index_json(
         &self,
         assets: &[ReleaseAssetInfo],
-        release: &Release,
+        release: &GithubReleaseResponse,
     ) -> Result<String, ApiError> {
         let published_files: Vec<FileChecksum> = assets
             .iter()
@@ -241,7 +236,7 @@ impl<C: GithubClientTrait> GithubReleaseAdder<C> {
     }
 }
 
-impl<C: GithubClientTrait> std::fmt::Debug for GithubReleaseAdder<C> {
+impl std::fmt::Debug for GithubReleaseAdder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GithubReleaseAdder")
             .field("release_url", &self.release_url)

@@ -399,26 +399,41 @@ pub mod test_utils {
 
 #[cfg(all(test, feature = "test-utils"))]
 mod feature_gated_tests {
-    use super::test_utils::*;
     use super::*;
     use tempfile::TempDir;
 
-    async fn build_adder(git_repo: PathBuf) -> GithubReleaseAdder<MockGithubClient> {
+    async fn build_adder(git_repo: PathBuf) -> GithubReleaseAdder {
         let url =
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
         let release_info = parse_release_url(&url, &git_repo).await.unwrap();
         GithubReleaseAdder {
             release_url: url,
             git_repo_path: git_repo,
-            client: MockGithubClient::new(),
+            fetcher: GithubReleaseFetcher::new(None),
             release_info,
         }
     }
 
+    // Minimal shape of the github rest-api release response as parsed by
+    // GithubReleaseResponse.
+    const MOCK_RELEASE_JSON: &str = r#"{
+        "url": "https://api.github.com/repos/testowner/testrepo/releases/123",
+        "published_at": "2024-01-01T00:00:00Z",
+        "created_at": "2024-01-01T00:00:00Z",
+        "assets": [{
+            "name": "test.tar.gz",
+            "digest": "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        }]
+    }"#;
+
+    fn create_mock_release_response() -> GithubReleaseResponse {
+        serde_json::from_str(MOCK_RELEASE_JSON).unwrap()
+    }
+
     // Gives the added asset its own download url so a regression to
     // browser_download_url as digest source cannot pass silently.
-    fn release_with_extra_asset(name: &str, digest: Option<&str>) -> Release {
-        let mut value = serde_json::to_value(create_mock_release()).unwrap();
+    fn release_with_extra_asset(name: &str, digest: Option<&str>) -> GithubReleaseResponse {
+        let mut value: serde_json::Value = serde_json::from_str(MOCK_RELEASE_JSON).unwrap();
         let mut asset = value["assets"][0].clone();
         asset["name"] = serde_json::Value::String(name.to_string());
         asset["browser_download_url"] =
@@ -489,7 +504,7 @@ mod feature_gated_tests {
 
     #[tokio::test]
     async fn generate_index_json_has_trailing_newline() {
-        let release = create_mock_release();
+        let release = create_mock_release_response();
         let temp_dir = TempDir::new().unwrap();
         let git_repo = temp_dir.path().to_path_buf();
         let url =
@@ -499,7 +514,7 @@ mod feature_gated_tests {
         let adder = GithubReleaseAdder {
             release_url: url,
             git_repo_path: git_repo,
-            client: MockGithubClient::new(),
+            fetcher: GithubReleaseFetcher::new(None),
             release_info,
         };
 

@@ -1,3 +1,5 @@
+#[cfg(feature = "test-utils")]
+use self::test_utils::MockGithubReleaseFetcher;
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseIndexWriter, ReleaseUrlError,
@@ -15,27 +17,25 @@ use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
 
-// Fetcher type used by the release adder. In tests it is replaced by a
-// fetcher returning a fixed response, so no request hits github.
 #[cfg(not(feature = "test-utils"))]
-pub type GithubFetcher = forge_release::github::GithubReleaseFetcher;
-#[cfg(feature = "test-utils")]
-pub type GithubFetcher = crate::file_auth::github_release::test_utils::MockGithubReleaseFetcher;
-
-#[cfg(not(feature = "test-utils"))]
-fn create_github_fetcher(config: &crate::config::AppConfig) -> GithubFetcher {
+fn create_github_fetcher(config: &crate::config::AppConfig) -> GithubReleaseFetcher {
     GithubReleaseFetcher::new(config.github_api_key.clone())
 }
 
 #[cfg(feature = "test-utils")]
-fn create_github_fetcher(_config: &crate::config::AppConfig) -> GithubFetcher {
-    test_utils::MockGithubReleaseFetcher::new()
+fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleaseFetcher {
+    MockGithubReleaseFetcher::new()
 }
 
-pub struct GithubReleaseAdder<C: ReleaseFetcher<GithubReleaseResponse>> {
+pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    pub fetcher: C,
+    // The fetcher type depends on the build mode: the real fetcher in
+    // production, one returning a fixed response when building tests.
+    #[cfg(not(feature = "test-utils"))]
+    pub fetcher: GithubReleaseFetcher,
+    #[cfg(feature = "test-utils")]
+    pub fetcher: MockGithubReleaseFetcher,
     release_info: BackendGithubReleaseInfo,
 }
 
@@ -74,9 +74,9 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
-impl ReleaseIndexWriter for GithubReleaseAdder<GithubFetcher> {}
+impl ReleaseIndexWriter for GithubReleaseAdder {}
 
-impl ReleaseAdder for GithubReleaseAdder<GithubFetcher> {
+impl ReleaseAdder for GithubReleaseAdder {
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
@@ -127,7 +127,7 @@ impl ReleaseAdder for GithubReleaseAdder<GithubFetcher> {
     }
 }
 
-impl<C: ReleaseFetcher<GithubReleaseResponse>> GithubReleaseAdder<C> {
+impl GithubReleaseAdder {
     fn extract_assets(&self, release: &GithubReleaseResponse) -> Vec<ReleaseAssetInfo> {
         release
             .assets
@@ -179,7 +179,7 @@ impl<C: ReleaseFetcher<GithubReleaseResponse>> GithubReleaseAdder<C> {
     }
 }
 
-impl<C: ReleaseFetcher<GithubReleaseResponse>> std::fmt::Debug for GithubReleaseAdder<C> {
+impl std::fmt::Debug for GithubReleaseAdder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GithubReleaseAdder")
             .field("release_url", &self.release_url)
@@ -265,7 +265,7 @@ mod feature_gated_tests {
     use super::*;
     use tempfile::TempDir;
 
-    async fn build_adder(git_repo: PathBuf) -> GithubReleaseAdder<MockGithubReleaseFetcher> {
+    async fn build_adder(git_repo: PathBuf) -> GithubReleaseAdder {
         let url =
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
         let release_info = parse_release_url(&url, &git_repo).await.unwrap();

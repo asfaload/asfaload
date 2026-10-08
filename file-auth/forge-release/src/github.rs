@@ -1,10 +1,31 @@
 use std::fmt::{self};
 
 use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::http::{FetchError, fetch_request};
-use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum, fetch_with_retry};
+use common::http::fetch_request;
+use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
 use forge_url::path_prefix_from_url;
 use url::Url;
+
+/// Builds an api url to retrieve the release info. This builds the url based on owner, repo and
+/// tag, and the document returned is a json object with all details of the release. The document
+/// has a url field, which is of the form
+///    https://api.github.com/repos/{owner}/{repo}/releases/252430053
+/// This last url does not use the tag but a release id, and is probably the canonical url of the release.
+/// It returns the exact same document as the url we build with owner, repo and tag.
+pub fn github_release_api_url(release_page_url: &url::Url) -> Result<Url, ReleaseHandlingError> {
+    let (_host, owner, repo, tag) =
+        forge_url::github::validate_github_release_url(release_page_url)
+            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
+    url::Url::parse(&format!(
+        "https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    ))
+    .map_err(|e| {
+        ReleaseHandlingError::InvalidUrl(format!(
+            "Could not build github api release url from {}: {}",
+            release_page_url, e
+        ))
+    })
+}
 
 // Minimal shape of a github release api response ignoring irrelevant fields.
 #[derive(serde::Deserialize)]
@@ -142,9 +163,10 @@ impl GithubReleaseFetcher {
 
 impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
     async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+        let api_url = github_release_api_url(&url)?;
         let mut request = self
             .client
-            .get(url.clone())
+            .get(api_url.clone())
             .header(reqwest::header::USER_AGENT, "asfaload");
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);
@@ -161,6 +183,25 @@ impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The release adder fetches releases starting from the release html page
+    // url. Data must come from the rest-api endpoint: check the conversion.
+    #[test]
+    fn release_api_url_is_derived_from_release_page_url() {
+        let page_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+        let api_url = github_release_api_url(&page_url).unwrap();
+        assert_eq!(
+            api_url.as_str(),
+            "https://api.github.com/repos/testowner/testrepo/releases/tags/v1.0.0"
+        );
+    }
+
+    #[test]
+    fn non_release_page_url_rejected_for_api_url_conversion() {
+        let bad_url = url::Url::parse("https://github.com/owner/repo").unwrap();
+        assert!(github_release_api_url(&bad_url).is_err());
+    }
 
     // Server side generation needs the release url and its timestamps. This
     // test pins the shape of the response struct used for parsing and

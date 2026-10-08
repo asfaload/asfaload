@@ -1,3 +1,5 @@
+use std::fmt::{self};
+
 use crate::common::{ReleaseHandlingError, ReleaseInfo};
 use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
 use forge_url::path_prefix_from_url;
@@ -90,6 +92,34 @@ impl GithubReleaseInfo {
             repo,
             tag,
         })
+    }
+
+    pub fn to_url(&self) -> Result<url::Url, ReleaseHandlingError> {
+        let s = format!(
+            "https://github.com/{}/{}/releases/tag/{}",
+            self.owner(),
+            self.repo(),
+            self.tag()
+        );
+        url::Url::parse(&s).map_err(|e| {
+            ReleaseHandlingError::InvalidUrl(format!(
+                "Could not convert GithubReleaseInfo to url: {}",
+                e
+            ))
+        })
+    }
+}
+
+impl fmt::Display for GithubReleaseInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.to_url().map(|u| u.to_string()).unwrap_or(format!(
+                "GithubReleaseInfo(origin_prefix: {}, repo: {}/{}, tag: {})",
+                self.origin_prefix, self.owner, self.repo, self.tag
+            ))
+        )
     }
 }
 

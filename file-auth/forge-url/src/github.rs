@@ -93,6 +93,7 @@ pub fn validate_github_release_url(
     Ok((host.to_string(), owner, repo, tag))
 }
 
+/// Info about a Github URL leading to a blob of the repo.
 #[derive(Debug, Clone)]
 pub struct GithubRepoUrlInfo {
     original_url: Url,

@@ -1121,14 +1121,14 @@ async fn register_github_release(
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
 
     // Validate the url by parsing it as a release info
-    let _release_info =
+    let release_info =
         GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
     let result = state
         .release_actor
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
-            release_url: parsed_url,
+            release_info,
         })
         .await
         .map_err(|e| map_to_user_error(e, "Release registration failed"))?;

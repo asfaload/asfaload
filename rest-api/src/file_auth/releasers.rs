@@ -116,7 +116,6 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 }
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
-    use super::*;
     use forge_url::github::GITHUB_REPO_HOSTS;
 
     #[test]

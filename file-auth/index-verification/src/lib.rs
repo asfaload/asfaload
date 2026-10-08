@@ -159,10 +159,10 @@ mod tests {
         let index = index_with_source_format(ChecksumSourceFormat::ShaSum, source_url.clone());
 
         match extract_parsed_checksums_from_index(&index).await {
-            Err(IndexValidationError::DigestDocumentParseError { url, .. }) => {
+            Err(IndexValidationError::DigestSourceError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
-            other => panic!("Expected DigestSourceParseError, got {other:?}"),
+            other => panic!("Expected DigestSourceError, got {other:?}"),
         }
     }
 
@@ -299,10 +299,10 @@ mod tests {
         );
 
         match extract_parsed_checksums_from_index(&index).await {
-            Err(IndexValidationError::DigestDocumentParseError { url, .. }) => {
+            Err(IndexValidationError::DigestSourceError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
-            other => panic!("Expected DigestSourceParseError, got {other:?}"),
+            other => panic!("Expected DigestSourceError, got {other:?}"),
         }
     }
 

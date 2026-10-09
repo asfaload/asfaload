@@ -79,6 +79,9 @@ pub fn get_checksums_from_github_rest_api_answer(
 /// Information of a Github release
 #[derive(Debug, Clone)]
 pub struct GithubReleaseInfo {
+    /// The release page URL this info was built from.
+    pub url: Url,
+    /// scheme/host/port
     pub origin_prefix: String,
     pub owner: String,
     pub repo: String,
@@ -110,6 +113,7 @@ impl GithubReleaseInfo {
         let origin_prefix = path_prefix_from_url(url)
             .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
         Ok(GithubReleaseInfo {
+            url: url.clone(),
             origin_prefix,
             owner,
             repo,
@@ -118,18 +122,7 @@ impl GithubReleaseInfo {
     }
 
     pub fn to_url(&self) -> Result<url::Url, ReleaseHandlingError> {
-        let s = format!(
-            "https://github.com/{}/{}/releases/tag/{}",
-            self.owner(),
-            self.repo(),
-            self.tag()
-        );
-        url::Url::parse(&s).map_err(|e| {
-            ReleaseHandlingError::InvalidUrl(format!(
-                "Could not convert GithubReleaseInfo to url: {}",
-                e
-            ))
-        })
+        Ok(self.url.clone())
     }
 }
 

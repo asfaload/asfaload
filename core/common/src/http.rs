@@ -91,10 +91,10 @@ pub async fn fetch_request(req: reqwest::RequestBuilder) -> Result<String, Fetch
         )));
     }
 
-    return response
+    response
         .text()
         .await
-        .map_err(|e| FetchError::BodyReadError(format!("fetch_request failed with: {}", e)));
+        .map_err(|e| FetchError::BodyReadError(format!("fetch_request failed with: {}", e)))
 }
 /// Returns a new empty cache to be used with fetch_sequentially_with_cache.
 pub fn new_sequential_cache() -> HashMap<String, String> {

@@ -11,8 +11,6 @@ use forge_release::common::{ReleaseFetcher, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 use forge_release::github::{GithubReleaseInfo, GithubReleaseResponse};
-use forge_url::github::validate_github_release_url;
-use forge_url::path_prefix_from_url;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -193,19 +191,11 @@ pub async fn parse_release_url(
     url: &url::Url,
     git_repo: &Path,
 ) -> Result<BackendGithubReleaseInfo, ApiError> {
-    let (_host, owner, repo, tag) =
-        validate_github_release_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
-    let origin_prefix =
-        path_prefix_from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
-    let url_path = format!("{}{}", origin_prefix, url.path());
+    let release_info =
+        GithubReleaseInfo::from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
+    let url_path = format!("{}{}", release_info.origin_prefix, url.path());
     let release_path =
         NormalisedPaths::new(git_repo.to_path_buf(), PathBuf::from(&url_path)).await?;
-    let release_info = GithubReleaseInfo {
-        origin_prefix,
-        owner,
-        repo,
-        tag,
-    };
 
     Ok(BackendGithubReleaseInfo {
         release_info,

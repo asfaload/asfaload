@@ -7,7 +7,7 @@ edition = "2024"
 signatures = { path = "../signatures" }
 signers_file_types = { path = "../signers_file_types/" }
 thiserror = "2.0"
-base64 = "0.22"
+base64 = "0.23"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 common = { path = "../common/" }

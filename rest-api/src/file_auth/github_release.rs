@@ -188,19 +188,7 @@ pub mod test_utils {
 mod feature_gated_tests {
     use super::test_utils::*;
     use super::*;
-    use tempfile::TempDir;
-
-    async fn build_adder(git_repo: PathBuf) -> GithubReleaseAdder {
-        let url =
-            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
-        let release_info = parse_release_url(&url, &git_repo).await.unwrap();
-        GithubReleaseAdder {
-            release_url: url,
-            git_repo_path: git_repo,
-            fetcher: MockGithubReleaseFetcher::new(),
-            release_info,
-        }
-    }
+    use features_lib::AsfaloadIndex;
 
     // Gives the added asset its own download url so a regression to
     // browser_download_url as digest source cannot pass silently.
@@ -219,15 +207,14 @@ mod feature_gated_tests {
         serde_json::from_value(value).unwrap()
     }
 
-    #[tokio::test]
-    async fn extract_assets_sets_source_to_release_api_url_for_all_assets() {
+    #[test]
+    fn extract_assets_sets_source_to_release_api_url_for_all_assets() {
         let release = release_with_extra_asset(
             "other.tar.gz",
             Some("sha256:1111111111111111111111111111111111111111111111111111111111111111"),
         );
 
-        let adder = build_adder(TempDir::new().unwrap().path().to_path_buf()).await;
-        let assets = adder.extract_assets(&release);
+        let assets = release.extract_assets();
 
         assert_eq!(assets.len(), 2);
         for (asset_info, _asset) in assets.iter().zip(release.assets.iter()) {
@@ -240,16 +227,14 @@ mod feature_gated_tests {
         }
     }
 
-    #[tokio::test]
-    async fn generate_index_json_serializes_digest_source_as_release_api_url() {
+    #[test]
+    fn generate_index_json_serializes_digest_source_as_release_api_url() {
         let release = release_with_extra_asset(
             "other.tar.gz",
             Some("sha256:1111111111111111111111111111111111111111111111111111111111111111"),
         );
 
-        let adder = build_adder(TempDir::new().unwrap().path().to_path_buf()).await;
-        let assets = adder.extract_assets(&release);
-        let json = adder.generate_index_json(&assets, &release).unwrap();
+        let json = release.generate_index_json().unwrap();
 
         // Go through the serialized form, as the index file is what
         // consumers (e.g. a future check-index command) will read.
@@ -260,13 +245,11 @@ mod feature_gated_tests {
         }
     }
 
-    #[tokio::test]
-    async fn assets_without_digest_are_excluded_from_index() {
+    #[test]
+    fn assets_without_digest_are_excluded_from_index() {
         let release = release_with_extra_asset("no-digest.tar.gz", None);
 
-        let adder = build_adder(TempDir::new().unwrap().path().to_path_buf()).await;
-        let assets = adder.extract_assets(&release);
-        let json = adder.generate_index_json(&assets, &release).unwrap();
+        let json = release.generate_index_json().unwrap();
 
         let index: AsfaloadIndex = serde_json::from_str(&json).unwrap();
         assert_eq!(index.published_files.len(), 1);
@@ -274,25 +257,11 @@ mod feature_gated_tests {
         assert_eq!(index.published_files[0].source, release.url.to_string());
     }
 
-    #[tokio::test]
-    async fn generate_index_json_has_trailing_newline() {
+    #[test]
+    fn generate_index_json_has_trailing_newline() {
         let release = create_mock_release_response();
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo = temp_dir.path().to_path_buf();
-        let url =
-            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
-        let release_info = parse_release_url(&url, &git_repo).await.unwrap();
 
-        let adder = GithubReleaseAdder {
-            release_url: url,
-            git_repo_path: git_repo,
-            fetcher: MockGithubReleaseFetcher::new(),
-            release_info,
-        };
-
-        let assets = adder.extract_assets(&release);
-
-        let json = adder.generate_index_json(&assets, &release).unwrap();
+        let json = release.generate_index_json().unwrap();
 
         assert!(
             json.ends_with("}\n"),

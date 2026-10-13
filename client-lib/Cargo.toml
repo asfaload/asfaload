@@ -8,8 +8,6 @@ thiserror = "2.0"
 features_lib = { path = "../core/features_lib/" }
 rest_api_types = { path = "../rest_api_types" }
 forge-url = { path = "../file-auth/forge-url" }
-forge-release = { path = "../file-auth/forge-release/" }
-index-verification = { path = "../file-auth/index-verification/" }
 url = "2.5"
 reqwest = { version = "0.13", features = ["json", "stream"] }
 sha2 = "0.10"
@@ -20,7 +18,6 @@ serde_json = "1.0"
 futures-util = "0.3"
 tempfile = "3"
 serde = "1.0.228"
-chrono = "0.4"
 
 [lints]
 workspace = true
@@ -30,3 +27,4 @@ mockito = "1.7"
 test_helpers = { path = "../core/test_helpers/" }
 features_lib = { path = "../core/features_lib/", features = ["test-utils"] }
 anyhow = "1.0"
+chrono = "0.4"

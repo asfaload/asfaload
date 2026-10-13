@@ -50,7 +50,6 @@ futures = "0.3.31"
 url = "2.5"
 forge-url = { path = "../file-auth/forge-url" }
 forge-release = { path = "../file-auth/forge-release/" }
-index-verification = { path = "../file-auth/index-verification/" }
 walkdir = "2.5"
 rustls = { version = "0.23.36", features = ["ring"] }
 base64 = "0.22.1"

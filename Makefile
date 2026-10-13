@@ -7,7 +7,7 @@ test: test-asfaload
 ## Run tests with test-utils feature enabled (for integration tests)
 # Note that if test-utils is added to other packages, they need to be added here.
 test-with-test-utils:
-	cargo nextest run --features test-utils  --package rest-api --package forge-url --package signatures
+	cargo nextest run --features test-utils  --package rest-api --package forge-url --package signatures --package admin-lib --package client-cli
 
 ## Fix rust code formatting
 format:

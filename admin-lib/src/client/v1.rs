@@ -2,14 +2,17 @@ use std::collections::HashMap;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
-//use common::sha512_for_content;
+use common::sha512_for_content;
+use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures,
 };
-//use forge_release::common::ReleaseFetcher;
-//use forge_release::github::GithubReleaseFetcher;
-// use features_lib::AsfaloadSecretKeyTrait;
+use forge_release::common::ReleaseFetcher;
+#[cfg(not(feature = "test-utils"))]
+use forge_release::github::GithubReleaseFetcher;
+#[cfg(feature = "test-utils")]
+use forge_release::github::test_utils::MockGithubReleaseFetcher;
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{
     ClientPendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
@@ -44,6 +47,18 @@ enum RegisterAssetsPayload {
 pub enum RegistrationMode {
     GithubRelease { url: String },
     ChecksumFiles { urls: Vec<String> },
+}
+
+// The fetcher type depends on the build mode: the real fetcher in
+// production, one returning a fixed response when building tests.
+#[cfg(not(feature = "test-utils"))]
+fn create_github_fetcher() -> GithubReleaseFetcher {
+    GithubReleaseFetcher::new(None)
+}
+
+#[cfg(feature = "test-utils")]
+fn create_github_fetcher() -> MockGithubReleaseFetcher {
+    MockGithubReleaseFetcher::new()
 }
 
 impl Client {
@@ -245,11 +260,11 @@ impl Client {
 
         let payload = match mode {
             RegistrationMode::GithubRelease { url } => {
-                //let fetcher = GithubReleaseFetcher::new(None);
-                //let release = fetcher.fetch(url).await?;
-                //let index = release.generate_index_json()?;
-                //let hash = sha512_for_content(index.as_bytes())?;
-                //let _signature = secret_key.sign(&hash)?;
+                let fetcher = create_github_fetcher();
+                let release = fetcher.fetch(url).await?;
+                let index = release.generate_index_json()?;
+                let hash = sha512_for_content(index.as_bytes())?;
+                let _signature = secret_key.sign(&hash)?;
                 RegisterAssetsPayload::GithubRelease {
                     github_release_url: url.clone(),
                 }

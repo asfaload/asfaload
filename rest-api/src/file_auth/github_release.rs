@@ -5,7 +5,7 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
-use forge_release::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseInfo};
+use forge_release::common::{ReleaseFetcher, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 use forge_release::github::{GithubReleaseInfo, GithubReleaseResponse};
@@ -102,36 +102,13 @@ impl ReleaseAdder for GithubReleaseAdder {
             .await
             .map_err(|e| ApiError::Generic(format!("Could not retrieve github release: {}", e)))?;
 
-        let assets = self.extract_assets(&release);
-
-        if assets.is_empty() {
-            return Err(ApiError::ReleaseApiError(
-                "GitHub".to_string(),
-                "No assets found in release".to_string(),
-            ));
-        }
-
-        self.generate_index_json(&assets, &release)
+        release
+            .generate_index_json()
+            .map_err(|e| ApiError::Generic(e.to_string()))
     }
 
     fn release_info(&self) -> BackendReleaseInfos {
         BackendReleaseInfos::Github(self.release_info.clone())
-    }
-}
-
-impl GithubReleaseAdder {
-    fn extract_assets(&self, release: &GithubReleaseResponse) -> Vec<ReleaseAssetInfo> {
-        release.extract_assets()
-    }
-
-    fn generate_index_json(
-        &self,
-        _assets: &[ReleaseAssetInfo],
-        release: &GithubReleaseResponse,
-    ) -> Result<String, ApiError> {
-        release
-            .generate_index_json()
-            .map_err(|e| ApiError::Generic(e.to_string()))
     }
 }
 

@@ -72,6 +72,12 @@ impl GithubReleaseResponse {
             .collect()
     }
     pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+        let assets = self.extract_assets();
+        if assets.is_empty() {
+            return Err(ReleaseHandlingError::InvalidData(
+                "No assets found in Github release".to_string(),
+            ));
+        }
         let published_files: Vec<FileChecksum> = self
             .extract_assets()
             .iter()

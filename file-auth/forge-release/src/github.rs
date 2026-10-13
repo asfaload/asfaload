@@ -1,11 +1,14 @@
 use std::fmt::{self};
 
 use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::http::fetch_request;
+use common::http::fetch_request_with_retry;
+use core::time::Duration;
 use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
 use forge_url::path_prefix_from_url;
 use url::Url;
 
+const MAX_RETRIES: u32 = 3;
+const REQUEST_TIMEOUT_SEC: u64 = 10;
 /// Builds an api url to retrieve the release info. This builds the url based on owner, repo and
 /// tag, and the document returned is a json object with all details of the release. The document
 /// has a url field, which is of the form
@@ -152,21 +155,31 @@ impl GithubReleaseFetcher {
             token,
         }
     }
-}
-
-impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
-    async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
-        let api_url = github_release_api_url(&url)?;
+    /// Build the request to the github rest api. The bearer token is added when
+    /// the caller configured one: without it the api rate limits the requests.
+    fn build_request(&self, api_url: &Url) -> reqwest::RequestBuilder {
         let mut request = self
             .client
             .get(api_url.clone())
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SEC))
             .header(reqwest::header::USER_AGENT, "asfaload");
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);
         }
-        let body = fetch_request(request).await.map_err(|e| {
-            ReleaseHandlingError::Generic(format!("failed fetching release at {}", e))
-        })?;
+        request
+    }
+}
+
+impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
+    async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+        // Build the api url once, so an invalid url fails at once and is not retried.
+        let api_url = github_release_api_url(&url)?;
+        let body = fetch_request_with_retry(
+            api_url.as_str(),
+            || self.build_request(&api_url),
+            MAX_RETRIES,
+        )
+        .await?;
         Ok(serde_json::from_str(&body)?)
     }
 }

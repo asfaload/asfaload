@@ -1,7 +1,7 @@
 use std::fmt::{self};
 
 use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::http::fetch_request_with_retry;
+use common::{http::fetch_request_with_retry, into_url::IntoUrl};
 use core::time::Duration;
 use features_lib::{
     AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
@@ -226,7 +226,15 @@ impl GithubReleaseFetcher {
 }
 
 impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
-    async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+    /// Builds a GithubReleaseResponse, which can generate the index of the release
+    async fn fetch<U: IntoUrl>(
+        &self,
+        url_in: U,
+    ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+        let url_text = url_in.to_string();
+        let url = url_in.into_url().map_err(|e| {
+            ReleaseHandlingError::InvalidUrl(format!("Could not parse url {}: {}", url_text, e))
+        })?;
         // Build the api url once, so an invalid url fails at once and is not retried.
         let api_url = github_release_api_url(&url)?;
         let body = fetch_request_with_retry(

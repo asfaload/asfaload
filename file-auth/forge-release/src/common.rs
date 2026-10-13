@@ -1,3 +1,4 @@
+use common::into_url::IntoUrl;
 use features_lib::FileChecksum;
 use thiserror::Error;
 
@@ -27,7 +28,10 @@ pub enum ReleaseHandlingError {
 }
 
 pub trait ReleaseFetcher<T> {
-    fn fetch(&self, url: url::Url) -> impl Future<Output = Result<T, ReleaseHandlingError>> + Send;
+    fn fetch<U: IntoUrl>(
+        &self,
+        url: U,
+    ) -> impl Future<Output = Result<T, ReleaseHandlingError>> + Send;
 }
 
 pub struct ReleaseAssetInfo {

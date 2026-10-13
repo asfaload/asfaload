@@ -4,7 +4,8 @@ use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, Rele
 use common::http::fetch_request_with_retry;
 use core::time::Duration;
 use features_lib::{
-    ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError, ParsedChecksum,
+    AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
+    ParsedChecksum,
 };
 use forge_url::path_prefix_from_url;
 use url::Url;
@@ -69,6 +70,31 @@ impl GithubReleaseResponse {
                 ReleaseAssetInfo { hash }
             })
             .collect()
+    }
+    pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+        let published_files: Vec<FileChecksum> = self
+            .extract_assets()
+            .iter()
+            .filter_map(|asset| asset.hash.clone())
+            .collect();
+
+        let published_on = self.published_at.or(self.created_at).ok_or_else(|| {
+            ReleaseHandlingError::InvalidData(
+                "No publication timestamp found in release".to_string(),
+            )
+        })?;
+        let mirrored_on = chrono::Utc::now();
+
+        let index = AsfaloadIndex {
+            mirrored_on,
+            published_on: published_on.to_utc(),
+            version: 1,
+            published_files,
+        };
+
+        common::to_posix_json(&index).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!("Failed to serialize index: {}", e))
+        })
     }
 }
 // Extract the digests of a github release api response, skipping assets

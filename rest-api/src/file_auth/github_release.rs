@@ -5,8 +5,6 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
-use common::index_types::ChecksumSourceFormat;
-use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use forge_release::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
@@ -128,31 +126,12 @@ impl GithubReleaseAdder {
 
     fn generate_index_json(
         &self,
-        assets: &[ReleaseAssetInfo],
+        _assets: &[ReleaseAssetInfo],
         release: &GithubReleaseResponse,
     ) -> Result<String, ApiError> {
-        let published_files: Vec<FileChecksum> = assets
-            .iter()
-            .filter_map(|asset| asset.hash.clone())
-            .collect();
-
-        let published_on = release.published_at.or(release.created_at).ok_or_else(|| {
-            ApiError::ReleaseApiError(
-                "GitHub".to_string(),
-                "No publication timestamp found in release".to_string(),
-            )
-        })?;
-        let mirrored_on = chrono::Utc::now();
-
-        let index = AsfaloadIndex {
-            mirrored_on,
-            published_on: published_on.to_utc(),
-            version: 1,
-            published_files,
-        };
-
-        common::to_posix_json(&index)
-            .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
+        release
+            .generate_index_json()
+            .map_err(|e| ApiError::Generic(e.to_string()))
     }
 }
 

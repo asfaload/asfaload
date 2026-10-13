@@ -1,9 +1,11 @@
 use std::fmt::{self};
 
-use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
+use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
 use common::http::fetch_request_with_retry;
 use core::time::Duration;
-use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
+use features_lib::{
+    ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError, ParsedChecksum,
+};
 use forge_url::path_prefix_from_url;
 use url::Url;
 
@@ -48,6 +50,27 @@ pub struct GithubReleaseAsset {
     pub digest: Option<String>,
 }
 
+impl GithubReleaseResponse {
+    pub fn extract_assets(&self) -> Vec<ReleaseAssetInfo> {
+        self.assets
+            .iter()
+            .map(|asset| {
+                let hash = asset.digest.as_ref().and_then(|d| {
+                    d.strip_prefix("sha256:").map(|hash| FileChecksum {
+                        file_name: asset.name.clone(),
+                        algo: HashAlgorithm::Sha256,
+                        // For a github release, the source is the url to get from the GH rest-api
+                        // to retrieve the release info, incl. assets and their digest.
+                        source: self.url.to_string(),
+                        source_format: ChecksumSourceFormat::GithubRelease,
+                        hash: hash.to_string(),
+                    })
+                });
+                ReleaseAssetInfo { hash }
+            })
+            .collect()
+    }
+}
 // Extract the digests of a github release api response, skipping assets
 // without digest or with an algorithm we cannot record in an index.
 pub fn get_checksums_from_github_rest_api_answer(

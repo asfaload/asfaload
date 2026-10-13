@@ -123,24 +123,7 @@ impl ReleaseAdder for GithubReleaseAdder {
 
 impl GithubReleaseAdder {
     fn extract_assets(&self, release: &GithubReleaseResponse) -> Vec<ReleaseAssetInfo> {
-        release
-            .assets
-            .iter()
-            .map(|asset| {
-                let hash = asset.digest.as_ref().and_then(|d| {
-                    d.strip_prefix("sha256:").map(|hash| FileChecksum {
-                        file_name: asset.name.clone(),
-                        algo: HashAlgorithm::Sha256,
-                        // For a github release, the source is the url to get from the GH rest-api
-                        // to retrieve the release info, incl. assets and their digest.
-                        source: release.url.to_string(),
-                        source_format: ChecksumSourceFormat::GithubRelease,
-                        hash: hash.to_string(),
-                    })
-                });
-                ReleaseAssetInfo { hash }
-            })
-            .collect()
+        release.extract_assets()
     }
 
     fn generate_index_json(

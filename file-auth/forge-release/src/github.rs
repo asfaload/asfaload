@@ -10,6 +10,9 @@ use features_lib::{
 use forge_url::path_prefix_from_url;
 use url::Url;
 
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
+
 const MAX_RETRIES: u32 = 3;
 const REQUEST_TIMEOUT_SEC: u64 = 10;
 /// Builds an api url to retrieve the release info. This builds the url based on owner, repo and

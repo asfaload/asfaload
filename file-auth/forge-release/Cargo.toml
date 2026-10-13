@@ -3,6 +3,9 @@ name = "forge-release"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+test-utils = []
+
 [dependencies]
 features_lib = { path = "../../core/features_lib/" }
 forge-url = { path = "../forge-url/" }

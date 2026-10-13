@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-test-utils = ["httpmock"]
+test-utils = ["httpmock", "forge-release/test-utils"]
 
 [dependencies]
 httpmock = { version = "0.8", optional = true }

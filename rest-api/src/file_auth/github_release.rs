@@ -1,5 +1,3 @@
-#[cfg(feature = "test-utils")]
-use self::test_utils::MockGithubReleaseFetcher;
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseIndexWriter, ReleaseUrlError,
@@ -8,6 +6,8 @@ use crate::file_auth::releasers::BackendReleaseInfos;
 use forge_release::common::{ReleaseFetcher, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
+#[cfg(feature = "test-utils")]
+use forge_release::github::test_utils::MockGithubReleaseFetcher;
 use forge_release::github::{GithubReleaseInfo, GithubReleaseResponse};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -138,59 +138,11 @@ pub async fn parse_release_url(
     })
 }
 
-#[cfg(feature = "test-utils")]
-pub mod test_utils {
-    use super::*;
-
-    use common::into_url::IntoUrl;
-
-    // Minimal shape of the github rest-api release response as parsed by
-    // GithubReleaseResponse.
-    pub const MOCK_RELEASE_JSON: &str = r#"{
-        "url": "https://api.github.com/repos/testowner/testrepo/releases/123",
-        "published_at": "2024-01-01T00:00:00Z",
-        "created_at": "2024-01-01T00:00:00Z",
-        "assets": [{
-            "name": "test.tar.gz",
-            "digest": "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-        }]
-    }"#;
-
-    pub fn create_mock_release_response() -> GithubReleaseResponse {
-        serde_json::from_str(MOCK_RELEASE_JSON).unwrap()
-    }
-
-    // Fetcher returning a fixed release response so tests never hit github.
-    // Serving error responses will be added later.
-    pub struct MockGithubReleaseFetcher;
-
-    impl MockGithubReleaseFetcher {
-        pub fn new() -> Self {
-            Self
-        }
-    }
-
-    impl Default for MockGithubReleaseFetcher {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl ReleaseFetcher<GithubReleaseResponse> for MockGithubReleaseFetcher {
-        async fn fetch<U: IntoUrl>(
-            &self,
-            _url: U,
-        ) -> Result<GithubReleaseResponse, forge_release::common::ReleaseHandlingError> {
-            Ok(create_mock_release_response())
-        }
-    }
-}
-
 #[cfg(all(test, feature = "test-utils"))]
 mod feature_gated_tests {
-    use super::test_utils::*;
     use super::*;
     use features_lib::AsfaloadIndex;
+    use forge_release::github::test_utils::{MOCK_RELEASE_JSON, create_mock_release_response};
 
     // Gives the added asset its own download url so a regression to
     // browser_download_url as digest source cannot pass silently.

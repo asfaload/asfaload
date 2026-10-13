@@ -142,6 +142,8 @@ pub async fn parse_release_url(
 pub mod test_utils {
     use super::*;
 
+    use common::into_url::IntoUrl;
+
     // Minimal shape of the github rest-api release response as parsed by
     // GithubReleaseResponse.
     pub const MOCK_RELEASE_JSON: &str = r#"{
@@ -175,9 +177,9 @@ pub mod test_utils {
     }
 
     impl ReleaseFetcher<GithubReleaseResponse> for MockGithubReleaseFetcher {
-        async fn fetch(
+        async fn fetch<U: IntoUrl>(
             &self,
-            _url: url::Url,
+            _url: U,
         ) -> Result<GithubReleaseResponse, forge_release::common::ReleaseHandlingError> {
             Ok(create_mock_release_response())
         }

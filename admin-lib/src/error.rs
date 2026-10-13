@@ -1,3 +1,5 @@
+use common::errors::keys::SignError;
+use forge_release::common::ReleaseHandlingError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,6 +21,15 @@ pub enum AdminLibError {
 
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    #[error("Release handling error: {0}")]
+    ReleaseHandling(#[from] ReleaseHandlingError),
+
+    #[error("I/O error: {0}")]
+    IOError(#[from] std::io::Error),
+
+    #[error("Sign error: {0}")]
+    SignError(#[from] SignError),
 }
 
 pub type AdminLibResult<T> = std::result::Result<T, AdminLibError>;

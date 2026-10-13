@@ -2,10 +2,14 @@ use std::collections::HashMap;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
+//use common::sha512_for_content;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures,
 };
+//use forge_release::common::ReleaseFetcher;
+//use forge_release::github::GithubReleaseFetcher;
+// use features_lib::AsfaloadSecretKeyTrait;
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{
     ClientPendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
@@ -240,9 +244,16 @@ impl Client {
         let url = format!("{}/v1/assets", self.base_url);
 
         let payload = match mode {
-            RegistrationMode::GithubRelease { url } => RegisterAssetsPayload::GithubRelease {
-                github_release_url: url.clone(),
-            },
+            RegistrationMode::GithubRelease { url } => {
+                //let fetcher = GithubReleaseFetcher::new(None);
+                //let release = fetcher.fetch(url).await?;
+                //let index = release.generate_index_json()?;
+                //let hash = sha512_for_content(index.as_bytes())?;
+                //let _signature = secret_key.sign(&hash)?;
+                RegisterAssetsPayload::GithubRelease {
+                    github_release_url: url.clone(),
+                }
+            }
             RegistrationMode::ChecksumFiles { urls } => RegisterAssetsPayload::ChecksumFiles {
                 csum_files: urls.clone(),
             },

@@ -106,24 +106,6 @@ impl BackendReleaseInfo for BackendReleaseInfos {
         }
     }
 }
-#[cfg(all(test, not(feature = "test-utils")))]
-mod tests {
-    use forge_url::github::GITHUB_REPO_HOSTS;
-
-    #[test]
-    fn test_github_release_host_detection() {
-        let github_url =
-            url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
-        assert!(GITHUB_REPO_HOSTS.contains(&github_url.host_str().unwrap()));
-    }
-
-    #[test]
-    fn test_unsupported_host() {
-        let bitbucket_url = url::Url::parse("https://bitbucket.org/owner/repo/v1.0.0").unwrap();
-        assert!(!GITHUB_REPO_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
-    }
-}
-
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;

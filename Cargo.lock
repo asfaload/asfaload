@@ -9,6 +9,7 @@ dependencies = [
  "base64",
  "common",
  "features_lib",
+ "forge-release",
  "http",
  "mockito",
  "reqwest",

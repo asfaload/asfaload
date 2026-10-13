@@ -1,3 +1,5 @@
+use common::into_url::IntoUrl;
+use features_lib::FileChecksum;
 use thiserror::Error;
 
 pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
@@ -18,10 +20,20 @@ pub enum ReleaseHandlingError {
     #[error("Parse error: {0}")]
     ParseError(#[from] serde_json::Error),
 
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+
     #[error("An error occured: {0}")]
     Generic(String),
 }
 
 pub trait ReleaseFetcher<T> {
-    fn fetch(&self, url: url::Url) -> impl Future<Output = Result<T, ReleaseHandlingError>> + Send;
+    fn fetch<U: IntoUrl>(
+        &self,
+        url: U,
+    ) -> impl Future<Output = Result<T, ReleaseHandlingError>> + Send;
+}
+
+pub struct ReleaseAssetInfo {
+    pub hash: Option<FileChecksum>,
 }

@@ -1,9 +1,12 @@
 use std::fmt::{self};
 
-use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::http::fetch_request_with_retry;
+use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
+use common::{http::fetch_request_with_retry, into_url::IntoUrl};
 use core::time::Duration;
-use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
+use features_lib::{
+    AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
+    ParsedChecksum,
+};
 use forge_url::path_prefix_from_url;
 use url::Url;
 
@@ -48,6 +51,58 @@ pub struct GithubReleaseAsset {
     pub digest: Option<String>,
 }
 
+impl GithubReleaseResponse {
+    pub fn extract_assets(&self) -> Vec<ReleaseAssetInfo> {
+        self.assets
+            .iter()
+            .map(|asset| {
+                let hash = asset.digest.as_ref().and_then(|d| {
+                    d.strip_prefix("sha256:").map(|hash| FileChecksum {
+                        file_name: asset.name.clone(),
+                        algo: HashAlgorithm::Sha256,
+                        // For a github release, the source is the url to get from the GH rest-api
+                        // to retrieve the release info, incl. assets and their digest.
+                        source: self.url.to_string(),
+                        source_format: ChecksumSourceFormat::GithubRelease,
+                        hash: hash.to_string(),
+                    })
+                });
+                ReleaseAssetInfo { hash }
+            })
+            .collect()
+    }
+    pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+        let assets = self.extract_assets();
+        if assets.is_empty() {
+            return Err(ReleaseHandlingError::InvalidData(
+                "No assets found in Github release".to_string(),
+            ));
+        }
+        let published_files: Vec<FileChecksum> = self
+            .extract_assets()
+            .iter()
+            .filter_map(|asset| asset.hash.clone())
+            .collect();
+
+        let published_on = self.published_at.or(self.created_at).ok_or_else(|| {
+            ReleaseHandlingError::InvalidData(
+                "No publication timestamp found in release".to_string(),
+            )
+        })?;
+        let mirrored_on = chrono::Utc::now();
+
+        let index = AsfaloadIndex {
+            mirrored_on,
+            published_on: published_on.to_utc(),
+            version: 1,
+            published_files,
+        };
+
+        common::to_posix_json(&index).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!("Failed to serialize index: {}", e))
+        })
+    }
+}
 // Extract the digests of a github release api response, skipping assets
 // without digest or with an algorithm we cannot record in an index.
 pub fn get_checksums_from_github_rest_api_answer(
@@ -171,7 +226,15 @@ impl GithubReleaseFetcher {
 }
 
 impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
-    async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+    /// Builds a GithubReleaseResponse, which can generate the index of the release
+    async fn fetch<U: IntoUrl>(
+        &self,
+        url_in: U,
+    ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+        let url_text = url_in.to_string();
+        let url = url_in.into_url().map_err(|e| {
+            ReleaseHandlingError::InvalidUrl(format!("Could not parse url {}: {}", url_text, e))
+        })?;
         // Build the api url once, so an invalid url fails at once and is not retried.
         let api_url = github_release_api_url(&url)?;
         let body = fetch_request_with_retry(

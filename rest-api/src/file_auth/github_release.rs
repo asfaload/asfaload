@@ -7,7 +7,7 @@ use crate::file_auth::release_types::{
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::index_types::ChecksumSourceFormat;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
-use forge_release::common::{ReleaseFetcher, ReleaseInfo};
+use forge_release::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 use forge_release::github::{GithubReleaseInfo, GithubReleaseResponse};
@@ -66,10 +66,6 @@ impl BackendReleaseInfo for BackendGithubReleaseInfo {
     fn release_path(&self) -> &NormalisedPaths {
         &self.release_path
     }
-}
-
-struct ReleaseAssetInfo {
-    hash: Option<FileChecksum>,
 }
 
 impl ReleaseIndexWriter for GithubReleaseAdder {}

@@ -1,3 +1,4 @@
+use features_lib::FileChecksum;
 use thiserror::Error;
 
 pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
@@ -24,4 +25,8 @@ pub enum ReleaseHandlingError {
 
 pub trait ReleaseFetcher<T> {
     fn fetch(&self, url: url::Url) -> impl Future<Output = Result<T, ReleaseHandlingError>> + Send;
+}
+
+pub struct ReleaseAssetInfo {
+    pub hash: Option<FileChecksum>,
 }

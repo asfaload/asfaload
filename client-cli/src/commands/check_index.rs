@@ -1,8 +1,8 @@
 use crate::error::{ClientCliError, Result, index_digest_source_error};
-use client_lib::index_verification::extract_parsed_checksums_from_index;
 use client_lib::signers_metadata::verify_remote_url_in_path_realm;
 use common::index_types::AsfaloadIndex;
 use features_lib::validate_index_against_digests;
+use index_verification::extract_parsed_checksums_from_index;
 
 /// Handle the check-index command.
 ///

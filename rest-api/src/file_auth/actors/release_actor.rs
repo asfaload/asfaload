@@ -1,7 +1,11 @@
 use super::git_actor::{CommitFile, GitActor};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
+use crate::file_auth::release_types::{
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
+};
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::helpers::create_empty_aggregate_signature;
+use forge_release::common::ReleaseInfo;
+use forge_release::github::GithubReleaseInfo;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -16,7 +20,7 @@ pub struct ReleaseActor {
 }
 
 pub struct ProcessRelease {
-    pub release_url: url::Url,
+    pub release_info: GithubReleaseInfo,
     pub request_id: String,
 }
 
@@ -61,12 +65,14 @@ impl ReleaseActor {
     ) -> Result<RegisterResult, ApiError> {
         info!(
             request_id = %msg.request_id,
-            url = %msg.release_url,
+            release_info = %msg.release_info,
             "Processing release"
         );
 
         let adder = ReleaseAdders::new(
-            &msg.release_url,
+            &msg.release_info
+                .to_url()
+                .map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?,
             self.config.git_repo_path.clone(),
             &self.config,
         )

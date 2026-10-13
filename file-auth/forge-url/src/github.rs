@@ -14,6 +14,8 @@ pub struct GitHubRepoInfo {
 #[cfg(not(feature = "test-utils"))]
 pub const GITHUB_REPO_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
 #[cfg(not(feature = "test-utils"))]
+pub const GITHUB_RELEASE_HOSTS: &[&str] = &["github.com"];
+#[cfg(not(feature = "test-utils"))]
 pub const GITHUB_API_HOSTS: &[&str] = &["api.github.com"];
 #[cfg(not(feature = "test-utils"))]
 pub const GITHUB_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com", "api.github.com"];
@@ -27,6 +29,8 @@ pub const GITHUB_REPO_HOSTS: &[&str] = &[
     "localhost",
     "127.0.0.1",
 ];
+#[cfg(feature = "test-utils")]
+pub const GITHUB_RELEASE_HOSTS: &[&str] = &["github.com", "localhost", "127.0.0.1"];
 // Mock api servers need to listen on 127.0.0.2 to avoid test failures.
 #[cfg(feature = "test-utils")]
 pub const GITHUB_API_HOSTS: &[&str] = &["api.github.com", "127.0.0.2"];
@@ -40,6 +44,56 @@ pub const GITHUB_HOSTS: &[&str] = &[
     "127.0.0.2",
 ];
 
+pub fn is_github_release_host(host: &str) -> bool {
+    GITHUB_RELEASE_HOSTS.contains(&host)
+}
+
+// Parses a github release html url of the form
+// https://github.com/owner/repo/releases/tag/<tag>
+// and returns the (host, owner, repo, tag) tuple.
+pub fn validate_github_release_url(
+    url: &Url,
+) -> Result<(String, String, String, String), ForgeUrlError> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| ForgeUrlError::InvalidFormat("Missing host".to_string()))?;
+
+    if !is_github_release_host(host) {
+        return Err(ForgeUrlError::UnsupportedForge(host.to_string()));
+    }
+
+    let path_segments: Vec<_> = url
+        .path_segments()
+        .ok_or_else(|| ForgeUrlError::InvalidFormat("Invalid path".to_string()))?
+        .collect();
+
+    let releases_idx = path_segments
+        .iter()
+        .position(|&s| s == "releases")
+        .ok_or_else(|| ForgeUrlError::InvalidFormat("Missing /releases/ in path".to_string()))?;
+
+    if releases_idx < 2
+        || releases_idx + 2 >= path_segments.len()
+        || path_segments[releases_idx + 1] != "tag"
+    {
+        return Err(ForgeUrlError::InvalidFormat(
+            "Invalid GitHub release URL structure trying to extract tag".to_string(),
+        ));
+    }
+
+    let owner = path_segments[releases_idx - 2].to_string();
+    let repo = path_segments[releases_idx - 1].to_string();
+    let tag = path_segments[releases_idx + 2].to_string();
+
+    if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+        return Err(ForgeUrlError::InvalidFormat(
+            "Owner, repo, and tag cannot be empty".to_string(),
+        ));
+    }
+    Ok((host.to_string(), owner, repo, tag))
+}
+
+/// Info about a Github URL leading to a blob of the repo.
 #[derive(Debug, Clone)]
 pub struct GithubRepoUrlInfo {
     original_url: Url,
@@ -401,6 +455,27 @@ mod tests {
             url_info.project_id(),
             "https/github.com/443/asfaload/repo_for_e2e_tests"
         );
+    }
+
+    // A suffix match on "github.com" would accept the lookalike host
+    // "evilgithub.com". Validation must use the exact host allowlist.
+    #[test]
+    fn validate_github_url_rejects_lookalike_host() {
+        let url = url::Url::parse("https://evilgithub.com/owner/repo/releases/tag/v1.0.0").unwrap();
+        let result = validate_github_release_url(&url);
+        assert!(matches!(result, Err(ForgeUrlError::UnsupportedForge(_))));
+    }
+
+    // Guards the allowlist against being inverted or narrowed: a real
+    // github.com release url must still validate and yield its fields.
+    #[test]
+    fn validate_github_url_accepts_github_release_url() {
+        let url = url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
+        let (host, owner, repo, tag) = validate_github_release_url(&url).unwrap();
+        assert_eq!(host, "github.com");
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+        assert_eq!(tag, "v1.0.0");
     }
 }
 

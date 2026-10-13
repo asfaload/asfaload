@@ -1,10 +1,9 @@
-#[cfg(not(feature = "test-utils"))]
-use crate::file_auth::github_release::ProductionGithubClient;
-use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
+use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
-    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
-use forge_url::github::GITHUB_REPO_HOSTS;
+use forge_release::common::ReleaseInfo;
+use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 #[cfg(all(test, feature = "test-utils"))]
@@ -12,15 +11,9 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use tokio::fs::File;
 
-#[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::test_utils::MockGithubClient;
-
 #[derive(Debug)]
 pub enum ReleaseAdders {
-    #[cfg(not(feature = "test-utils"))]
-    Github(Box<GithubReleaseAdder<ProductionGithubClient>>),
-    #[cfg(feature = "test-utils")]
-    Github(Box<GithubReleaseAdder<MockGithubClient>>),
+    Github(Box<GithubReleaseAdder>),
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {
@@ -44,14 +37,13 @@ impl ReleaseAdder for ReleaseAdders {
             .host_str()
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
-        if GITHUB_REPO_HOSTS.contains(&host) {
+        if is_github_release_host(host) {
             let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
-                "{}. Supported: GitHub ({})",
+                "Host {} is not recognised as a Github Relaese host",
                 host,
-                GITHUB_REPO_HOSTS.join(", "),
             ))
             .into())
         }
@@ -69,7 +61,7 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    fn release_info(&self) -> ReleaseInfos {
+    fn release_info(&self) -> BackendReleaseInfos {
         match self {
             Self::Github(github) => github.release_info(),
         }
@@ -77,11 +69,11 @@ impl ReleaseAdder for ReleaseAdders {
 }
 
 #[derive(Debug)]
-pub enum ReleaseInfos {
-    Github(GithubReleaseInfo),
+pub enum BackendReleaseInfos {
+    Github(BackendGithubReleaseInfo),
 }
 
-impl ReleaseInfo for ReleaseInfos {
+impl ReleaseInfo for BackendReleaseInfos {
     fn origin_prefix(&self) -> &str {
         match self {
             Self::Github(github) => github.origin_prefix(),
@@ -105,31 +97,15 @@ impl ReleaseInfo for ReleaseInfos {
             Self::Github(github) => github.tag(),
         }
     }
+}
 
+impl BackendReleaseInfo for BackendReleaseInfos {
     fn release_path(&self) -> &NormalisedPaths {
         match self {
             Self::Github(github) => github.release_path(),
         }
     }
 }
-#[cfg(all(test, not(feature = "test-utils")))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_github_release_host_detection() {
-        let github_url =
-            url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
-        assert!(GITHUB_REPO_HOSTS.contains(&github_url.host_str().unwrap()));
-    }
-
-    #[test]
-    fn test_unsupported_host() {
-        let bitbucket_url = url::Url::parse("https://bitbucket.org/owner/repo/v1.0.0").unwrap();
-        assert!(!GITHUB_REPO_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
-    }
-}
-
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;

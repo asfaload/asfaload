@@ -2,51 +2,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use features_lib::{
-    AsfaloadIndex, ChecksumSourceFormat, HashAlgorithm, IndexValidationError, ParsedChecksum,
+    AsfaloadIndex, ChecksumSourceFormat, IndexValidationError, ParsedChecksum,
     fetch_sequentially_with_cache, new_sequential_cache, parse_checksums as parse_shasum_content,
 };
-
-// Minimal shape of a github release api response ignoring irrelevant fields.
-#[derive(serde::Deserialize)]
-struct GithubReleaseResponse {
-    assets: Vec<GithubReleaseAsset>,
-}
-
-#[derive(serde::Deserialize)]
-struct GithubReleaseAsset {
-    name: String,
-    digest: Option<String>,
-}
-
-// Extract the digests of a github release api response, skipping assets
-// without digest or with an algorithm we cannot record in an index.
-fn parse_github_rest_api_answer(
-    body: &str,
-    source_url: &str,
-) -> Result<Vec<ParsedChecksum>, IndexValidationError> {
-    let response: GithubReleaseResponse =
-        serde_json::from_str(body).map_err(|e| IndexValidationError::DigestSourceParseError {
-            url: source_url.to_string(),
-            reason: format!("expected a github release api response: {e}"),
-        })?;
-    Ok(response
-        .assets
-        .iter()
-        .filter_map(|asset| {
-            let (algo, hash) = asset.digest.as_deref()?.split_once(':')?;
-            let algo = match algo {
-                "sha256" => HashAlgorithm::Sha256,
-                "sha512" => HashAlgorithm::Sha512,
-                _ => return None,
-            };
-            Some(ParsedChecksum {
-                file_name: asset.name.clone(),
-                algo,
-                hash: hash.to_string(),
-            })
-        })
-        .collect())
-}
+use forge_release::github::get_checksums_from_github_rest_api_answer;
 
 /// Fetch and parse every digest source of the index, once per distinct url.
 /// The returned map is keyed by the source url and holds every entry the
@@ -67,13 +26,18 @@ pub async fn extract_parsed_checksums_from_index(
             // is parsed with.
             let parsed = match published_file.source_format {
                 ChecksumSourceFormat::ShaSum => parse_shasum_content(content).map_err(|e| {
-                    IndexValidationError::DigestSourceParseError {
+                    IndexValidationError::DigestSourceError {
                         url: published_file.source.clone(),
                         reason: e.to_string(),
                     }
                 })?,
                 ChecksumSourceFormat::GithubRelease => {
-                    parse_github_rest_api_answer(content, &published_file.source)?
+                    get_checksums_from_github_rest_api_answer(content).map_err(|e| {
+                        IndexValidationError::DigestSourceError {
+                            url: published_file.source.clone(),
+                            reason: e.to_string(),
+                        }
+                    })?
                 }
             };
             entry.insert(parsed);
@@ -195,10 +159,10 @@ mod tests {
         let index = index_with_source_format(ChecksumSourceFormat::ShaSum, source_url.clone());
 
         match extract_parsed_checksums_from_index(&index).await {
-            Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
+            Err(IndexValidationError::DigestSourceError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
-            other => panic!("Expected DigestSourceParseError, got {other:?}"),
+            other => panic!("Expected DigestSourceError, got {other:?}"),
         }
     }
 
@@ -335,10 +299,10 @@ mod tests {
         );
 
         match extract_parsed_checksums_from_index(&index).await {
-            Err(IndexValidationError::DigestSourceParseError { url, .. }) => {
+            Err(IndexValidationError::DigestSourceError { url, .. }) => {
                 assert_eq!(url, source_url);
             }
-            other => panic!("Expected DigestSourceParseError, got {other:?}"),
+            other => panic!("Expected DigestSourceError, got {other:?}"),
         }
     }
 

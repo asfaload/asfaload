@@ -28,6 +28,7 @@ rest_api_types = { path = "../rest_api_types" }
 sha2 = "0.10"
 hex = "0.4"
 client-lib = { path = "../client-lib" }
+index-verification = { path = "../file-auth/index-verification/" }
 forge-url = { path = "../file-auth/forge-url" }
 url = "2.5"
 shell-words = "1.1.1"

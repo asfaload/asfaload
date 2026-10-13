@@ -1,0 +1,264 @@
+use std::fmt::{self};
+
+use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
+use common::http::fetch_request_with_retry;
+use core::time::Duration;
+use features_lib::{HashAlgorithm, IndexValidationError, ParsedChecksum};
+use forge_url::path_prefix_from_url;
+use url::Url;
+
+const MAX_RETRIES: u32 = 3;
+const REQUEST_TIMEOUT_SEC: u64 = 10;
+/// Builds an api url to retrieve the release info. This builds the url based on owner, repo and
+/// tag, and the document returned is a json object with all details of the release. The document
+/// has a url field, which is of the form
+///    https://api.github.com/repos/{owner}/{repo}/releases/252430053
+/// This last url does not use the tag but a release id, and is probably the canonical url of the release.
+/// It returns the exact same document as the url we build with owner, repo and tag.
+pub fn github_release_api_url(release_page_url: &url::Url) -> Result<Url, ReleaseHandlingError> {
+    let (_host, owner, repo, tag) =
+        forge_url::github::validate_github_release_url(release_page_url)
+            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
+    url::Url::parse(&format!(
+        "https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    ))
+    .map_err(|e| {
+        ReleaseHandlingError::InvalidUrl(format!(
+            "Could not build github api release url from {}: {}",
+            release_page_url, e
+        ))
+    })
+}
+
+// Minimal shape of a github release api response ignoring irrelevant fields.
+#[derive(serde::Deserialize)]
+pub struct GithubReleaseResponse {
+    /// The github rest-api url of the release. The index records it as the
+    /// digest source of every asset.
+    pub url: String,
+    /// Absent for a draft release. Index generation falls back to created_at.
+    pub published_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct GithubReleaseAsset {
+    pub name: String,
+    pub digest: Option<String>,
+}
+
+// Extract the digests of a github release api response, skipping assets
+// without digest or with an algorithm we cannot record in an index.
+pub fn get_checksums_from_github_rest_api_answer(
+    body: &str,
+) -> Result<Vec<ParsedChecksum>, IndexValidationError> {
+    let response: GithubReleaseResponse =
+        serde_json::from_str(body).map_err(|e| IndexValidationError::DigestDocumentParseError {
+            reason: format!("expected a github release api response: {e}"),
+        })?;
+    Ok(response
+        .assets
+        .iter()
+        .filter_map(|asset| {
+            let (algo, hash) = asset.digest.as_deref()?.split_once(':')?;
+            let algo = match algo {
+                "sha256" => HashAlgorithm::Sha256,
+                "sha512" => HashAlgorithm::Sha512,
+                _ => return None,
+            };
+            Some(ParsedChecksum {
+                file_name: asset.name.clone(),
+                algo,
+                hash: hash.to_string(),
+            })
+        })
+        .collect())
+}
+
+// Originally in rest-api, but made available to client to generate index for release registration
+// -----------------------------------------------------------------------------------------------
+
+/// Information of a Github release
+#[derive(Debug, Clone)]
+pub struct GithubReleaseInfo {
+    /// The release page URL this info was built from.
+    pub url: Url,
+    /// scheme/host/port
+    pub origin_prefix: String,
+    pub owner: String,
+    pub repo: String,
+    pub tag: String,
+}
+
+impl ReleaseInfo for GithubReleaseInfo {
+    fn origin_prefix(&self) -> &str {
+        &self.origin_prefix
+    }
+
+    fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    fn repo(&self) -> &str {
+        &self.repo
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+}
+
+impl GithubReleaseInfo {
+    pub fn from_url(url: &url::Url) -> Result<Self, ReleaseHandlingError> {
+        let (_host, owner, repo, tag) = forge_url::github::validate_github_release_url(url)
+            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
+        let origin_prefix = path_prefix_from_url(url)
+            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
+        Ok(GithubReleaseInfo {
+            url: url.clone(),
+            origin_prefix,
+            owner,
+            repo,
+            tag,
+        })
+    }
+
+    pub fn to_url(&self) -> Result<url::Url, ReleaseHandlingError> {
+        Ok(self.url.clone())
+    }
+}
+
+impl fmt::Display for GithubReleaseInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.to_url().map(|u| u.to_string()).unwrap_or(format!(
+                "GithubReleaseInfo(origin_prefix: {}, repo: {}/{}, tag: {})",
+                self.origin_prefix, self.owner, self.repo, self.tag
+            ))
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct GithubReleaseFetcher {
+    client: reqwest::Client,
+    token: Option<String>,
+}
+
+impl GithubReleaseFetcher {
+    pub fn new(token: Option<String>) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            token,
+        }
+    }
+    /// Build the request to the github rest api. The bearer token is added when
+    /// the caller configured one: without it the api rate limits the requests.
+    fn build_request(&self, api_url: &Url) -> reqwest::RequestBuilder {
+        let mut request = self
+            .client
+            .get(api_url.clone())
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SEC))
+            .header(reqwest::header::USER_AGENT, "asfaload");
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+        request
+    }
+}
+
+impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
+    async fn fetch(&self, url: Url) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+        // Build the api url once, so an invalid url fails at once and is not retried.
+        let api_url = github_release_api_url(&url)?;
+        let body = fetch_request_with_retry(
+            api_url.as_str(),
+            || self.build_request(&api_url),
+            MAX_RETRIES,
+        )
+        .await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The release adder fetches releases starting from the release html page
+    // url. Data must come from the rest-api endpoint: check the conversion.
+    #[test]
+    fn release_api_url_is_derived_from_release_page_url() {
+        let page_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+        let api_url = github_release_api_url(&page_url).unwrap();
+        assert_eq!(
+            api_url.as_str(),
+            "https://api.github.com/repos/testowner/testrepo/releases/tags/v1.0.0"
+        );
+    }
+
+    #[test]
+    fn non_release_page_url_rejected_for_api_url_conversion() {
+        let bad_url = url::Url::parse("https://github.com/owner/repo").unwrap();
+        assert!(github_release_api_url(&bad_url).is_err());
+    }
+
+    // Server side generation needs the release url and its timestamps. This
+    // test pins the shape of the response struct used for parsing and
+    // generation.
+    #[test]
+    fn release_response_exposes_url_and_timestamps() {
+        let body = r#"{
+            "url": "https://api.github.com/repos/acme/tool/releases/123",
+            "published_at": "2024-01-02T03:04:05Z",
+            "created_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {"name": "app.bin", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+            ]
+        }"#;
+
+        let response: GithubReleaseResponse = serde_json::from_str(body).unwrap();
+
+        assert_eq!(
+            response.url,
+            "https://api.github.com/repos/acme/tool/releases/123"
+        );
+        assert_eq!(
+            response.published_at,
+            Some(
+                "2024-01-02T03:04:05Z"
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .unwrap()
+            )
+        );
+        assert_eq!(
+            response.created_at,
+            Some(
+                "2024-01-01T00:00:00Z"
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn release_response_allows_absent_published_at() {
+        let body = r#"{
+            "url": "https://api.github.com/repos/acme/tool/releases/123",
+            "published_at": null,
+            "created_at": "2024-01-01T00:00:00Z",
+            "assets": []
+        }"#;
+
+        let response: GithubReleaseResponse = serde_json::from_str(body).unwrap();
+
+        assert_eq!(response.published_at, None);
+        assert!(response.created_at.is_some());
+    }
+}

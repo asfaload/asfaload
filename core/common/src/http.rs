@@ -28,32 +28,45 @@ const REQUEST_TIMEOUT_SEC: u64 = 10;
 /// Fetch the content at `url` as a string, retrying on HTTP 429 with
 /// exponential backoff. Respects the `Retry-After` header when present.
 pub async fn fetch_with_retry(url: &str) -> Result<String, FetchError> {
+    let client = Client::builder()
+        // user agent is required as Github rest api rejects requests without one set
+        .user_agent("asfaload")
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SEC))
+        .build()
+        .map_err(|e| FetchError::ClientError(e.to_string()))?;
+    fetch_request_with_retry(url, || client.get(url), MAX_RETRIES).await
+}
+
+/// Send the request built by `build_request`, retrying on HTTP 429 with
+/// exponential backoff. Respects the `Retry-After` header when present.
+///
+/// `build_request` is called once per try, as `send` consumes the builder.
+/// This lets callers attach headers, such as an authentication token.
+/// `label` names the request in error messages.
+pub async fn fetch_request_with_retry(
+    label: &str,
+    build_request: impl Fn() -> reqwest::RequestBuilder,
+    max_retries: u32,
+) -> Result<String, FetchError> {
     let mut retries = 0;
     let mut backoff_sec = INITIAL_BACKOFF_SEC;
 
     loop {
-        let client = Client::builder()
-            // user agent is required as Github rest api rejects requests without one set
-            .user_agent("asfaload")
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SEC))
-            .build()
-            .map_err(|e| FetchError::ClientError(e.to_string()))?;
-        let response = client
-            .get(url)
+        let response = build_request()
             .send()
             .await
-            .map_err(|e| FetchError::RequestFailed(format!("{}: {}", url, e)))?;
+            .map_err(|e| FetchError::RequestFailed(format!("{}: {}", label, e)))?;
 
-        if response.status() == 429 {
-            if retries >= MAX_RETRIES {
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if retries >= max_retries {
                 return Err(FetchError::RateLimitExceeded {
-                    retries: MAX_RETRIES,
-                    url: url.to_string(),
+                    retries: max_retries,
+                    url: label.to_string(),
                 });
             }
             let retry_after = response
                 .headers()
-                .get("Retry-After")
+                .get(reqwest::header::RETRY_AFTER)
                 .and_then(|h| h.to_str().ok())
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(backoff_sec)
@@ -68,14 +81,14 @@ pub async fn fetch_with_retry(url: &str) -> Result<String, FetchError> {
         if !response.status().is_success() {
             return Err(FetchError::HttpError {
                 status: response.status().as_u16(),
-                url: url.to_string(),
+                url: label.to_string(),
             });
         }
 
         return response
             .text()
             .await
-            .map_err(|e| FetchError::BodyReadError(format!("{}: {}", url, e)));
+            .map_err(|e| FetchError::BodyReadError(format!("{}: {}", label, e)));
     }
 }
 
@@ -121,6 +134,65 @@ mod tests {
         let body = fetch_with_retry(&url).await?;
 
         assert_eq!(body, BODY);
+        mock.assert_async().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn retries_on_429_until_max_tries_then_reports_rate_limit() -> anyhow::Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        // A zero delay keeps the test fast.
+        let mock = server
+            .mock("GET", "/data")
+            .with_status(429)
+            .with_header("Retry-After", "0")
+            // One try plus `max_retries` retries.
+            .expect(3)
+            .create_async()
+            .await;
+        let url = format!("{}/data", server.url());
+        let client = Client::new();
+
+        let result = fetch_request_with_retry(url.as_str(), || client.get(url.as_str()), 2).await;
+
+        match result {
+            Err(FetchError::RateLimitExceeded {
+                retries,
+                url: err_url,
+            }) => {
+                assert_eq!(retries, 2);
+                assert_eq!(err_url, url);
+            }
+            other => panic!("expected RateLimitExceeded, got {:?}", other),
+        }
+        mock.assert_async().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn non_429_error_is_not_retried() -> anyhow::Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/data")
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+        let url = format!("{}/data", server.url());
+        let client = Client::new();
+
+        let result = fetch_request_with_retry(url.as_str(), || client.get(url.as_str()), 3).await;
+
+        match result {
+            Err(FetchError::HttpError {
+                status,
+                url: err_url,
+            }) => {
+                assert_eq!(status, 500);
+                assert_eq!(err_url, url);
+            }
+            other => panic!("expected HttpError, got {:?}", other),
+        }
         mock.assert_async().await;
         Ok(())
     }

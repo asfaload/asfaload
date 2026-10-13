@@ -146,6 +146,9 @@ pub mod errors {
 
         #[error("Nonce cache error: {0}")]
         NonceCacheError(String),
+
+        #[error("An error occurred: {0}")]
+        Generic(String),
     }
 
     #[derive(Error, Debug)]
@@ -248,6 +251,7 @@ pub mod errors {
                 ApiError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::SignersConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NonceCacheError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::Generic(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }
@@ -577,53 +581,6 @@ pub mod models {
     }
 }
 
-pub mod github_helpers {
-    use crate::errors::ApiError;
-
-    pub fn validate_github_url(
-        url: &url::Url,
-    ) -> Result<(String, String, String, String), ApiError> {
-        let host = url
-            .host_str()
-            .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
-
-        if !host.ends_with("github.com") {
-            return Err(ApiError::InvalidGitHubUrl(
-                "Only github.com URLs are supported".to_string(),
-            ));
-        }
-
-        let path_segments: Vec<_> = url
-            .path_segments()
-            .ok_or_else(|| ApiError::InvalidGitHubUrl("Invalid path".to_string()))?
-            .collect();
-
-        let releases_idx = path_segments
-            .iter()
-            .position(|&s| s == "releases")
-            .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing /releases/ in path".to_string()))?;
-
-        if releases_idx < 2
-            || releases_idx + 2 >= path_segments.len()
-            || path_segments[releases_idx + 1] != "tag"
-        {
-            return Err(ApiError::InvalidGitHubUrl(
-                "Invalid GitHub release URL structure trying to extract tag".to_string(),
-            ));
-        }
-
-        let owner = path_segments[releases_idx - 2].to_string();
-        let repo = path_segments[releases_idx - 1].to_string();
-        let tag = path_segments[releases_idx + 2].to_string();
-
-        if owner.is_empty() || repo.is_empty() || tag.is_empty() {
-            return Err(ApiError::InvalidGitHubUrl(
-                "Owner, repo, and tag cannot be empty".to_string(),
-            ));
-        }
-        Ok((host.to_string(), owner, repo, tag))
-    }
-}
 pub mod rustls {
     pub fn setup_crypto_provider() {
         use rustls::crypto::{CryptoProvider, ring};

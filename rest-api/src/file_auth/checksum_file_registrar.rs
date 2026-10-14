@@ -116,6 +116,12 @@ impl ChecksumFileRegistrar {
                 f.write_all(content.as_bytes()).await.map_err(|e| {
                     ApiError::FileWriteFailed(format!("Failed to write index file: {}", e))
                 })?;
+                // tokio buffers file writes: without an awaited flush the
+                // index file can still be empty on disk when this returns.
+                // The git actor commits the file right after.
+                f.flush().await.map_err(|e| {
+                    ApiError::FileWriteFailed(format!("Failed to flush index file: {}", e))
+                })?;
                 Ok(index_path)
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {

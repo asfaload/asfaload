@@ -36,9 +36,15 @@ pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
     /// Unconditionally writes the index file to disk.
     /// This is an implementation detail — callers should use `ReleaseAdder::create_index` instead.
     async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
-        f.write(content)
+        f.write_all(content)
             .await
             .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
+        // tokio buffers file writes: without an awaited flush the index file
+        // can still be empty on disk when this returns. Other tasks (e.g. the
+        // git commit) read or hash the file right after.
+        f.flush()
+            .await
+            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to flush index file: {}", e)))?;
         Ok(())
     }
 }

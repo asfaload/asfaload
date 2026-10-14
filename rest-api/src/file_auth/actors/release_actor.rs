@@ -22,6 +22,7 @@ pub struct ReleaseActor {
 pub struct ProcessRelease {
     pub release_info: GithubReleaseInfo,
     pub request_id: String,
+    pub signing_key: String,
 }
 
 pub struct RegisterResult {

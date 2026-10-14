@@ -1092,6 +1092,11 @@ pub async fn register_assets_handler(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown");
 
+    let signing_key = headers
+        .get(HEADER_PUBLIC_KEY)
+        .ok_or(ApiError::MissingAuthenticationHeaders)?
+        .to_str()?;
+
     match &request {
         RegisterAssetsPayload::GithubRelease(r) => {
             register_github_release(&state, request_id, signing_key, &r.github_release_url).await
@@ -1105,6 +1110,7 @@ pub async fn register_assets_handler(
 async fn register_github_release(
     state: &AppState,
     request_id: &str,
+    signing_key: &str,
     github_release_url: &str,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
     let convert_github_release_error =
@@ -1126,6 +1132,7 @@ async fn register_github_release(
         .release_actor
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
+            signing_key: signing_key.to_string(),
             release_info,
         })
         .await

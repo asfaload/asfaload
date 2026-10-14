@@ -263,6 +263,82 @@ mod test_utils_tests {
         );
     }
 
+    // The index file written on disk is what consumers read, so its content
+    // must match the release data served by the github api. Expected values
+    // are pinned to the response returned by the test-utils mock fetcher.
+    #[tokio::test]
+    async fn test_create_index_writes_expected_index_content() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
+        use std::net::{IpAddr, Ipv4Addr};
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("https/github.com/443/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await.unwrap();
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), "{}")
+            .await
+            .unwrap();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let port = get_random_port().await.unwrap();
+        let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => crate::config::GitBackendConfig::Sha256,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND: {other}"),
+            Err(_e) => crate::config::GitBackendConfig::Sha256,
+        };
+        let mock_config = crate::config::AppConfig {
+            server_port: port,
+            server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            git_repo_path: git_repo_path.clone(),
+            log_level: "info".to_string(),
+            git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
+
+        let registration_started_at = chrono::Utc::now();
+        let index_path = adder.create_index().await.unwrap();
+        let index = rest_api_test_helpers::read_on_disk_index(&index_path.absolute_path()).unwrap();
+
+        assert_eq!(index.version, 1);
+        assert_eq!(
+            index.published_on,
+            "2024-01-01T00:00:00Z"
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .unwrap(),
+            "published_on must come from the release's published_at timestamp"
+        );
+        assert!(
+            index.mirrored_on >= registration_started_at && index.mirrored_on <= chrono::Utc::now(),
+            "mirrored_on must be the registration time, got {}",
+            index.mirrored_on
+        );
+        assert_eq!(
+            index.published_files,
+            vec![FileChecksum {
+                file_name: "test.tar.gz".to_string(),
+                algo: HashAlgorithm::Sha256,
+                source: "https://api.github.com/repos/testowner/testrepo/releases/123".to_string(),
+                source_format: ChecksumSourceFormat::GithubRelease,
+                hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                    .to_string(),
+            }]
+        );
+    }
+
     #[tokio::test]
     async fn test_create_index_fails_without_signers() {
         use crate::file_auth::release_types::ReleaseAdder;

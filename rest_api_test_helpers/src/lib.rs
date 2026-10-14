@@ -104,6 +104,26 @@ pub fn read_file_content(repo_path: &Path, file_path: &str) -> Result<String, Ap
     Ok(content)
 }
 
+/// Reads an index file written by the backend and checks the POSIX JSON
+/// contract: pretty JSON terminated by exactly one '\n'. Returns the parsed
+/// index so callers can assert the expected fields.
+///
+/// The fields the index must carry depend on the registration flow, so only
+/// the storage invariant is checked here.
+pub fn read_on_disk_index(index_path: &Path) -> Result<features_lib::AsfaloadIndex> {
+    let content = fs::read_to_string(index_path)?;
+    assert!(
+        content.ends_with("}\n"),
+        "index file must end with exactly one trailing newline, got: {:?}",
+        content
+    );
+    assert!(
+        !content.ends_with("\n\n"),
+        "index file must not end with two consecutive newlines"
+    );
+    Ok(serde_json::from_str(&content)?)
+}
+
 pub async fn get_random_port() -> Result<u16, ApiError> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();

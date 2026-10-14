@@ -320,6 +320,16 @@ assert_release_index_exists "0.1"
 assert_release_index_pending "0.1"
 assert_last_commit_contains "$INDEX_FILE"
 
+# Pin the on-disk index content to what the checksums file contains, so a
+# change in index generation (fields, casing, digest source) fails the flow
+# instead of silently changing what gets signed. Expected values come from
+# the fixture files, never from the backend.
+V0_1_INDEX_CONTENT_FILTER=".version == 1 and .publishedOn == .mirroredOn and .publishedFiles == [{fileName: \"artifact.bin\", algo: \"Sha256\", source: \"$(csum_file_url 0.1)\", sourceFormat: \"ShaSum\", hash: \"$(cut -d' ' -f1 "$FS_PROJECT_DIR/releases/v0.1/SHA256SUMS")\"}]"
+assert_index_posix_json_contract "0.1"
+assert_json_field "$(_release_dir "0.1")/$INDEX_FILE" \
+    "$V0_1_INDEX_CONTENT_FILTER" \
+    "Release v0.1 index content matches checksums file"
+
 run_step_json "Check index digests against digest sources" \
     '.files_checked == 1' \
     cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
@@ -488,6 +498,14 @@ run_step_json "Register second release with key2" \
 # --- Backend: verify second release index created ---
 assert_release_index_exists "0.2"
 assert_release_index_pending "0.2"
+
+# Same content pinning as v0.1: the second registration exercises the same
+# index generation code, so its output must match the v0.2 checksums file.
+V0_2_INDEX_CONTENT_FILTER=".version == 1 and .publishedOn == .mirroredOn and .publishedFiles == [{fileName: \"artifact.bin\", algo: \"Sha256\", source: \"$(csum_file_url 0.2)\", sourceFormat: \"ShaSum\", hash: \"$(cut -d' ' -f1 "$FS_PROJECT_DIR/releases/v0.2/SHA256SUMS")\"}]"
+assert_index_posix_json_contract "0.2"
+assert_json_field "$(_release_dir "0.2")/$INDEX_FILE" \
+    "$V0_2_INDEX_CONTENT_FILTER" \
+    "Release v0.2 index content matches checksums file"
 
 run_step_json "List pending for key2" \
     '.pending_files | length > 0' \

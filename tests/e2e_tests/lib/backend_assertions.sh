@@ -194,6 +194,25 @@ assert_signers_history_entries() {
         "Signers history has $expected entry/entries"
 }
 
+# --- Index content assertions ---
+
+# Assert the on-disk index file follows the POSIX JSON contract used for
+# files the backend authors: jq-parseable, pretty printed, terminated by
+# exactly one '\n'. The exact bytes are what clients hash and sign, so a
+# formatting regression is a signing regression.
+assert_index_posix_json_contract() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
+    local version="$1"
+    local index
+    index="$(_release_dir "$version")/$INDEX_FILE"
+    run_step "Backend: v$version index is a JSON object" \
+        jq -e 'type == "object"' "$index"
+    run_step "Backend: v$version index ends with exactly one newline" \
+        test "$(tail -c 1 "$index" | od -An -tx1 | tr -d ' \n')" = "0a"
+    run_step "Backend: v$version index ends with a closing brace" \
+        test "$(tail -c 2 "$index" | head -c 1 | od -An -tx1 | tr -d ' \n')" = "7d"
+}
+
 # --- Release lifecycle assertions ---
 
 _release_dir() {

@@ -165,7 +165,7 @@ pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io:
     Ok(AsfaloadHashes::Sha512(hasher.finalize()))
 }
 
-pub fn base64_for_string<S: AsRef<String>>(s: S) -> String {
+pub fn base64_for_string<S: AsRef<str>>(s: S) -> String {
     let input_string = s.as_ref();
     STANDARD_NO_PAD.encode(input_string)
 }
@@ -1024,6 +1024,58 @@ mod asfaload_common_tests {
         assert!(!s.ends_with("\n\n"));
         // pretty format preserved (multi-line, indented)
         assert!(s.contains("\n  \"a\": 1"));
+    }
+
+    // --- base64_for_string tests ---
+
+    #[test]
+    fn base64_for_string_known_value() {
+        assert_eq!(base64_for_string("hello world"), "aGVsbG8gd29ybGQ");
+    }
+
+    #[test]
+    fn base64_for_string_empty_is_empty() {
+        assert_eq!(base64_for_string(""), "");
+    }
+
+    #[test]
+    fn base64_for_string_is_unpadded() {
+        // "a" needs two padding chars under standard base64 ("YQ==").
+        // With STANDARD_NO_PAD the padding must be dropped.
+        let encoded = base64_for_string("a");
+        assert_eq!(encoded, "YQ");
+        assert!(
+            !encoded.contains('='),
+            "output must not contain base64 padding"
+        );
+    }
+
+    #[test]
+    fn base64_for_string_encodes_utf8_bytes() {
+        // "é" is U+00E9, encoded as the UTF-8 bytes C3 A9 -> "w6k".
+        assert_eq!(base64_for_string("é"), "w6k");
+    }
+
+    #[test]
+    fn base64_for_string_round_trips() {
+        for input in ["", "a", "ab", "abc", "hello world", "with/slash+plus"] {
+            let encoded = base64_for_string(input);
+            let decoded = STANDARD_NO_PAD
+                .decode(&encoded)
+                .expect("output must be valid unpadded base64");
+            assert_eq!(String::from_utf8(decoded).unwrap(), input);
+        }
+    }
+
+    #[test]
+    fn base64_for_string_accepts_str_and_string() {
+        let owned = String::from("hello world");
+        // Both &str and &String must be accepted.
+        assert_eq!(
+            base64_for_string("hello world"),
+            base64_for_string(owned.as_str())
+        );
+        assert_eq!(base64_for_string("hello world"), base64_for_string(owned));
     }
 }
 

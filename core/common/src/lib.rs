@@ -6,6 +6,7 @@ pub mod index_types;
 pub mod index_validation;
 pub mod into_url;
 
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use constants::{
     METADATA_SUFFIX, PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
     REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
@@ -162,6 +163,11 @@ pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io:
     }
 
     Ok(AsfaloadHashes::Sha512(hasher.finalize()))
+}
+
+pub fn base64_for_string<S: AsRef<String>>(s: S) -> String {
+    let input_string = s.as_ref();
+    STANDARD_NO_PAD.encode(input_string)
 }
 
 // We distincuish 3 types of signed files, which have different criteria

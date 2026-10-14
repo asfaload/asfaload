@@ -1650,9 +1650,12 @@ pub mod test_utils_tests {
             mock_server.url("")
         );
 
+        // Index timestamps are set while the server processes the request.
+        let registration_started_at = chrono::Utc::now();
+
         let assets_body = rest_api_types::RegisterAssetsPayload::ChecksumFiles(
             rest_api_types::models::ChecksumFilesPayload {
-                csum_files: vec![checksums_url],
+                csum_files: vec![checksums_url.clone()],
             },
         );
         let assets_payload_string = serde_json::to_string(&assets_body)?;
@@ -1695,6 +1698,32 @@ pub mod test_utils_tests {
             "Index path '{}' should start with origin prefix '{}'",
             index_path_str,
             expected_prefix
+        );
+
+        // The on-disk index is what consumers read: its content must match
+        // the entries of the checksums file the server downloaded.
+        let index = rest_api_test_helpers::read_on_disk_index(&git_repo_path.join(index_path_str))?;
+        assert_eq!(index.version, 1);
+        // A checksums file carries no upstream publication date: both
+        // timestamps are set at registration time.
+        assert_eq!(
+            index.published_on, index.mirrored_on,
+            "published_on must equal mirrored_on when registering from a checksums file"
+        );
+        assert!(
+            index.mirrored_on >= registration_started_at && index.mirrored_on <= chrono::Utc::now(),
+            "mirrored_on must be the registration time, got {}",
+            index.mirrored_on
+        );
+        assert_eq!(
+            index.published_files,
+            vec![features_lib::FileChecksum {
+                file_name: "artifact.bin".to_string(),
+                algo: features_lib::HashAlgorithm::Sha256,
+                source: checksums_url.clone(),
+                source_format: features_lib::ChecksumSourceFormat::ShaSum,
+                hash: sha256_hex.to_string(),
+            }]
         );
 
         checksums_mock.assert();

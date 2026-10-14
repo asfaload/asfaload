@@ -26,6 +26,9 @@ pub mod tests {
     use rest_api_types::models::GithubReleasePayload;
     use serde_json::Value;
 
+    #[cfg(feature = "test-utils")]
+    use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
+
     /// Body of the register-assets endpoint, in the tagged form sent by the
     /// client library. The index and signature values are placeholders: the
     /// server builds its own index for now.
@@ -89,6 +92,9 @@ pub mod tests {
             github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
         let payload_str = payload.to_string();
 
+        // Index timestamps are set while the server processes the request.
+        let registration_started_at = chrono::Utc::now();
+
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
         let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
 
@@ -135,6 +141,33 @@ pub mod tests {
             index_path.exists(),
             "Index file should exist at {}",
             index_path.display()
+        );
+
+        // The on-disk index is what consumers read: its content must match the
+        // release data served by the mocked github api. Expected values pin
+        // the response served by the test-utils mock fetcher.
+        let index = rest_api_test_helpers::read_on_disk_index(&index_path)?;
+        assert_eq!(index.version, 1);
+        assert_eq!(
+            index.published_on,
+            "2024-01-01T00:00:00Z".parse::<chrono::DateTime<chrono::Utc>>()?,
+            "published_on must come from the release's published_at timestamp"
+        );
+        assert!(
+            index.mirrored_on >= registration_started_at && index.mirrored_on <= chrono::Utc::now(),
+            "mirrored_on must be the registration time, got {}",
+            index.mirrored_on
+        );
+        assert_eq!(
+            index.published_files,
+            vec![FileChecksum {
+                file_name: "test.tar.gz".to_string(),
+                algo: HashAlgorithm::Sha256,
+                source: "https://api.github.com/repos/testowner/testrepo/releases/123".to_string(),
+                source_format: ChecksumSourceFormat::GithubRelease,
+                hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                    .to_string(),
+            }]
         );
 
         // Verify signature file exists

@@ -53,6 +53,8 @@ pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
 pub trait ReleaseAdder: ReleaseIndexWriter {
     async fn new(
         release_url: &url::Url,
+        client_sent_index: String,
+        client_sent_signature: String,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>

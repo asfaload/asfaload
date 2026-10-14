@@ -26,6 +26,8 @@ fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleas
 pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
+    pub client_sent_index: String,
+    pub client_sent_signature: String,
     // The fetcher type depends on the build mode: the real fetcher in
     // production, one returning a fixed response when building tests.
     #[cfg(not(feature = "test-utils"))]
@@ -71,6 +73,8 @@ impl ReleaseIndexWriter for GithubReleaseAdder {}
 impl ReleaseAdder for GithubReleaseAdder {
     async fn new(
         release_url: &url::Url,
+        client_sent_index: String,
+        client_sent_signature: String,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, crate::file_auth::release_types::ReleaseError>
@@ -88,6 +92,8 @@ impl ReleaseAdder for GithubReleaseAdder {
             git_repo_path,
             fetcher,
             release_info,
+            client_sent_index,
+            client_sent_signature,
         })
     }
 

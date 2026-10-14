@@ -23,6 +23,8 @@ pub struct ProcessRelease {
     pub release_info: GithubReleaseInfo,
     pub request_id: String,
     pub signing_key: String,
+    pub client_sent_index: String,
+    pub client_sent_signature: String,
 }
 
 pub struct RegisterResult {
@@ -74,6 +76,8 @@ impl ReleaseActor {
             &msg.release_info
                 .to_url()
                 .map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?,
+            msg.client_sent_index,
+            msg.client_sent_signature,
             self.config.git_repo_path.clone(),
             &self.config,
         )

@@ -1099,7 +1099,15 @@ pub async fn register_assets_handler(
 
     match &request {
         RegisterAssetsPayload::GithubRelease(r) => {
-            register_github_release(&state, request_id, signing_key, &r.github_release_url).await
+            register_github_release(
+                &state,
+                request_id,
+                signing_key,
+                &r.github_release_url,
+                &r.index,
+                &r.signature,
+            )
+            .await
         }
         RegisterAssetsPayload::ChecksumFiles(f) => {
             register_checksums(&state, request_id, &f.csum_files).await
@@ -1112,6 +1120,8 @@ async fn register_github_release(
     request_id: &str,
     signing_key: &str,
     github_release_url: &str,
+    client_sent_index: &str,
+    client_sent_signature: &str,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
     let convert_github_release_error =
         |e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e));
@@ -1134,6 +1144,8 @@ async fn register_github_release(
             request_id: request_id.to_string(),
             signing_key: signing_key.to_string(),
             release_info,
+            client_sent_index: client_sent_index.to_string(),
+            client_sent_signature: client_sent_signature.to_string(),
         })
         .await
         .map_err(|e| map_to_user_error(e, "Release registration failed"))?;

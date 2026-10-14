@@ -27,6 +27,8 @@ impl ReleaseIndexWriter for ReleaseAdders {
 impl ReleaseAdder for ReleaseAdders {
     async fn new(
         release_url: &url::Url,
+        client_sent_index: String,
+        client_sent_signature: String,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>
@@ -38,7 +40,14 @@ impl ReleaseAdder for ReleaseAdders {
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
         if is_github_release_host(host) {
-            let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
+            let github_adder = GithubReleaseAdder::new(
+                release_url,
+                client_sent_index,
+                client_sent_signature,
+                git_repo_path,
+                config,
+            )
+            .await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(

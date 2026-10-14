@@ -11,8 +11,8 @@ use rest_api_types::models::{
 };
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
-    PingAuthStatus, PingResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
-    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    PingAuthStatus, PingResponse, RegisterAssetsPayload, RegisterRepoRequest, RegisterRepoResponse,
+    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
@@ -1085,22 +1085,20 @@ pub async fn revoke_handler(
 pub async fn register_assets_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<rest_api_types::RegisterAssetsRequest>,
+    Json(request): Json<rest_api_types::RegisterAssetsPayload>,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
     let request_id = headers
         .get("x-request-id")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown");
 
-    match (&request.github_release_url, &request.csum_files) {
-        (Some(url), None) => register_github_release(&state, request_id, url).await,
-        (None, Some(csum_urls)) => register_checksums(&state, request_id, csum_urls).await,
-        (Some(_), Some(_)) => Err(ApiError::InvalidRequestBody(
-            "github_release_url and csum_files are mutually exclusive".to_string(),
-        )),
-        (None, None) => Err(ApiError::InvalidRequestBody(
-            "Either github_release_url or csum_files must be provided".to_string(),
-        )),
+    match &request {
+        RegisterAssetsPayload::GithubRelease(r) => {
+            register_github_release(&state, request_id, signing_key, &r.github_release_url).await
+        }
+        RegisterAssetsPayload::ChecksumFiles(f) => {
+            register_checksums(&state, request_id, &f.csum_files).await
+        }
     }
 }
 

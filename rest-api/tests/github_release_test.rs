@@ -22,8 +22,21 @@ pub mod tests {
     use rest_api_test_helpers::init_git_repo;
     #[cfg(feature = "test-utils")]
     use rest_api_test_helpers::print_logs;
-    #[cfg(feature = "test-utils")]
+    use rest_api_types::RegisterAssetsPayload;
+    use rest_api_types::models::GithubReleasePayload;
     use serde_json::Value;
+
+    /// Body of the register-assets endpoint, in the tagged form sent by the
+    /// client library. The index and signature values are placeholders: the
+    /// server builds its own index for now.
+    fn github_release_body(github_release_url: &str) -> Value {
+        serde_json::to_value(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            github_release_url: github_release_url.to_string(),
+            index: "aW5kZXg=".to_string(),
+            signature: "c2lnbmF0dXJl".to_string(),
+        }))
+        .expect("failed to serialize GithubRelease payload")
+    }
 
     #[tokio::test]
     #[cfg(feature = "test-utils")]
@@ -72,9 +85,8 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let payload = serde_json::json!({
-            "github_release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
-        });
+        let payload =
+            github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
         let payload_str = payload.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
@@ -193,9 +205,8 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let json_body = serde_json::json!({
-            "github_release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
-        });
+        let json_body =
+            github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
         let payload_str = json_body.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
@@ -263,9 +274,7 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let json_body = serde_json::json!({
-            "github_release_url": "invalid"
-        });
+        let json_body = github_release_body("invalid");
         let payload_str = json_body.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
@@ -321,14 +330,10 @@ pub mod tests {
         let client = reqwest::Client::new();
 
         // Send without auth headers
+        let body = github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
         let response = tokio::time::timeout(
             Duration::from_secs(5),
-            client
-                .post(url_for("assets", port))
-                .json(&serde_json::json!({
-                    "github_release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
-                }))
-                .send(),
+            client.post(url_for("assets", port)).json(&body).send(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;

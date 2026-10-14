@@ -1650,9 +1650,11 @@ pub mod test_utils_tests {
             mock_server.url("")
         );
 
-        let assets_body = json!({
-            "csum_files": [checksums_url]
-        });
+        let assets_body = rest_api_types::RegisterAssetsPayload::ChecksumFiles(
+            rest_api_types::models::ChecksumFilesPayload {
+                csum_files: vec![checksums_url],
+            },
+        );
         let assets_payload_string = serde_json::to_string(&assets_body)?;
 
         let TestAuthHeaders {

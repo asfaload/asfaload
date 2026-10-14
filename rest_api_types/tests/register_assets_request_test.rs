@@ -1,154 +1,195 @@
-//! Tests for RegisterAssetsRequest
+//! Tests for `RegisterAssetsPayload`.
 //!
-//! This module tests serialization and deserialization of the RegisterAssetsRequest type,
-//! which supports two mutually exclusive modes: github_release_url or csum_files.
+//! `RegisterAssetsPayload` is the request type for `POST /v1/assets`, shared by
+//! the client (`admin-lib`) and the server (`rest-api`). It uses serde's
+//! externally tagged representation, so each variant maps to a JSON object
+//! keyed by the variant name:
+//!
+//! - `GithubRelease` -> `{"GithubRelease": {"github_release_url": ..., "index": ..., "signature": ...}}`
+//! - `ChecksumFiles` -> `{"ChecksumFiles": {"csum_files": [...]}}`
+//!
+//! The enum makes the two registration modes mutually exclusive: exactly one
+//! variant is selected on deserialization.
 
-use rest_api_types::RegisterAssetsRequest;
+use rest_api_types::RegisterAssetsPayload;
+use rest_api_types::models::{ChecksumFilesPayload, GithubReleasePayload};
+
+const RELEASE_URL: &str = "https://github.com/owner/repo/releases/tag/v1.0.0";
+const INDEX: &str = "eyJ2ZXJzaW9uIjoxfQ==";
+const SIGNATURE: &str = "c2lnbmF0dXJl";
+const CHECKSUM_URL_SHA256: &str = "https://files.example.com/releases/v1.0/SHA256SUMS";
+const CHECKSUM_URL_SHA512: &str = "https://files.example.com/releases/v1.0/SHA512SUMS";
+
+fn github_release_json() -> String {
+    serde_json::json!({
+        "GithubRelease": {
+            "github_release_url": RELEASE_URL,
+            "index": INDEX,
+            "signature": SIGNATURE,
+        }
+    })
+    .to_string()
+}
+
+fn checksum_files_json(urls: &[&str]) -> String {
+    serde_json::json!({
+        "ChecksumFiles": { "csum_files": urls }
+    })
+    .to_string()
+}
 
 #[test]
-fn test_deserialize_github_release_url_only() {
-    let json = r#"{
-        "github_release_url": "https://github.com/owner/repo/releases/tag/v1.0.0"
-    }"#;
+fn test_deserialize_github_release() {
+    let payload: RegisterAssetsPayload = serde_json::from_str(&github_release_json()).unwrap();
 
-    let request: RegisterAssetsRequest = serde_json::from_str(json).unwrap();
+    match payload {
+        RegisterAssetsPayload::GithubRelease(p) => {
+            assert_eq!(p.github_release_url, RELEASE_URL);
+            assert_eq!(p.index, INDEX);
+            assert_eq!(p.signature, SIGNATURE);
+        }
+        other => panic!("expected GithubRelease variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_deserialize_checksum_files() {
+    let payload: RegisterAssetsPayload = serde_json::from_str(&checksum_files_json(&[
+        CHECKSUM_URL_SHA256,
+        CHECKSUM_URL_SHA512,
+    ]))
+    .unwrap();
+
+    match payload {
+        RegisterAssetsPayload::ChecksumFiles(p) => {
+            assert_eq!(p.csum_files, vec![CHECKSUM_URL_SHA256, CHECKSUM_URL_SHA512]);
+        }
+        other => panic!("expected ChecksumFiles variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_deserialize_single_checksum_file() {
+    let payload: RegisterAssetsPayload =
+        serde_json::from_str(&checksum_files_json(&[CHECKSUM_URL_SHA256])).unwrap();
+
+    match payload {
+        RegisterAssetsPayload::ChecksumFiles(p) => {
+            assert_eq!(p.csum_files, vec![CHECKSUM_URL_SHA256]);
+        }
+        other => panic!("expected ChecksumFiles variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_deserialize_empty_checksum_files() {
+    let payload: RegisterAssetsPayload = serde_json::from_str(&checksum_files_json(&[])).unwrap();
+
+    match payload {
+        RegisterAssetsPayload::ChecksumFiles(p) => assert!(p.csum_files.is_empty()),
+        other => panic!("expected ChecksumFiles variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_deserialize_empty_object_is_rejected() {
+    // An empty object carries no variant tag, so the type itself enforces that
+    // one of the two modes is selected.
+    assert!(serde_json::from_str::<RegisterAssetsPayload>("{}").is_err());
+}
+
+#[test]
+fn test_deserialize_github_release_without_index_is_rejected() {
+    let json = serde_json::json!({
+        "GithubRelease": { "github_release_url": RELEASE_URL }
+    })
+    .to_string();
+    assert!(serde_json::from_str::<RegisterAssetsPayload>(&json).is_err());
+}
+
+#[test]
+fn test_deserialize_github_release_without_signature_is_rejected() {
+    let json = serde_json::json!({
+        "GithubRelease": { "github_release_url": RELEASE_URL, "index": INDEX }
+    })
+    .to_string();
+    assert!(serde_json::from_str::<RegisterAssetsPayload>(&json).is_err());
+}
+
+#[test]
+fn test_deserialize_unknown_variant_is_rejected() {
+    let json = serde_json::json!({
+        "UnknownVariant": { "csum_files": [CHECKSUM_URL_SHA256] }
+    })
+    .to_string();
+    assert!(serde_json::from_str::<RegisterAssetsPayload>(&json).is_err());
+}
+
+#[test]
+fn test_serialize_github_release_is_tagged() {
+    let payload = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+        github_release_url: RELEASE_URL.to_string(),
+        index: INDEX.to_string(),
+        signature: SIGNATURE.to_string(),
+    });
+
     assert_eq!(
-        request.github_release_url.as_deref(),
-        Some("https://github.com/owner/repo/releases/tag/v1.0.0")
+        serde_json::to_value(&payload).unwrap(),
+        serde_json::json!({
+            "GithubRelease": {
+                "github_release_url": RELEASE_URL,
+                "index": INDEX,
+                "signature": SIGNATURE,
+            }
+        })
     );
-    assert!(request.csum_files.is_none());
 }
 
 #[test]
-fn test_deserialize_csum_files_only() {
-    let json = r#"{
-        "csum_files": [
-            "https://files.example.com/releases/v1.0/SHA256SUMS",
-            "https://files.example.com/releases/v1.0/SHA512SUMS"
-        ]
-    }"#;
+fn test_serialize_checksum_files_is_tagged() {
+    let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+        csum_files: vec![CHECKSUM_URL_SHA256.to_string()],
+    });
 
-    let request: RegisterAssetsRequest = serde_json::from_str(json).unwrap();
-    assert!(request.github_release_url.is_none());
-    let csum_files = request.csum_files.unwrap();
-    assert_eq!(csum_files.len(), 2);
     assert_eq!(
-        csum_files[0],
-        "https://files.example.com/releases/v1.0/SHA256SUMS"
+        serde_json::to_value(&payload).unwrap(),
+        serde_json::json!({
+            "ChecksumFiles": { "csum_files": [CHECKSUM_URL_SHA256] }
+        })
     );
 }
 
 #[test]
-fn test_deserialize_both_fields_present() {
-    let json = r#"{
-        "github_release_url": "https://github.com/owner/repo/releases/tag/v1.0.0",
-        "csum_files": ["https://files.example.com/releases/v1.0/SHA256SUMS"]
-    }"#;
-
-    // Both fields can be deserialized (mutual exclusivity is enforced at the handler level)
-    let request: RegisterAssetsRequest = serde_json::from_str(json).unwrap();
-    assert!(request.github_release_url.is_some());
-    assert!(request.csum_files.is_some());
-}
-
-#[test]
-fn test_deserialize_neither_field_present() {
-    let json = r#"{}"#;
-
-    let request: RegisterAssetsRequest = serde_json::from_str(json).unwrap();
-    assert!(request.github_release_url.is_none());
-    assert!(request.csum_files.is_none());
-}
-
-#[test]
-fn test_deserialize_empty_csum_files_array() {
-    let json = r#"{
-        "csum_files": []
-    }"#;
-
-    let request: RegisterAssetsRequest = serde_json::from_str(json).unwrap();
-    assert!(request.github_release_url.is_none());
-    assert_eq!(request.csum_files.unwrap().len(), 0);
-}
-
-#[test]
-fn test_deserialize_single_csum_file() {
-    let json = r#"{
-        "csum_files": ["https://files.example.com/releases/v1.0/SHA256SUMS"]
-    }"#;
-
-    let request: RegisterAssetsRequest = serde_json::from_str(json).unwrap();
-    assert!(request.github_release_url.is_none());
-    assert_eq!(request.csum_files.unwrap().len(), 1);
-}
-
-#[test]
-fn test_serialize_github_release_url_only() {
-    let request = RegisterAssetsRequest {
-        github_release_url: Some("https://github.com/owner/repo/releases/tag/v1.0.0".to_string()),
-        csum_files: None,
-    };
-
-    let json = serde_json::to_string(&request).unwrap();
-    assert!(json.contains("github_release_url"));
-    assert!(!json.contains("csum_files"));
-}
-
-#[test]
-fn test_serialize_csum_files_only() {
-    let request = RegisterAssetsRequest {
-        github_release_url: None,
-        csum_files: Some(vec![
-            "https://files.example.com/releases/v1.0/SHA256SUMS".to_string(),
-        ]),
-    };
-
-    let json = serde_json::to_string(&request).unwrap();
-    assert!(!json.contains("github_release_url"));
-    assert!(json.contains("csum_files"));
-    assert!(json.contains("SHA256SUMS"));
-}
-
-#[test]
-fn test_serialize_neither_field_omits_both() {
-    let request = RegisterAssetsRequest {
-        github_release_url: None,
-        csum_files: None,
-    };
-
-    let json = serde_json::to_string(&request).unwrap();
-    assert!(!json.contains("github_release_url"));
-    assert!(!json.contains("csum_files"));
-    assert_eq!(json, "{}");
-}
-
-#[test]
-fn test_roundtrip_github_release_url() {
-    let original = RegisterAssetsRequest {
-        github_release_url: Some("https://github.com/owner/repo/releases/tag/v1.0.0".to_string()),
-        csum_files: None,
-    };
+fn test_roundtrip_github_release() {
+    let original = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+        github_release_url: RELEASE_URL.to_string(),
+        index: INDEX.to_string(),
+        signature: SIGNATURE.to_string(),
+    });
 
     let json = serde_json::to_string(&original).unwrap();
-    let deserialized: RegisterAssetsRequest = serde_json::from_str(&json).unwrap();
+    let deserialized: RegisterAssetsPayload = serde_json::from_str(&json).unwrap();
 
-    assert_eq!(original.github_release_url, deserialized.github_release_url);
-    assert_eq!(original.csum_files, deserialized.csum_files);
+    assert_eq!(
+        serde_json::to_value(&original).unwrap(),
+        serde_json::to_value(&deserialized).unwrap()
+    );
 }
 
 #[test]
-fn test_roundtrip_csum_files() {
-    let original = RegisterAssetsRequest {
-        github_release_url: None,
-        csum_files: Some(vec![
-            "https://files.example.com/releases/v1.0/SHA256SUMS".to_string(),
-            "https://files.example.com/releases/v1.0/SHA512SUMS".to_string(),
-        ]),
-    };
+fn test_roundtrip_checksum_files() {
+    let original = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+        csum_files: vec![
+            CHECKSUM_URL_SHA256.to_string(),
+            CHECKSUM_URL_SHA512.to_string(),
+        ],
+    });
 
     let json = serde_json::to_string(&original).unwrap();
-    let deserialized: RegisterAssetsRequest = serde_json::from_str(&json).unwrap();
+    let deserialized: RegisterAssetsPayload = serde_json::from_str(&json).unwrap();
 
-    assert_eq!(original.github_release_url, deserialized.github_release_url);
-    assert_eq!(original.csum_files, deserialized.csum_files);
+    assert_eq!(
+        serde_json::to_value(&original).unwrap(),
+        serde_json::to_value(&deserialized).unwrap()
+    );
 }

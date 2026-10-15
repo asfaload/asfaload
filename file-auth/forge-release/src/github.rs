@@ -167,6 +167,9 @@ pub struct ClientProvidedData {
 
 pub struct VerifiedClientData {
     client_provided_data: ClientProvidedData,
+    pub_key: AsfaloadPublicKeys,
+    index_string: String,
+    signature: AsfaloadSignatures,
 }
 
 impl VerifiedClientData {
@@ -259,11 +262,26 @@ impl VerifiedClientData {
 
         Ok(VerifiedClientData {
             client_provided_data: data,
+            pub_key,
+            index_string,
+            signature,
         })
     }
 
-    pub fn client_provided_data(&self) -> &ClientProvidedData {
-        &self.client_provided_data
+    pub fn github_release_url(&self) -> &str {
+        &self.client_provided_data.github_release_url
+    }
+
+    pub fn pub_key(&self) -> &AsfaloadPublicKeys {
+        &self.pub_key
+    }
+
+    pub fn index_string(&self) -> &str {
+        &self.index_string
+    }
+
+    pub fn signature(&self) -> &AsfaloadSignatures {
+        &self.signature
     }
 }
 

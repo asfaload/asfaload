@@ -19,7 +19,7 @@ check-format:
 
 ## run clippy
 clippy:
-	cargo clippy
+	cargo clippy -- -D warnings
 
 ## Build non-optimised Docker image, sufficient only for alpha phase
 docker-build-alpha-image:

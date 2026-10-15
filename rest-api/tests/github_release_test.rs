@@ -103,8 +103,8 @@ pub mod tests {
         );
         let payload_str = payload.to_string();
 
-        // Index timestamps are set while the server processes the request.
-        let registration_started_at = chrono::Utc::now();
+        // Index timestamps are set by the client building the index. Note
+        // the send of the index is not part of the registration timing.
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
         let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
@@ -154,20 +154,24 @@ pub mod tests {
             index_path.display()
         );
 
-        // The on-disk index is what consumers read: its content must match the
-        // release data served by the mocked github api. Expected values pin
-        // the response served by the test-utils mock fetcher.
+        // The on-disk index is what consumers read: registration persists
+        // the client-provided index unchanged, so the file must be
+        // byte-identical to the index the client sent, those being the only
+        // bytes its signature covers. Field assertions below pin the data
+        // served by the mocked github api, from which the client index is
+        // built.
+        assert_eq!(
+            fs::read_to_string(&index_path)?,
+            common::string_from_base64(payload["GithubRelease"]["index"].as_str().unwrap())
+                .expect("the payload index is base64-encoded index json"),
+            "the persisted index must be exactly the bytes the client signed"
+        );
         let index = rest_api_test_helpers::read_on_disk_index(&index_path)?;
         assert_eq!(index.version, 1);
         assert_eq!(
             index.published_on,
             "2024-01-01T00:00:00Z".parse::<chrono::DateTime<chrono::Utc>>()?,
             "published_on must come from the release's published_at timestamp"
-        );
-        assert!(
-            index.mirrored_on >= registration_started_at && index.mirrored_on <= chrono::Utc::now(),
-            "mirrored_on must be the registration time, got {}",
-            index.mirrored_on
         );
         assert_eq!(
             index.published_files,

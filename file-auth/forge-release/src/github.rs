@@ -74,7 +74,7 @@ impl GithubReleaseResponse {
             })
             .collect()
     }
-    pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+    pub fn generate_index(&self) -> Result<AsfaloadIndex, ReleaseHandlingError> {
         let assets = self.extract_assets();
         if assets.is_empty() {
             return Err(ReleaseHandlingError::InvalidData(
@@ -94,13 +94,16 @@ impl GithubReleaseResponse {
         })?;
         let mirrored_on = chrono::Utc::now();
 
-        let index = AsfaloadIndex {
+        Ok(AsfaloadIndex {
             mirrored_on,
             published_on: published_on.to_utc(),
             version: 1,
             published_files,
-        };
+        })
+    }
 
+    pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+        let index = self.generate_index()?;
         common::to_posix_json(&index).map_err(|e| {
             ReleaseHandlingError::InvalidData(format!("Failed to serialize index: {}", e))
         })

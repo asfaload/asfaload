@@ -3,7 +3,9 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseAdders;
-use crate::helpers::create_empty_aggregate_signature;
+use common::SignedFileLoader;
+use common::fs::names::{pending_signatures_path_for, signatures_path_on_disk_for};
+use features_lib::SignedFileWithKindTrait;
 use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
 use kameo::message::Context;
@@ -150,8 +152,9 @@ impl ReleaseActor {
         );
 
         // Create empty aggregate signature for the index file
-        let signature_file_path = create_empty_aggregate_signature(&index_file_path)
-            .await
+        let index_signed_file = SignedFileLoader::load(index_file_path.clone())?;
+        let sig_with_state = index_signed_file
+            .add_signature(adder.signature().clone(), adder.pub_key().clone())
             .map_err(|e| {
                 tracing::error!(
                     request_id = %msg.request_id,
@@ -159,18 +162,36 @@ impl ReleaseActor {
                     error = %e,
                     "Could not create empty aggregate signature for index file"
                 );
-                e
+                ApiError::Generic(format!(
+                    "Problem registering signature of release to be registered:{}",
+                    e
+                ))
             })?;
-
         info!(
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
-            signature_path = %signature_file_path,
-            "Empty aggregate signature file created",
+            index_path = %index_file_path,
+            sig_complete = %sig_with_state.is_complete(),
+            "Release registration signature registered",
         );
 
+        let sig_absolute_path = if sig_with_state.is_complete() {
+            signatures_path_on_disk_for(&index_file_path)?
+        } else {
+            pending_signatures_path_for(&index_file_path)?
+        };
+        // We need a NormalisedPaths, which is build from a relative path.
+        // IMPROVE: put this in a helper function or NormalisedPaths constructor taking an absolute
+        // path and the git repo path.
+        let sig_relative_path = sig_absolute_path
+            .strip_prefix(index_file_path.base_dir())
+            .map_err(|e| {
+                ApiError::InvalidFilePath(format!("Failed to compute relative path: {}", e))
+            })?;
+        let sig_path = NormalisedPaths::new(index_file_path.base_dir(), sig_relative_path).await?;
+
         let commit_msg = CommitFile {
-            file_paths: vec![index_file_path.clone(), signature_file_path],
+            file_paths: vec![index_file_path.clone(), sig_path],
             commit_message: format!(
                 "Add index and signature for {}/{}/{}",
                 release_info.owner(),

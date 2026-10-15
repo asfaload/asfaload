@@ -70,6 +70,17 @@ impl ReleaseAdder for ReleaseAdders {
             Self::Github(github) => github.release_info(),
         }
     }
+
+    fn pub_key(&self) -> &features_lib::AsfaloadPublicKeys {
+        match self {
+            Self::Github(github) => github.pub_key(),
+        }
+    }
+    fn signature(&self) -> &features_lib::AsfaloadSignatures {
+        match self {
+            Self::Github(github) => github.signature(),
+        }
+    }
 }
 
 #[derive(Debug)]

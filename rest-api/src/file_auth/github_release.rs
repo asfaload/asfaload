@@ -3,6 +3,7 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
+use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures};
 use forge_release::common::ReleaseInfo;
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
@@ -106,6 +107,12 @@ impl ReleaseAdder for GithubReleaseAdder {
     }
     async fn index_content(&self) -> Result<String, ApiError> {
         Ok(self.verified_client_data.index_string().to_string())
+    }
+    fn pub_key(&self) -> &AsfaloadPublicKeys {
+        self.verified_client_data.pub_key()
+    }
+    fn signature(&self) -> &AsfaloadSignatures {
+        self.verified_client_data.signature()
     }
 
     fn release_info(&self) -> BackendReleaseInfos {

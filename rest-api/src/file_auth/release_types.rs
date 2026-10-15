@@ -1,5 +1,7 @@
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::fs::names::find_global_signers_for;
+use features_lib::AsfaloadPublicKeys;
+use features_lib::AsfaloadSignatures;
 use forge_release::common::ReleaseHandlingError;
 use forge_release::common::ReleaseInfo;
 use forge_release::github::ClientProvidedData;
@@ -102,4 +104,6 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
     }
 
     fn release_info(&self) -> BackendReleaseInfos;
+    fn pub_key(&self) -> &AsfaloadPublicKeys;
+    fn signature(&self) -> &AsfaloadSignatures;
 }

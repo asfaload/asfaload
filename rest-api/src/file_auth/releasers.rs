@@ -113,21 +113,8 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
-    use forge_release::github::ClientProvidedData;
+    use forge_release::github::test_utils::create_mocked_client_provided_data;
     use rest_api_test_helpers::get_random_port;
-
-    const CLIENT_SENT_INDEX_PLACEHOLDER: &str = "test_client_index";
-    const CLIENT_SENT_SIGNATURE_PLACEHOLDER: &str = "test_client_signature";
-    const CLIENT_PUB_KEY_PLACEHOLDER: &str = "test_client_pub_key";
-
-    fn client_provided_data(release_url: &url::Url) -> ClientProvidedData {
-        ClientProvidedData {
-            github_release_url: release_url.to_string(),
-            client_pub_key: CLIENT_PUB_KEY_PLACEHOLDER.to_string(),
-            client_sent_index: CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
-            client_sent_signature: CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
-        }
-    }
 
     // The github rest api serves release info, but a release url must target
     // the project's release pages: the api host is not a repo host.
@@ -154,7 +141,7 @@ mod test_utils_tests {
 
         match ReleaseAdders::new(
             &release_url,
-            client_provided_data(&release_url),
+            create_mocked_client_provided_data(),
             temp_dir.path().to_path_buf(),
             &mock_config,
         )
@@ -222,7 +209,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            client_provided_data(&release_url),
+            create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
         )
@@ -230,17 +217,27 @@ mod test_utils_tests {
         .unwrap();
 
         let ReleaseAdders::Github(github) = &adder;
+        // The data accepted by the adder must be kept unchanged, as the
+        // registration process should only use verified client data.
+        let verified = github.verified_client_data.client_provided_data();
         assert_eq!(
-            github.client_provided_data.client_sent_index,
-            CLIENT_SENT_INDEX_PLACEHOLDER
+            verified.github_release_url,
+            release_url.to_string(),
+            "the verified data must keep the release url sent by the client"
         );
-        assert_eq!(
-            github.client_provided_data.client_sent_signature,
-            CLIENT_SENT_SIGNATURE_PLACEHOLDER
+        assert!(
+            !verified.client_sent_index.is_empty(),
+            "the verified data must keep the index sent by the client"
         );
-        assert_eq!(
-            github.client_provided_data.client_pub_key,
-            CLIENT_PUB_KEY_PLACEHOLDER
+        assert!(
+            !verified.client_sent_signature.is_empty(),
+            "the verified data must keep the signature sent by the client"
+        );
+        assert!(
+            verified
+                .client_pub_key
+                .starts_with(features_lib::ASFALOAD_PUB_PREFIX),
+            "the verified data must keep the public key sent by the client"
         );
 
         let index_content = adder.index_content().await.unwrap();
@@ -298,7 +295,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            client_provided_data(&release_url),
+            create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
         )
@@ -356,7 +353,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            client_provided_data(&release_url),
+            create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
         )
@@ -423,7 +420,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            client_provided_data(&release_url),
+            create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
         )

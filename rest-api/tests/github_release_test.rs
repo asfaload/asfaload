@@ -1,48 +1,52 @@
+// Client data verification requires the mock github fetcher shipped with
+// the rest-api test-utils build: every test runs with that feature.
+#[cfg(all(test, feature = "test-utils"))]
 pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
+    use common::fs::names::pending_signatures_path_for;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
-    #[cfg(feature = "test-utils")]
-    use features_lib::AsfaloadKeyPairTrait;
-    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+    use features_lib::SignaturesFile;
+    use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+    use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
+    use forge_release::github::test_utils::mocked_client_provided_data_with_keys;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
+    use rest_api_test_helpers::{init_git_repo, print_logs};
+    use rest_api_types::RegisterAssetsPayload;
+    use rest_api_types::models::GithubReleasePayload;
     use rest_api_types::rustls::setup_crypto_provider;
+    use serde_json::Value;
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
 
-    #[cfg(feature = "test-utils")]
-    use common::fs::names::pending_signatures_path_for;
-    #[cfg(feature = "test-utils")]
-    use features_lib::SignaturesFile;
-    #[cfg(feature = "test-utils")]
-    use rest_api_test_helpers::init_git_repo;
-    #[cfg(feature = "test-utils")]
-    use rest_api_test_helpers::print_logs;
-    use rest_api_types::RegisterAssetsPayload;
-    use rest_api_types::models::GithubReleasePayload;
-    use serde_json::Value;
-
-    #[cfg(feature = "test-utils")]
-    use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
-
     /// Body of the register-assets endpoint, in the tagged form sent by the
-    /// client library. The index and signature values are placeholders: the
-    /// server builds its own index for now.
-    fn github_release_body(github_release_url: &str) -> Value {
+    /// client library: the index is the one the rest-api generates itself
+    /// from the mocked release, signed as the client library signs it. The
+    /// server verifies the signature against the public key header sent
+    /// with the request.
+    fn github_release_body(
+        github_release_url: &str,
+        public_key: &features_lib::AsfaloadPublicKeys,
+        secret_key: &features_lib::AsfaloadSecretKeys,
+    ) -> Value {
+        let client_data = mocked_client_provided_data_with_keys(public_key, secret_key);
+        // Note: the index and signature always cover the mocked release
+        // url, even when the payload advertises a different release url:
+        // tests passing an invalid url rely on the handler rejecting the
+        // url before the client data is verified.
         serde_json::to_value(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
             github_release_url: github_release_url.to_string(),
-            index: "aW5kZXg=".to_string(),
-            signature: "c2lnbmF0dXJl".to_string(),
+            index: client_data.client_sent_index,
+            signature: client_data.client_sent_signature,
         }))
         .expect("failed to serialize GithubRelease payload")
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_register_github_release_via_assets_endpoint() -> Result<()> {
         setup_crypto_provider();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
@@ -88,8 +92,11 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let payload =
-            github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
+        let payload = github_release_body(
+            "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
+            test_public_key,
+            test_secret_key,
+        );
         let payload_str = payload.to_string();
 
         // Index timestamps are set while the server processes the request.
@@ -238,8 +245,11 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let json_body =
-            github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
+        let json_body = github_release_body(
+            "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
+            test_public_key,
+            test_secret_key,
+        );
         let payload_str = json_body.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
@@ -307,7 +317,7 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let json_body = github_release_body("invalid");
+        let json_body = github_release_body("invalid", test_public_key, test_secret_key);
         let payload_str = json_body.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
@@ -362,8 +372,13 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
+        let keys = test_helpers::TestKeys::new(1);
+        let body = github_release_body(
+            "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
+            keys.pub_key(0).unwrap(),
+            keys.sec_key(0).unwrap(),
+        );
         // Send without auth headers
-        let body = github_release_body("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client.post(url_for("assets", port)).json(&body).send(),

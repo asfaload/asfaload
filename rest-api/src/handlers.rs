@@ -1142,6 +1142,8 @@ async fn register_github_release(
     let release_info =
         GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
+    // We send the client provided data as is, and it will be validated before use in the actor as
+    // it has access to the config needed to build a release fetcher.
     let result = state
         .release_actor
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {

@@ -2,7 +2,13 @@
 //! `test-utils` feature only, they let tests run without network access
 //! to github.
 
-use super::GithubReleaseResponse;
+use common::base64_for_string;
+use features_lib::{
+    AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
+    AsfaloadSecretKeyTrait, AsfaloadSecretKeys, AsfaloadSignatureTrait, sha512_for_content,
+};
+
+use super::{ClientProvidedData, GithubReleaseResponse};
 use crate::common::{ReleaseFetcher, ReleaseHandlingError};
 use common::into_url::IntoUrl;
 
@@ -45,4 +51,53 @@ impl ReleaseFetcher<GithubReleaseResponse> for MockGithubReleaseFetcher {
     ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
         Ok(create_mock_release_response())
     }
+}
+
+// Url of the release page for the mocked release response: verification
+// tests must send this url so the mock fetcher is used consistently.
+pub const MOCK_RELEASE_PAGE_URL: &str = "https://github.com/testowner/testrepo/releases/tag/v1.0.0";
+const TEST_KEY_PASSWORD: &str = "test_password";
+
+/// The index json generated from the mocked release response, as the client
+/// would send base64-encoded to the rest-api.
+pub fn mocked_release_index() -> String {
+    create_mock_release_response()
+        .generate_index_json()
+        .unwrap()
+}
+
+/// Builds a ClientProvidedData signing the sha512 of the given index content
+/// with the given keys, mirroring what the rest-api client library builds
+/// on release registration. `index` is sent unchanged (base64-encoded).
+pub fn client_provided_data_for_index(
+    public_key: &AsfaloadPublicKeys,
+    secret_key: &AsfaloadSecretKeys,
+    index: &str,
+) -> ClientProvidedData {
+    let hash = sha512_for_content(index.as_bytes()).unwrap();
+    let signature = secret_key.sign(&hash).unwrap();
+    ClientProvidedData {
+        github_release_url: MOCK_RELEASE_PAGE_URL.to_string(),
+        client_pub_key: public_key.to_base64(),
+        client_sent_index: base64_for_string(index),
+        client_sent_signature: signature.to_base64(),
+    }
+}
+
+/// ClientProvidedData whose index is the one the rest-api builds itself from
+/// the mocked release, signed by the provided keys.
+pub fn mocked_client_provided_data_with_keys(
+    public_key: &AsfaloadPublicKeys,
+    secret_key: &AsfaloadSecretKeys,
+) -> ClientProvidedData {
+    client_provided_data_for_index(public_key, secret_key, &mocked_release_index())
+}
+
+/// ClientProvidedData over the mocked release index, signed by a freshly
+/// generated key pair. Generation runs argon2, so prefer
+/// `mocked_client_provided_data_with_keys` when keys are already available.
+pub fn create_mocked_client_provided_data() -> ClientProvidedData {
+    let key_pair = AsfaloadKeyPairs::new(TEST_KEY_PASSWORD).unwrap();
+    let secret_key = key_pair.secret_key(TEST_KEY_PASSWORD).unwrap();
+    mocked_client_provided_data_with_keys(&key_pair.public_key(), &secret_key)
 }

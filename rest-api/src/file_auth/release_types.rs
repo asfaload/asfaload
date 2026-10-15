@@ -1,5 +1,6 @@
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::fs::names::find_global_signers_for;
+use forge_release::common::ReleaseHandlingError;
 use forge_release::common::ReleaseInfo;
 use forge_release::github::ClientProvidedData;
 use rest_api_types::errors::ApiError;
@@ -14,6 +15,10 @@ pub enum ReleaseError {
     ReleaseUrlError(#[from] ReleaseUrlError),
     #[error("Client error: {0}")]
     ClientError(String),
+    #[error("Release verification error: {0}")]
+    Generic(#[from] ReleaseHandlingError),
+    #[error("Ser/Deserialisation error: {0}")]
+    SerdeError(#[from] serde_json::Error),
 }
 
 #[derive(Debug, Error)]

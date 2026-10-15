@@ -4,7 +4,7 @@ use crate::file_auth::release_types::{
 };
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::helpers::create_empty_aggregate_signature;
-use forge_release::common::ReleaseInfo;
+use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
@@ -70,6 +70,12 @@ impl ReleaseActor {
             "Processing release"
         );
 
+        // The release adder validates the client provided data during its initialisation.
+        // The release adder validates the client provided data because:
+        // - we have access to all data we need such as the config to create a github
+        // fetcher.
+        // - validation of the data depends of the forge we will interact with, and so only a
+        // specific release adder can do the validation.
         let adder = ReleaseAdders::new(
             &msg.release_info
                 .to_url()
@@ -97,6 +103,20 @@ impl ReleaseActor {
                     ReleaseUrlError::MissingComponent(msg) => ApiError::InvalidReleaseUrl(msg),
                 },
                 ReleaseError::ClientError(e) => ApiError::InternalServerError(e),
+                // Retrieval and parsing of the release themselves are
+                // server-side problems; invalid data or urls are
+                // user-provided and lead to a bad request.
+                ReleaseError::Generic(e) => match e {
+                    ReleaseHandlingError::FetchError(_) | ReleaseHandlingError::ParseError(_) => {
+                        ApiError::InternalServerError(e.to_string())
+                    }
+                    ReleaseHandlingError::InvalidData(_)
+                    | ReleaseHandlingError::InvalidUrl(_)
+                    | ReleaseHandlingError::Generic(_) => {
+                        ApiError::InvalidRequestBody(e.to_string())
+                    }
+                },
+                ReleaseError::SerdeError(e) => ApiError::InternalServerError(e.to_string()),
             }
         })?;
 

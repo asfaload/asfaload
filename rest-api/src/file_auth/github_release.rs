@@ -1,6 +1,6 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseIndexWriter, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
 use forge_release::common::{ReleaseFetcher, ReleaseInfo};
@@ -8,7 +8,9 @@ use forge_release::common::{ReleaseFetcher, ReleaseInfo};
 use forge_release::github::GithubReleaseFetcher;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
-use forge_release::github::{ClientProvidedData, GithubReleaseInfo, GithubReleaseResponse};
+use forge_release::github::{
+    ClientProvidedData, GithubReleaseInfo, GithubReleaseResponse, VerifiedClientData,
+};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -26,7 +28,7 @@ fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleas
 pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    pub client_provided_data: ClientProvidedData,
+    pub verified_client_data: VerifiedClientData,
     // The fetcher type depends on the build mode: the real fetcher in
     // production, one returning a fixed response when building tests.
     #[cfg(not(feature = "test-utils"))]
@@ -75,7 +77,7 @@ impl ReleaseAdder for GithubReleaseAdder {
         client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, crate::file_auth::release_types::ReleaseError>
+    ) -> Result<Self, ReleaseError>
     where
         Self: Sized,
     {
@@ -85,12 +87,18 @@ impl ReleaseAdder for GithubReleaseAdder {
 
         let fetcher = create_github_fetcher(config);
 
+        // We verify the client data here because:
+        // - our caller has access to all data we need such as the config to create a github
+        // fetcher.
+        // - validation of the data depends of the forge we will interact with, and so only a
+        // specific release adder can do the validation.
+        let verified_client_data = VerifiedClientData::new(client_provided_data, &fetcher).await?;
         Ok(Self {
             release_url: release_url.clone(),
             git_repo_path,
             fetcher,
             release_info,
-            client_provided_data,
+            verified_client_data,
         })
     }
 

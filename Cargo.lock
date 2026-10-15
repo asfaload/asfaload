@@ -6,7 +6,7 @@ version = 4
 name = "admin-lib"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "common",
  "features_lib",
  "forge-release",
@@ -61,7 +61,7 @@ name = "aggregate_signature"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
+ "base64 0.22.1",
  "chrono",
  "common",
  "constants",
@@ -341,6 +341,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,7 +609,7 @@ dependencies = [
  "anstyle",
  "anyhow",
  "assert_cmd",
- "base64",
+ "base64 0.22.1",
  "bishop",
  "chrono",
  "clap",
@@ -721,7 +727,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
+ "base64 0.22.1",
  "chrono",
  "constants",
  "ed25519-dalek",
@@ -1301,6 +1307,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 name = "forge-release"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "common",
  "features_lib",
@@ -1309,6 +1316,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "url",
 ]
 
@@ -1576,7 +1584,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3314d5adb5d94bcdf56771f2e50dbbc80bb4bdf88967526706205ac9eff24eb"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "headers-core",
  "http",
@@ -1666,7 +1674,7 @@ dependencies = [
  "assert-json-diff",
  "async-object-pool",
  "async-trait",
- "base64",
+ "base64 0.22.1",
  "bytes",
  "crossbeam-utils",
  "form_urlencoded",
@@ -1735,7 +1743,7 @@ version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -2715,7 +2723,7 @@ version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -2759,7 +2767,7 @@ dependencies = [
  "aggregate_signature",
  "anyhow",
  "axum",
- "base64",
+ "base64 0.22.1",
  "chrono",
  "common",
  "config",
@@ -3276,7 +3284,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
- "base64",
+ "base64 0.22.1",
  "chacha20poly1305",
  "common",
  "constants",
@@ -3313,7 +3321,7 @@ dependencies = [
 name = "signers_file_types"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "chrono",
  "common",
  "mockito",

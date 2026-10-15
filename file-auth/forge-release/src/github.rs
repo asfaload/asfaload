@@ -1,10 +1,16 @@
-use std::fmt::{self};
+use std::{
+    collections::HashSet,
+    fmt::{self},
+};
 
 use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::{http::fetch_request_with_retry, into_url::IntoUrl};
+use common::{
+    http::fetch_request_with_retry, into_url::IntoUrl, sha512_for_content, string_from_base64,
+};
 use core::time::Duration;
 use features_lib::{
-    AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
+    AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait,
+    AsfaloadSignatures, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
     ParsedChecksum,
 };
 use forge_url::path_prefix_from_url;
@@ -157,6 +163,102 @@ pub struct ClientProvidedData {
     pub client_pub_key: String,
     pub client_sent_index: String,
     pub client_sent_signature: String,
+}
+
+pub struct VerifiedClientData {
+    client_provided_data: ClientProvidedData,
+}
+
+impl VerifiedClientData {
+    /// Verify the data provided by the client and return it wrapped in a
+    /// type guaranteeing the data has been checked.
+    ///
+    /// Two checks are done:
+    /// - the signature sent by the client verifies with the public key it
+    ///   declares, over the exact bytes of the index it sent, and
+    /// - the index it sent publishes exactly the files and hashes we find
+    ///   in the release we retrieve from github.
+    pub async fn new<F>(data: ClientProvidedData, fetcher: &F) -> Result<Self, ReleaseHandlingError>
+    where
+        F: ReleaseFetcher<GithubReleaseResponse>,
+    {
+        // Parse the signature sent
+        let signature =
+            AsfaloadSignatures::from_base64(&data.client_sent_signature).map_err(|e| {
+                ReleaseHandlingError::InvalidData(format!(
+                    "Could not parse signature sent by client for github release {}: {}",
+                    data.github_release_url, e
+                ))
+            })?;
+
+        // Parse the index sent
+        let index_string = string_from_base64(&data.client_sent_index).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Could not decode index sent by client: {}",
+                e
+            ))
+        })?;
+
+        // Compute digest of client sent index json, for signature validation
+        let index_sha512 = sha512_for_content(index_string.as_bytes()).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Could not compute sha512 of the index sent by client for github release {}: {}",
+                data.github_release_url, e
+            ))
+        })?;
+
+        let pub_key = AsfaloadPublicKeys::from_base64(&data.client_pub_key).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Could not parse public key sent by client for github release {}: {}",
+                data.github_release_url, e
+            ))
+        })?;
+
+        // Verify the signature sent by client
+        pub_key.verify(&signature, &index_sha512).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Signature sent by client for github release {} does not verify: {}",
+                data.github_release_url, e
+            ))
+        })?;
+
+        // Now we will check that the index we build ourself for the release is equivalent
+        let client_provided_index: AsfaloadIndex = serde_json::from_str(&index_string)?;
+
+        // Retrieve the release and build our own index: the client index
+        // must publish exactly the files we find there, with identical hashes.
+        let release: GithubReleaseResponse = fetcher
+            .fetch(data.github_release_url.clone())
+            .await
+            .map_err(|e| {
+            ReleaseHandlingError::Generic(format!("Could not retrieve github release: {}", e))
+        })?;
+
+        let index = release.generate_index()?;
+
+        // To compare the lists of published files of both indexes, we build a HashSet for each,
+        // where the item in the set is the FileChecksum itself. This ensures all fields, and so
+        // incl. the filename and the digest algorithms are used in the comparison.
+        let expected: HashSet<&FileChecksum> = index.published_files.iter().collect();
+
+        let provided: HashSet<&FileChecksum> =
+            client_provided_index.published_files.iter().collect();
+
+        if expected != provided {
+            return Err(ReleaseHandlingError::InvalidData(format!(
+                "Index provided by client is not identical to index generated server side for release at {}",
+                data.github_release_url
+            )));
+        }
+
+        Ok(VerifiedClientData {
+            client_provided_data: data,
+        })
+    }
+
+    pub fn client_provided_data(&self) -> &ClientProvidedData {
+        &self.client_provided_data
+    }
 }
 
 impl ReleaseInfo for GithubReleaseInfo {
@@ -336,5 +438,143 @@ mod tests {
 
         assert_eq!(response.published_at, None);
         assert!(response.created_at.is_some());
+    }
+}
+
+// Verification needs the mock fetcher, so tests run with the test-utils
+// feature enabled.
+#[cfg(all(test, feature = "test-utils"))]
+mod verified_client_data_tests {
+    use super::*;
+    use crate::github::test_utils::{
+        MockGithubReleaseFetcher, client_provided_data_for_index,
+        create_mocked_client_provided_data, mocked_client_provided_data_with_keys,
+        mocked_release_index,
+    };
+    use common::base64_for_string;
+    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSecretKeys};
+    use std::sync::OnceLock;
+
+    const TEST_KEY_PASSWORD: &str = "test_password";
+
+    fn keys_with_password() -> (&'static AsfaloadPublicKeys, &'static AsfaloadSecretKeys) {
+        static KEYS: OnceLock<(AsfaloadPublicKeys, AsfaloadSecretKeys)> = OnceLock::new();
+        let keys = KEYS.get_or_init(|| {
+            let key_pair = AsfaloadKeyPairs::new(TEST_KEY_PASSWORD).unwrap();
+            (
+                key_pair.public_key(),
+                key_pair.secret_key(TEST_KEY_PASSWORD).unwrap(),
+            )
+        });
+        (&keys.0, &keys.1)
+    }
+
+    /// Unrelated key pair: its signature must be rejected when the client
+    /// declares the first pair's public key.
+    fn other_keys_with_password() -> (&'static AsfaloadPublicKeys, &'static AsfaloadSecretKeys) {
+        static KEYS: OnceLock<(AsfaloadPublicKeys, AsfaloadSecretKeys)> = OnceLock::new();
+        let keys = KEYS.get_or_init(|| {
+            let key_pair = AsfaloadKeyPairs::new("other_test_password").unwrap();
+            (
+                key_pair.public_key(),
+                key_pair.secret_key("other_test_password").unwrap(),
+            )
+        });
+        (&keys.0, &keys.1)
+    }
+
+    async fn verify_rejects_with(data: ClientProvidedData, expected_message: &str) {
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Err(ReleaseHandlingError::InvalidData(msg)) => assert!(
+                msg.contains(expected_message),
+                "Expected message containing '{expected_message}', got: {msg}"
+            ),
+            Err(e) => panic!("Expected InvalidData but got: {e}"),
+            Ok(_) => panic!("Expected client data verification to fail, but it succeeded"),
+        }
+    }
+
+    // The verified data must be exactly what the client sent: the server
+    // keeps using it to register the release.
+    #[tokio::test]
+    async fn accepts_client_index_and_signature_matching_server_index() {
+        let data = create_mocked_client_provided_data();
+        let expected_url = data.github_release_url.clone();
+        let expected_pub_key = data.client_pub_key.clone();
+        let expected_index = data.client_sent_index.clone();
+        let expected_signature = data.client_sent_signature.clone();
+
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+
+        match outcome {
+            Ok(verified) => {
+                let received = verified.client_provided_data();
+                assert_eq!(received.github_release_url, expected_url);
+                assert_eq!(received.client_pub_key, expected_pub_key);
+                assert_eq!(received.client_sent_index, expected_index);
+                assert_eq!(received.client_sent_signature, expected_signature);
+            }
+            Err(e) => panic!("Expected client data to be verified, but got: {e}"),
+        }
+    }
+
+    // The client index and the signature must attest the same content: a
+    // signature computed over other content must be rejected even if the
+    // sent index is exactly the one the server builds itself.
+    #[tokio::test]
+    async fn rejects_signature_computed_over_other_content() {
+        let (pub_key, secret_key) = keys_with_password();
+        let tampered_index = format!("{}\ntampered content\n", mocked_release_index());
+        let mut data = client_provided_data_for_index(pub_key, secret_key, &tampered_index);
+        // Send the genuine index with the signature over the tampered one.
+        data.client_sent_index = base64_for_string(mocked_release_index());
+
+        verify_rejects_with(data, "Signature sent by client").await;
+    }
+
+    // The signature must be made with the key corresponding to the public
+    // key sent by the client.
+    #[tokio::test]
+    async fn rejects_signature_of_other_key_than_declared_public_key() {
+        let (pub_key, _secret_key) = keys_with_password();
+        let (_other_pub_key, other_secret_key) = other_keys_with_password();
+        // Index over the mocked release, but signed with the unrelated key.
+        let data = mocked_client_provided_data_with_keys(pub_key, other_secret_key);
+
+        verify_rejects_with(data, "Signature sent by client").await;
+    }
+
+    // Even with a valid signature, the client index must publish exactly the
+    // files and hashes found in the release for which it is registered.
+    #[tokio::test]
+    async fn rejects_index_not_identical_to_server_generated_index() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
+        value["publishedFiles"][0]["hash"] = serde_json::Value::String("f".repeat(64));
+        let index_string = serde_json::to_string(&value).unwrap();
+        let data = client_provided_data_for_index(pub_key, secret_key, &index_string);
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_unparsable_public_key() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut data = mocked_client_provided_data_with_keys(pub_key, secret_key);
+        data.client_pub_key = "not-a-key".to_string();
+
+        verify_rejects_with(data, "Could not parse public key sent by client").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_index_encoded_with_invalid_base64() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut data = mocked_client_provided_data_with_keys(pub_key, secret_key);
+        data.client_sent_index = "!!! not base64 !!!".to_string();
+
+        verify_rejects_with(data, "Could not decode index sent by client").await;
     }
 }

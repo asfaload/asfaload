@@ -10,7 +10,11 @@ pub mod tests {
     use features_lib::SignaturesFile;
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
-    use forge_release::github::test_utils::mocked_client_provided_data_with_keys;
+    use forge_release::github::ClientProvidedData;
+    use forge_release::github::test_utils::{
+        MOCK_RELEASE_PAGE_URL, client_provided_data_for_index,
+        mocked_client_provided_data_with_keys, mocked_release_index,
+    };
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
@@ -389,6 +393,210 @@ pub mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
         server_handle.abort();
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------
+    // Rejection of invalid client provided data at the endpoint.
+    // ---------------------------------------------------------------------
+
+    /// A running server configured for the mocked github release, plus the
+    /// test keys: key 0 authenticates the requests, key 1 is an unrelated
+    /// key usable by tests needing a signature from another signer.
+    struct InvalidDataServer {
+        _temp_dir: TempDir,
+        git_repo_path: std::path::PathBuf,
+        port: u16,
+        client: reqwest::Client,
+        keys: test_helpers::TestKeys,
+        server_handle: tokio::task::JoinHandle<()>,
+    }
+
+    impl InvalidDataServer {
+        async fn start() -> Result<Self> {
+            setup_crypto_provider();
+            let temp_dir = TempDir::new().expect("Failed to create temp directory");
+            let git_repo_path = temp_dir.path().to_path_buf();
+            print_logs();
+            init_git_repo(&git_repo_path).expect("Failed to initialize git repository");
+
+            let port = get_random_port().await?;
+
+            // The signers file must exist for the owner/repo of the mocked
+            // release, otherwise registration is rejected before the
+            // client data is verified.
+            let signers_dir = git_repo_path
+                .join("https/github.com/443/testowner/testrepo")
+                .join(SIGNERS_DIR);
+            fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
+            let signers_json = r#"{
+                "version": 1,
+                "required_signers": 1,
+                "signers": [
+                    {
+                        "public_key": "test_key",
+                        "name": "Test Signer"
+                    }
+                ]
+            }"#;
+            fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+                .expect("Failed to write signers file");
+
+            let config = build_test_config(&git_repo_path, port);
+            let config_clone = config.clone();
+            let server_handle = tokio::spawn(async move {
+                let _ = run_server(&config_clone).await;
+            });
+            wait_for_server(&config, None).await?;
+
+            Ok(Self {
+                _temp_dir: temp_dir,
+                git_repo_path,
+                port,
+                client: reqwest::Client::new(),
+                keys: test_helpers::TestKeys::new(2),
+                server_handle,
+            })
+        }
+
+        // The path the server would create the index in if a registration
+        // succeeded: rejections must leave it absent.
+        fn release_dir(&self) -> std::path::PathBuf {
+            self.git_repo_path
+                .join("https/github.com/443/testowner/testrepo/releases/tag/v1.0.0")
+        }
+
+        fn public_key(&self) -> &features_lib::AsfaloadPublicKeys {
+            self.keys.pub_key(0).unwrap()
+        }
+
+        fn secret_key(&self) -> &features_lib::AsfaloadSecretKeys {
+            self.keys.sec_key(0).unwrap()
+        }
+
+        // Send a register-assets request for the mocked release page with
+        // the given client provided data, authenticated as key 0.
+        async fn post_release(&self, data: &ClientProvidedData) -> Result<reqwest::Response> {
+            let payload =
+                serde_json::to_value(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+                    github_release_url: MOCK_RELEASE_PAGE_URL.to_string(),
+                    index: data.client_sent_index.clone(),
+                    signature: data.client_sent_signature.clone(),
+                }))
+                .expect("failed to serialize GithubRelease payload");
+            let payload_str = payload.to_string();
+
+            let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
+            let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, self.secret_key())?;
+
+            let response = tokio::time::timeout(
+                Duration::from_secs(10),
+                self.client
+                    .post(url_for("assets", self.port))
+                    .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
+                    .header(HEADER_NONCE, auth_info.nonce())
+                    .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+                    .header(HEADER_PUBLIC_KEY, self.public_key().to_base64())
+                    .json(&payload)
+                    .send(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
+
+            Ok(response)
+        }
+
+        fn stop(self) {
+            self.server_handle.abort();
+        }
+    }
+
+    // The signature must be produced by the key of the declared public
+    // key: a signature from another key must be rejected with a bad request
+    // and must not write any file for the release.
+    #[tokio::test]
+    async fn test_register_github_release_rejects_signature_of_other_key() -> Result<()> {
+        let ctx = InvalidDataServer::start().await?;
+
+        let data =
+            mocked_client_provided_data_with_keys(ctx.public_key(), ctx.keys.sec_key(1).unwrap());
+        let response = ctx.post_release(&data).await?;
+        let status = response.status();
+        let text = response.text().await?;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            text.contains("Signature sent by client"),
+            "Expected error about the client signature, got: {}",
+            text
+        );
+        assert!(
+            !ctx.release_dir().exists(),
+            "A rejected registration must not create the release directory"
+        );
+
+        ctx.stop();
+        Ok(())
+    }
+
+    // The client index must be identical to the index the server builds
+    // from the release: a validly signed but different index is rejected,
+    // without writing any file for the release.
+    #[tokio::test]
+    async fn test_register_github_release_rejects_index_not_matching_release() -> Result<()> {
+        let ctx = InvalidDataServer::start().await?;
+
+        let mut value: Value = serde_json::from_str(&mocked_release_index())?;
+        value["publishedFiles"][0]["hash"] = Value::String("f".repeat(64));
+        let index_string = value.to_string();
+        let data =
+            client_provided_data_for_index(ctx.public_key(), ctx.secret_key(), &index_string);
+
+        let response = ctx.post_release(&data).await?;
+        let status = response.status();
+        let text = response.text().await?;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            text.contains("not identical to index generated server side"),
+            "Expected error about the mismatching index, got: {}",
+            text
+        );
+        assert!(
+            !ctx.release_dir().exists(),
+            "A rejected registration must not create the release directory"
+        );
+
+        ctx.stop();
+        Ok(())
+    }
+
+    // An index that cannot be decoded from base64 is rejected early, and
+    // no file may be written for the release.
+    #[tokio::test]
+    async fn test_register_github_release_rejects_index_encoded_with_invalid_base64() -> Result<()>
+    {
+        let ctx = InvalidDataServer::start().await?;
+
+        let mut data = mocked_client_provided_data_with_keys(ctx.public_key(), ctx.secret_key());
+        data.client_sent_index = "!!! not base64 !!!".to_string();
+
+        let response = ctx.post_release(&data).await?;
+        let status = response.status();
+        let text = response.text().await?;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            text.contains("Could not decode index sent by client"),
+            "Expected error about the undecodable index, got: {}",
+            text
+        );
+        assert!(
+            !ctx.release_dir().exists(),
+            "A rejected registration must not create the release directory"
+        );
+
+        ctx.stop();
         Ok(())
     }
 }

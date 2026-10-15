@@ -120,6 +120,9 @@ mod test_utils_tests {
     use super::*;
     use rest_api_test_helpers::get_random_port;
 
+    const CLIENT_SENT_INDEX_PLACEHOLDER: &str = "test_client_index";
+    const CLIENT_SENT_SIGNATURE_PLACEHOLDER: &str = "test_client_signature";
+
     // The github rest api serves release info, but a release url must target
     // the project's release pages: the api host is not a repo host.
     #[tokio::test]
@@ -143,7 +146,15 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        match ReleaseAdders::new(&release_url, temp_dir.path().to_path_buf(), &mock_config).await {
+        match ReleaseAdders::new(
+            &release_url,
+            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
+            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            temp_dir.path().to_path_buf(),
+            &mock_config,
+        )
+        .await
+        {
             Err(ReleaseError::ReleaseUrlError(ReleaseUrlError::UnsupportedPlatform(host))) => {
                 assert!(
                     host.contains("api.github.com"),
@@ -204,9 +215,15 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let adder = ReleaseAdders::new(
+            &release_url,
+            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
+            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
 
         let index_content = adder.index_content().await.unwrap();
         let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
@@ -261,9 +278,15 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let adder = ReleaseAdders::new(
+            &release_url,
+            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
+            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
 
         let result = adder.create_index().await;
         assert!(
@@ -314,9 +337,15 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let adder = ReleaseAdders::new(
+            &release_url,
+            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
+            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
 
         let registration_started_at = chrono::Utc::now();
         let index_path = adder.create_index().await.unwrap();
@@ -376,9 +405,15 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let adder = ReleaseAdders::new(
+            &release_url,
+            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
+            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
 
         let result = adder.create_index().await;
         assert!(

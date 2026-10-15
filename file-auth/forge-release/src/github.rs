@@ -452,7 +452,10 @@ mod verified_client_data_tests {
         mocked_release_index,
     };
     use common::base64_for_string;
-    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSecretKeys};
+    use features_lib::{
+        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeyTrait as _,
+        AsfaloadSecretKeys,
+    };
     use std::sync::OnceLock;
 
     const TEST_KEY_PASSWORD: &str = "test_password";
@@ -576,5 +579,125 @@ mod verified_client_data_tests {
         data.client_sent_index = "!!! not base64 !!!".to_string();
 
         verify_rejects_with(data, "Could not decode index sent by client").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_signature_encoded_with_invalid_base64() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut data = mocked_client_provided_data_with_keys(pub_key, secret_key);
+        data.client_sent_signature = "!!! not base64 !!!".to_string();
+
+        verify_rejects_with(data, "Could not parse signature sent by client").await;
+    }
+
+    // Signs the json of the mocked release index after applying the given
+    // change, so only the comparison against the server-generated index can
+    // reject the data: the signature is valid over the sent content.
+    fn client_data_with_index(
+        pub_key: &AsfaloadPublicKeys,
+        secret_key: &AsfaloadSecretKeys,
+        change: impl FnOnce(&mut serde_json::Value),
+    ) -> ClientProvidedData {
+        let mut value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
+        change(&mut value);
+        let index_string = serde_json::to_string(&value).unwrap();
+        client_provided_data_for_index(pub_key, secret_key, &index_string)
+    }
+
+    // A file missing from the client index means a plausible checksum may
+    // be replaced by an unchecked download, so it must be rejected.
+    #[tokio::test]
+    async fn rejects_client_index_omitting_a_published_file() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"].as_array_mut().unwrap().clear();
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    // A file added to the client index is an injection attempt: it would
+    // validate a download the release never published.
+    #[tokio::test]
+    async fn rejects_client_index_with_extra_published_file() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            let extra = serde_json::json!({
+                "fileName": "extra.tar.gz",
+                "algo": "Sha256",
+                "source": "https://api.github.com/repos/testowner/testrepo/releases/123",
+                "sourceFormat": "GithubRelease",
+                "hash": "a".repeat(64),
+            });
+            value["publishedFiles"]
+                .as_array_mut()
+                .unwrap()
+                .insert(0, extra);
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    // A well-formed but empty index would validate downloads of nothing:
+    // it must not be accepted as "equal to" the server index.
+    #[tokio::test]
+    async fn rejects_client_index_with_empty_published_files() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"] = serde_json::json!([]);
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    // The digest algorithm is a trust decision: a hash checked as sha256
+    // cannot be published as sha512.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_digest_algorithm() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"][0]["algo"] = serde_json::Value::String("Sha512".to_string());
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    // The source tells where the digest comes from; the client index and
+    // the server index must publish the same one.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_source() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"][0]["source"] =
+                serde_json::Value::String("https://downloads.example.com".to_string());
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    // The comparison is on the parsed content, not on the exact bytes: an
+    // index equal to the server one but serialized differently (key order,
+    // whitespace) validated with the matching signature must be accepted.
+    #[tokio::test]
+    async fn accepts_semantically_identical_index_with_other_serialization() {
+        let (pub_key, secret_key) = keys_with_password();
+        let value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
+        let pretty_index = serde_json::to_string_pretty(&value).unwrap();
+        // Serializing differently changes the bytes, so the signature must
+        // cover the sent (pretty) content.
+        let data = client_provided_data_for_index(pub_key, secret_key, &pretty_index);
+
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Ok(verified) => {
+                // The kept data is the content the client sent.
+                assert_eq!(
+                    verified.client_provided_data().client_sent_index,
+                    base64_for_string(&pretty_index)
+                );
+            }
+            Err(e) => panic!("Expected semantically identical index to be verified, got: {e}"),
+        }
     }
 }

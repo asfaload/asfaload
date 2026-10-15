@@ -571,6 +571,38 @@ pub mod tests {
         Ok(())
     }
 
+    // An index that decodes but parses no valid index json is invalid
+    // client data, not a server-side failure, and must be rejected early
+    // without writing any file for the release.
+    #[tokio::test]
+    async fn test_register_github_release_rejects_index_that_is_not_valid_json() -> Result<()> {
+        let ctx = InvalidDataServer::start().await?;
+
+        let data = client_provided_data_for_index(
+            ctx.public_key(),
+            ctx.secret_key(),
+            "not index json at all",
+        );
+
+        let response = ctx.post_release(&data).await?;
+        let status = response.status();
+        let text = response.text().await?;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            text.contains("Could not parse index sent by client"),
+            "Expected error about the unparsable index, got: {}",
+            text
+        );
+        assert!(
+            !ctx.release_dir().exists(),
+            "A rejected registration must not create the release directory"
+        );
+
+        ctx.stop();
+        Ok(())
+    }
+
     // An index that cannot be decoded from base64 is rejected early, and
     // no file may be written for the release.
     #[tokio::test]

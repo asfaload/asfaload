@@ -223,7 +223,13 @@ impl VerifiedClientData {
         })?;
 
         // Now we will check that the index we build ourself for the release is equivalent
-        let client_provided_index: AsfaloadIndex = serde_json::from_str(&index_string)?;
+        let client_provided_index: AsfaloadIndex =
+            serde_json::from_str(&index_string).map_err(|e| {
+                ReleaseHandlingError::InvalidData(format!(
+                    "Could not parse index sent by client for github release {}: {}",
+                    data.github_release_url, e
+                ))
+            })?;
 
         // Retrieve the release and build our own index: the client index
         // must publish exactly the files we find there, with identical hashes.
@@ -453,8 +459,7 @@ mod verified_client_data_tests {
     };
     use common::base64_for_string;
     use features_lib::{
-        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeyTrait as _,
-        AsfaloadSecretKeys,
+        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeys,
     };
     use std::sync::OnceLock;
 
@@ -588,6 +593,16 @@ mod verified_client_data_tests {
         data.client_sent_signature = "!!! not base64 !!!".to_string();
 
         verify_rejects_with(data, "Could not parse signature sent by client").await;
+    }
+
+    // The sent index must parse as an index: valid base64 with a signature
+    // over it, but content that is not index json, is invalid client data.
+    #[tokio::test]
+    async fn rejects_index_that_does_not_parse_as_index() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_provided_data_for_index(pub_key, secret_key, "not index json at all");
+
+        verify_rejects_with(data, "Could not parse index sent by client").await;
     }
 
     // Signs the json of the mocked release index after applying the given

@@ -478,7 +478,7 @@ mod verified_client_data_tests {
     use common::{base64_for_string, string_from_base64};
     use features_lib::{
         AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
-        AsfaloadSecretKeys, AsfaloadSignatureTrait,
+        AsfaloadSecretKeys, AsfaloadSignatureTrait, sha512_for_content,
     };
     use std::sync::OnceLock;
 
@@ -733,6 +733,34 @@ mod verified_client_data_tests {
                 assert_eq!(verified.index_string(), pretty_index);
             }
             Err(e) => panic!("Expected semantically identical index to be verified, got: {e}"),
+        }
+    }
+
+    // The accessors must expose consistent parsed data: the signature the
+    // client sent verifies over the digest of the index bytes it sent,
+    // with the public key it declared.
+    #[tokio::test]
+    async fn exposes_parsed_client_data() {
+        let (pub_key, secret_key) = keys_with_password();
+        let index = mocked_release_index();
+        let data = client_provided_data_for_index(pub_key, secret_key, &index);
+
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Ok(verified) => {
+                assert_eq!(verified.index_string(), index);
+                assert_eq!(verified.pub_key().to_base64(), pub_key.to_base64());
+                let index_sha512 = sha512_for_content(verified.index_string().as_bytes()).unwrap();
+                assert!(
+                    verified
+                        .pub_key()
+                        .verify(verified.signature(), &index_sha512)
+                        .is_ok(),
+                    "the exposed signature must verify over the exposed index with the exposed key"
+                );
+            }
+            Err(e) => panic!("Expected client data to be verified, but got: {e}"),
         }
     }
 }

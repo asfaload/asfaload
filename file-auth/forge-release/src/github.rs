@@ -475,9 +475,10 @@ mod verified_client_data_tests {
         create_mocked_client_provided_data, mocked_client_provided_data_with_keys,
         mocked_release_index,
     };
-    use common::base64_for_string;
+    use common::{base64_for_string, string_from_base64};
     use features_lib::{
-        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeys,
+        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
+        AsfaloadSecretKeys, AsfaloadSignatureTrait,
     };
     use std::sync::OnceLock;
 
@@ -537,11 +538,13 @@ mod verified_client_data_tests {
 
         match outcome {
             Ok(verified) => {
-                let received = verified.client_provided_data();
-                assert_eq!(received.github_release_url, expected_url);
-                assert_eq!(received.client_pub_key, expected_pub_key);
-                assert_eq!(received.client_sent_index, expected_index);
-                assert_eq!(received.client_sent_signature, expected_signature);
+                // The accessors must expose exactly the data sent by the
+                // client, in their parsed form as the server will use it.
+                assert_eq!(verified.github_release_url(), expected_url);
+                assert_eq!(verified.pub_key().to_base64(), expected_pub_key);
+                let expected_index_bytes = string_from_base64(&expected_index).unwrap();
+                assert_eq!(verified.index_string(), expected_index_bytes);
+                assert_eq!(verified.signature().to_base64(), expected_signature);
             }
             Err(e) => panic!("Expected client data to be verified, but got: {e}"),
         }
@@ -724,11 +727,10 @@ mod verified_client_data_tests {
         let outcome = VerifiedClientData::new(data, &fetcher).await;
         match outcome {
             Ok(verified) => {
-                // The kept data is the content the client sent.
-                assert_eq!(
-                    verified.client_provided_data().client_sent_index,
-                    base64_for_string(&pretty_index)
-                );
+                // The kept data is the exact bytes the client sent, not a
+                // re-serialization: the signature must cover the
+                // persisted data.
+                assert_eq!(verified.index_string(), pretty_index);
             }
             Err(e) => panic!("Expected semantically identical index to be verified, got: {e}"),
         }

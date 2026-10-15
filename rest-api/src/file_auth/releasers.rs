@@ -162,6 +162,7 @@ mod test_utils_tests {
     async fn test_release_adders_github_release() {
         use crate::file_auth::release_types::ReleaseAdder;
         use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
         use tempfile::TempDir;
         use tokio::fs;
 
@@ -207,9 +208,13 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
+        let client_data = create_mocked_client_provided_data();
+        // Keep the index bytes the client sent, to compare after verification.
+        let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
+
         let adder = ReleaseAdders::new(
             &release_url,
-            create_mocked_client_provided_data(),
+            client_data,
             git_repo_path.clone(),
             &mock_config,
         )
@@ -217,25 +222,28 @@ mod test_utils_tests {
         .unwrap();
 
         let ReleaseAdders::Github(github) = &adder;
-        // The data accepted by the adder must be kept unchanged, as the
-        // registration process should only use verified client data.
-        let verified = github.verified_client_data.client_provided_data();
+        // The data accepted by the adder must be kept unchanged, no re-serialization
+        // must happen by the verification process, as the registration process
+        // should only use verified client data.
+        let verified = &github.verified_client_data;
         assert_eq!(
-            verified.github_release_url,
+            verified.github_release_url(),
             release_url.to_string(),
             "the verified data must keep the release url sent by the client"
         );
-        assert!(
-            !verified.client_sent_index.is_empty(),
-            "the verified data must keep the index sent by the client"
+        assert_eq!(
+            verified.index_string(),
+            sent_index_bytes,
+            "the verified data must keep the bytes of the index sent by the client"
         );
         assert!(
-            !verified.client_sent_signature.is_empty(),
+            !verified.signature().to_base64().is_empty(),
             "the verified data must keep the signature sent by the client"
         );
         assert!(
             verified
-                .client_pub_key
+                .pub_key()
+                .to_base64()
                 .starts_with(features_lib::ASFALOAD_PUB_PREFIX),
             "the verified data must keep the public key sent by the client"
         );

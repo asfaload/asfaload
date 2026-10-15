@@ -447,7 +447,8 @@ pub fn print_logs() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .with_test_writer()
-        .init();
+        .try_init()
+        .ok();
 }
 
 pub fn setup_file_logging(

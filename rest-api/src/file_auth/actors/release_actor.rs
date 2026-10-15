@@ -5,7 +5,7 @@ use crate::file_auth::release_types::{
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::helpers::create_empty_aggregate_signature;
 use forge_release::common::ReleaseInfo;
-use forge_release::github::GithubReleaseInfo;
+use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -22,9 +22,7 @@ pub struct ReleaseActor {
 pub struct ProcessRelease {
     pub release_info: GithubReleaseInfo,
     pub request_id: String,
-    pub signing_key: String,
-    pub client_sent_index: String,
-    pub client_sent_signature: String,
+    pub client_provided_data: ClientProvidedData,
 }
 
 pub struct RegisterResult {
@@ -76,8 +74,7 @@ impl ReleaseActor {
             &msg.release_info
                 .to_url()
                 .map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?,
-            msg.client_sent_index,
-            msg.client_sent_signature,
+            msg.client_provided_data,
             self.config.git_repo_path.clone(),
             &self.config,
         )

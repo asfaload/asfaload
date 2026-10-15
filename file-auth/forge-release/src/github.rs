@@ -152,6 +152,13 @@ pub struct GithubReleaseInfo {
     pub tag: String,
 }
 
+pub struct ClientProvidedData {
+    pub github_release_url: String,
+    pub client_pub_key: String,
+    pub client_sent_index: String,
+    pub client_sent_signature: String,
+}
+
 impl ReleaseInfo for GithubReleaseInfo {
     fn origin_prefix(&self) -> &str {
         &self.origin_prefix

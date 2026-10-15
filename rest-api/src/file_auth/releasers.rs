@@ -3,6 +3,7 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use forge_release::common::ReleaseInfo;
+use forge_release::github::ClientProvidedData;
 use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -27,8 +28,7 @@ impl ReleaseIndexWriter for ReleaseAdders {
 impl ReleaseAdder for ReleaseAdders {
     async fn new(
         release_url: &url::Url,
-        client_sent_index: String,
-        client_sent_signature: String,
+        client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>
@@ -40,14 +40,9 @@ impl ReleaseAdder for ReleaseAdders {
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
         if is_github_release_host(host) {
-            let github_adder = GithubReleaseAdder::new(
-                release_url,
-                client_sent_index,
-                client_sent_signature,
-                git_repo_path,
-                config,
-            )
-            .await?;
+            let github_adder =
+                GithubReleaseAdder::new(release_url, client_provided_data, git_repo_path, config)
+                    .await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
@@ -118,10 +113,21 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
+    use forge_release::github::ClientProvidedData;
     use rest_api_test_helpers::get_random_port;
 
     const CLIENT_SENT_INDEX_PLACEHOLDER: &str = "test_client_index";
     const CLIENT_SENT_SIGNATURE_PLACEHOLDER: &str = "test_client_signature";
+    const CLIENT_PUB_KEY_PLACEHOLDER: &str = "test_client_pub_key";
+
+    fn client_provided_data(release_url: &url::Url) -> ClientProvidedData {
+        ClientProvidedData {
+            github_release_url: release_url.to_string(),
+            client_pub_key: CLIENT_PUB_KEY_PLACEHOLDER.to_string(),
+            client_sent_index: CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
+            client_sent_signature: CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+        }
+    }
 
     // The github rest api serves release info, but a release url must target
     // the project's release pages: the api host is not a repo host.
@@ -148,8 +154,7 @@ mod test_utils_tests {
 
         match ReleaseAdders::new(
             &release_url,
-            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
-            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            client_provided_data(&release_url),
             temp_dir.path().to_path_buf(),
             &mock_config,
         )
@@ -217,13 +222,26 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
-            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            client_provided_data(&release_url),
             git_repo_path.clone(),
             &mock_config,
         )
         .await
         .unwrap();
+
+        let ReleaseAdders::Github(github) = &adder;
+        assert_eq!(
+            github.client_provided_data.client_sent_index,
+            CLIENT_SENT_INDEX_PLACEHOLDER
+        );
+        assert_eq!(
+            github.client_provided_data.client_sent_signature,
+            CLIENT_SENT_SIGNATURE_PLACEHOLDER
+        );
+        assert_eq!(
+            github.client_provided_data.client_pub_key,
+            CLIENT_PUB_KEY_PLACEHOLDER
+        );
 
         let index_content = adder.index_content().await.unwrap();
         let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
@@ -280,8 +298,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
-            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            client_provided_data(&release_url),
             git_repo_path.clone(),
             &mock_config,
         )
@@ -339,8 +356,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
-            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            client_provided_data(&release_url),
             git_repo_path.clone(),
             &mock_config,
         )
@@ -407,8 +423,7 @@ mod test_utils_tests {
 
         let adder = ReleaseAdders::new(
             &release_url,
-            CLIENT_SENT_INDEX_PLACEHOLDER.to_string(),
-            CLIENT_SENT_SIGNATURE_PLACEHOLDER.to_string(),
+            client_provided_data(&release_url),
             git_repo_path.clone(),
             &mock_config,
         )

@@ -5,7 +5,7 @@ use common::fs::names::{
 use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
-use forge_release::github::GithubReleaseInfo;
+use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
 use rest_api_types::models::{
     GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
@@ -1099,15 +1099,8 @@ pub async fn register_assets_handler(
 
     match &request {
         RegisterAssetsPayload::GithubRelease(r) => {
-            register_github_release(
-                &state,
-                request_id,
-                signing_key,
-                &r.github_release_url,
-                &r.index,
-                &r.signature,
-            )
-            .await
+            let client_provided_data = client_provided_data_for(signing_key, r);
+            register_github_release(&state, request_id, client_provided_data).await
         }
         RegisterAssetsPayload::ChecksumFiles(f) => {
             register_checksums(&state, request_id, &f.csum_files).await
@@ -1115,23 +1108,34 @@ pub async fn register_assets_handler(
     }
 }
 
+/// Build the client-provided data from the public key header and the
+/// GitHub release payload.
+fn client_provided_data_for(
+    client_pub_key: &str,
+    payload: &rest_api_types::models::GithubReleasePayload,
+) -> ClientProvidedData {
+    ClientProvidedData {
+        github_release_url: payload.github_release_url.clone(),
+        client_pub_key: client_pub_key.to_string(),
+        client_sent_index: payload.index.clone(),
+        client_sent_signature: payload.signature.clone(),
+    }
+}
+
 async fn register_github_release(
     state: &AppState,
     request_id: &str,
-    signing_key: &str,
-    github_release_url: &str,
-    client_sent_index: &str,
-    client_sent_signature: &str,
+    client_provided_data: ClientProvidedData,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
     let convert_github_release_error =
         |e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e));
     tracing::info!(
         request_id = %request_id,
-        github_release_url = %github_release_url,
+        github_release_url = %client_provided_data.github_release_url,
         "Received register-assets request (GitHub mode)"
     );
 
-    let parsed_url = url::Url::parse(github_release_url)
+    let parsed_url = url::Url::parse(&client_provided_data.github_release_url)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
 
     // Validate the url by parsing it as a release info
@@ -1142,10 +1146,8 @@ async fn register_github_release(
         .release_actor
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
-            signing_key: signing_key.to_string(),
             release_info,
-            client_sent_index: client_sent_index.to_string(),
-            client_sent_signature: client_sent_signature.to_string(),
+            client_provided_data,
         })
         .await
         .map_err(|e| map_to_user_error(e, "Release registration failed"))?;
@@ -1727,4 +1729,28 @@ pub async fn ping_handler(State(state): State<AppState>, headers: HeaderMap) -> 
         message: "pong".to_string(),
         auth,
     })
+}
+
+#[cfg(test)]
+mod client_provided_data_tests {
+    use super::*;
+    use rest_api_types::models::GithubReleasePayload;
+
+    // Pins the payload-to-struct mapping: a swap of index and signature, or
+    // of the public key, must fail this test.
+    #[test]
+    fn maps_payload_fields_to_client_provided_data() {
+        let payload = GithubReleasePayload {
+            github_release_url: "https://github.com/owner/repo/releases/tag/v1".to_string(),
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        };
+
+        let data = client_provided_data_for("pub-key-value", &payload);
+
+        assert_eq!(data.github_release_url, payload.github_release_url);
+        assert_eq!(data.client_pub_key, "pub-key-value");
+        assert_eq!(data.client_sent_index, "index-value");
+        assert_eq!(data.client_sent_signature, "signature-value");
+    }
 }

@@ -3,14 +3,12 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
-use forge_release::common::{ReleaseFetcher, ReleaseInfo};
+use forge_release::common::ReleaseInfo;
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
-use forge_release::github::{
-    ClientProvidedData, GithubReleaseInfo, GithubReleaseResponse, VerifiedClientData,
-};
+use forge_release::github::{ClientProvidedData, GithubReleaseInfo, VerifiedClientData};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -107,15 +105,7 @@ impl ReleaseAdder for GithubReleaseAdder {
         Ok(full_index_path)
     }
     async fn index_content(&self) -> Result<String, ApiError> {
-        let release: GithubReleaseResponse = self
-            .fetcher
-            .fetch(self.release_url.clone())
-            .await
-            .map_err(|e| ApiError::Generic(format!("Could not retrieve github release: {}", e)))?;
-
-        release
-            .generate_index_json()
-            .map_err(|e| ApiError::Generic(e.to_string()))
+        Ok(self.verified_client_data.index_string().to_string())
     }
 
     fn release_info(&self) -> BackendReleaseInfos {
@@ -151,8 +141,8 @@ pub async fn parse_release_url(
 
 #[cfg(all(test, feature = "test-utils"))]
 mod feature_gated_tests {
-    use super::*;
     use features_lib::AsfaloadIndex;
+    use forge_release::github::GithubReleaseResponse;
     use forge_release::github::test_utils::{MOCK_RELEASE_JSON, create_mock_release_response};
 
     // Gives the added asset its own download url so a regression to

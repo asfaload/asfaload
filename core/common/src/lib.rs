@@ -170,6 +170,23 @@ pub fn base64_for_string<S: AsRef<str>>(s: S) -> String {
     STANDARD_NO_PAD.encode(input_string)
 }
 
+pub fn string_from_base64<S: AsRef<str>>(s: S) -> Result<String, String> {
+    // The client encodes the index bytes with the standard base64
+    // alphabet without padding, but accept padded input too: the
+    // signature covers the decoded bytes either way.
+    let index_engine = base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::GeneralPurposeConfig::new()
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+    );
+    let decoded_bytes = index_engine
+        .decode(s.as_ref())
+        .map_err(|e| format!("Could not decode base64 string: {}", e))?;
+    let decoded_string = String::from_utf8(decoded_bytes)
+        .map_err(|e| format!("Could not handle base64 decoded bytes as a string: {}", e,))?;
+    Ok(decoded_string)
+}
+
 // We distincuish 3 types of signed files, which have different criteria
 // used to determine if their signature is complete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

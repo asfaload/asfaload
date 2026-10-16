@@ -23,6 +23,7 @@ pub mod tests {
     use rest_api_types::models::GithubReleasePayload;
     use rest_api_types::rustls::setup_crypto_provider;
     use serde_json::Value;
+    use signers_file_types::SignersConfig;
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
@@ -63,7 +64,7 @@ pub mod tests {
         let port = get_random_port().await?;
 
         let test_key_path = temp_dir.path().join("test_key.json");
-        let test_keys = test_helpers::TestKeys::new_generated(1);
+        let test_keys = test_helpers::TestKeys::new_generated(2);
         let test_key_pair = test_keys.key_pair(0).unwrap();
         test_key_pair.save(&test_key_path)?;
         let test_secret_key = test_keys.sec_key(0).unwrap();
@@ -75,17 +76,23 @@ pub mod tests {
             .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
 
-        let signers_json = r#"{
-            "version": 1,
-            "required_signers": 1,
-            "signers": [
-                {
-                    "public_key": "test_key",
-                    "name": "Test Signer"
-                }
-            ]
-        }"#;
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+        // The server parses this signers file when it records the client
+        // signature in the index's aggregate signature: it must be in the
+        // current format and list both generated keys as artifact signers.
+        // With the group threshold at 2, the release stays pending after the
+        // client has signed it.
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    test_public_key.clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )
+        .expect("Failed to build signers config");
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)
             .expect("Failed to write signers file");
 
         let config = build_test_config(&git_repo_path, port);
@@ -195,9 +202,18 @@ pub mod tests {
 
         let sig_content = tokio::fs::read_to_string(&sig_path).await?;
         let sig_file: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(
+            sig_file.entries.len(),
+            1,
+            "The client signature must be recorded in the pending aggregate signature"
+        );
+        let tagged_sig = sig_file
+            .entries
+            .get(&public_key_b64)
+            .expect("The recorded signature must come from the client key");
         assert!(
-            sig_file.entries.is_empty(),
-            "Signature file should contain empty entries"
+            !tagged_sig.signature.is_empty(),
+            "The recorded signature must not be empty"
         );
 
         // attempt re-registration
@@ -311,8 +327,8 @@ pub mod tests {
 
         let signers_json = r#"{
             "version": 1,
-            "required_signers": 1,
-            "signers": []
+            "timestamp": "2024-01-01T00:00:00Z",
+            "artifact_signers": []
         }"#;
         fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
             .expect("Failed to write signers file");
@@ -366,8 +382,8 @@ pub mod tests {
 
         let signers_json = r#"{
             "version": 1,
-            "required_signers": 1,
-            "signers": []
+            "timestamp": "2024-01-01T00:00:00Z",
+            "artifact_signers": []
         }"#;
         fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
             .expect("Failed to write signers file");
@@ -427,23 +443,23 @@ pub mod tests {
             let port = get_random_port().await?;
 
             // The signers file must exist for the owner/repo of the mocked
-            // release, otherwise registration is rejected before the
-            // client data is verified.
+            // release and parse in the current format. The rejections
+            // exercised through this server all happen while validating the
+            // client data, before the signature is recorded, so the signers
+            // file is not consulted for authorization here. Key 0, which
+            // authenticates the requests, is declared as the sole artifact
+            // signer.
             let signers_dir = git_repo_path
                 .join("https/github.com/443/testowner/testrepo")
                 .join(SIGNERS_DIR);
             fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
-            let signers_json = r#"{
-                "version": 1,
-                "required_signers": 1,
-                "signers": [
-                    {
-                        "public_key": "test_key",
-                        "name": "Test Signer"
-                    }
-                ]
-            }"#;
-            fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+            let test_keys = test_helpers::TestKeys::new(2);
+            let signers_config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+            )
+            .expect("Failed to build signers config");
+            fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)
                 .expect("Failed to write signers file");
 
             let config = build_test_config(&git_repo_path, port);
@@ -458,7 +474,7 @@ pub mod tests {
                 git_repo_path,
                 port,
                 client: reqwest::Client::new(),
-                keys: test_helpers::TestKeys::new(2),
+                keys: test_keys,
                 server_handle,
             })
         }

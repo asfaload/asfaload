@@ -8,7 +8,7 @@ name = "asfaload-cli"
 path = "src/main.rs"
 
 [dependencies]
-anstream = "0.6"
+anstream = "1.0"
 anstyle = "1"
 clap = { version = "4.5.53", features = ["derive", "env"] }
 thiserror = "2.0"

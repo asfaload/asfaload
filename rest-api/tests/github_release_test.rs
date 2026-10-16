@@ -6,7 +6,6 @@ pub mod tests {
     use anyhow::Result;
     use axum::http::StatusCode;
     use common::fs::names::pending_signatures_path_for;
-    use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::SignaturesFile;
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
@@ -23,7 +22,6 @@ pub mod tests {
     use rest_api_types::models::GithubReleasePayload;
     use rest_api_types::rustls::setup_crypto_provider;
     use serde_json::Value;
-    use signers_file_types::SignersConfig;
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
@@ -71,29 +69,16 @@ pub mod tests {
         let test_public_key = test_keys.pub_key(0).unwrap();
         let public_key_b64 = test_public_key.to_base64();
 
-        let signers_dir = git_repo_path
-            .join("https/github.com/443/testowner/testrepo")
-            .join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
-
         // The server parses this signers file when it records the client
-        // signature in the index's aggregate signature: it must be in the
-        // current format and list both generated keys as artifact signers.
-        // With the group threshold at 2, the release stays pending after the
-        // client has signed it.
-        let signers_config = SignersConfig::with_artifact_signers_only(
-            1,
-            (
-                vec![
-                    test_public_key.clone(),
-                    test_keys.pub_key(1).unwrap().clone(),
-                ],
-                2,
-            ),
-        )
-        .expect("Failed to build signers config");
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)
-            .expect("Failed to write signers file");
+        // signature in the index's aggregate signature: it must list both
+        // generated keys as artifact signers. With the group threshold at 2,
+        // the release stays pending after the client has signed it.
+        test_helpers::write_artifact_signers_config(
+            &git_repo_path.join("https/github.com/443/testowner/testrepo"),
+            &test_keys,
+            &[0, 1],
+            2,
+        )?;
 
         let config = build_test_config(&git_repo_path, port);
 
@@ -320,18 +305,14 @@ pub mod tests {
         let test_public_key = test_keys.pub_key(0).unwrap();
         let public_key_b64 = test_public_key.to_base64();
 
-        let signers_dir = git_repo_path
-            .join("https/github.com/443/testowner/testrepo")
-            .join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
-
-        let signers_json = r#"{
-            "version": 1,
-            "timestamp": "2024-01-01T00:00:00Z",
-            "artifact_signers": []
-        }"#;
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
-            .expect("Failed to write signers file");
+        // The url is rejected before the signers file is read, so its
+        // content does not matter here, only that it parses.
+        test_helpers::write_artifact_signers_config(
+            &git_repo_path.join("https/github.com/443/testowner/testrepo"),
+            &test_keys,
+            &[0],
+            1,
+        )?;
 
         let config = build_test_config(&git_repo_path, port);
 
@@ -375,18 +356,15 @@ pub mod tests {
 
         let port = get_random_port().await?;
 
-        let signers_dir = git_repo_path
-            .join("https/github.com/443/testowner/testrepo")
-            .join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
-
-        let signers_json = r#"{
-            "version": 1,
-            "timestamp": "2024-01-01T00:00:00Z",
-            "artifact_signers": []
-        }"#;
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
-            .expect("Failed to write signers file");
+        let test_keys = test_helpers::TestKeys::new(1);
+        // The request is rejected before the signers file is read, so its
+        // content does not matter here, only that it parses.
+        test_helpers::write_artifact_signers_config(
+            &git_repo_path.join("https/github.com/443/testowner/testrepo"),
+            &test_keys,
+            &[0],
+            1,
+        )?;
 
         let config = build_test_config(&git_repo_path, port);
 
@@ -396,11 +374,10 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let keys = test_helpers::TestKeys::new(1);
         let body = github_release_body(
             "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
-            keys.pub_key(0).unwrap(),
-            keys.sec_key(0).unwrap(),
+            test_keys.pub_key(0).unwrap(),
+            test_keys.sec_key(0).unwrap(),
         );
         // Send without auth headers
         let response = tokio::time::timeout(
@@ -449,18 +426,13 @@ pub mod tests {
             // file is not consulted for authorization here. Key 0, which
             // authenticates the requests, is declared as the sole artifact
             // signer.
-            let signers_dir = git_repo_path
-                .join("https/github.com/443/testowner/testrepo")
-                .join(SIGNERS_DIR);
-            fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
             let test_keys = test_helpers::TestKeys::new(2);
-            let signers_config = SignersConfig::with_artifact_signers_only(
+            test_helpers::write_artifact_signers_config(
+                &git_repo_path.join("https/github.com/443/testowner/testrepo"),
+                &test_keys,
+                &[0],
                 1,
-                (vec![test_keys.pub_key(0).unwrap().clone()], 1),
-            )
-            .expect("Failed to build signers config");
-            fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)
-                .expect("Failed to write signers file");
+            )?;
 
             let config = build_test_config(&git_repo_path, port);
             let config_clone = config.clone();

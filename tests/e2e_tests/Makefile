@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-TESTS := basic_flow.sh signers_update_by_master.sh basic_flow_local.sh ssh_keys_flow_local.sh
+TESTS := basic_flow.sh signers_update_by_master.sh basic_flow_local.sh ssh_keys_flow_local.sh metadata_signatures_check_local.sh register_assets_invalid_client_data.sh
 KEY_TYPES ?= asfaload
 
 ## Run all e2e tests

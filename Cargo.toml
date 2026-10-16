@@ -19,6 +19,7 @@ members = [
   "client-lib",
   "tests/client-server-integration-tests",
   "tests/test-file-server",
+  "tests/e2e-sign-payload",
   "file-auth/forge-url",
   "file-auth/forge-release",
   "file-auth/index-verification",

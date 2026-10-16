@@ -1,0 +1,18 @@
+[package]
+name = "e2e-sign-payload"
+version = "0.1.0"
+edition = "2024"
+
+## Helper for e2e tests only: no business logic, no network use.
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+common = { path = "../../core/common/" }
+features_lib = { path = "../../core/features_lib/" }
+rest_api_auth = { path = "../../rest_api_auth/" }
+serde_json = "1.0"
+rest_api_types = { path = "../../rest_api_types" }
+anyhow = "1.0"
+
+[lints]
+workspace = true

@@ -28,12 +28,6 @@ pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
     pub verified_client_data: VerifiedClientData,
-    // The fetcher type depends on the build mode: the real fetcher in
-    // production, one returning a fixed response when building tests.
-    #[cfg(not(feature = "test-utils"))]
-    pub fetcher: GithubReleaseFetcher,
-    #[cfg(feature = "test-utils")]
-    pub fetcher: MockGithubReleaseFetcher,
     release_info: BackendGithubReleaseInfo,
 }
 
@@ -95,7 +89,6 @@ impl ReleaseAdder for GithubReleaseAdder {
         Ok(Self {
             release_url: release_url.clone(),
             git_repo_path,
-            fetcher,
             release_info,
             verified_client_data,
         })

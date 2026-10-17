@@ -184,6 +184,17 @@ expect_fail "Sign signers file with key0 (already completed)" \
 section "Release Registration and Signing"
 ################################################################################
 
+# A release may only be registered by one of the project's authorised
+# artifact signers. Key3 is not in the active signers file (keys 0, 1 and 2
+# are), so its registration request must be rejected before any file is
+# written for the release.
+expect_fail_json "Register release with key3 (not an authorised signer)" \
+    '.error | contains("Not authorized")' \
+    cargo run --quiet -- register-assets --secret-key "$KEY_3" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
+
+assert_file_not_exists "release v0.1 index after rejected registration" \
+    "$(_release_dir "0.1")/$INDEX_FILE"
+
 run_step_json "Register release with key3 (does not sign it)" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)

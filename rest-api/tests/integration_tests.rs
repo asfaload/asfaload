@@ -1129,9 +1129,15 @@ pub mod test_utils_tests {
 
         let signature_file = format!("{}.{}", complete_signers_path.display(), SIGNATURES_SUFFIX);
         let signature_file = std::path::PathBuf::from(signature_file);
-        assert!(
-            signature_file.exists(),
-            "Signature file should be created as complete"
+
+        // The recorded signature must verify over the activated signers
+        // file bytes: activation must not modify the signed content.
+        use rest_api_test_helpers::{SignatureFileState, assert_recorded_signature};
+        assert_recorded_signature(
+            &complete_signers_path,
+            public_key,
+            SignatureFileState::Complete,
+            1,
         );
 
         // Verify the signature file is tracked in git

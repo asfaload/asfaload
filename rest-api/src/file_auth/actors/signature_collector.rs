@@ -465,7 +465,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 }
 
 /// Map an `AggregateSignatureError` to the appropriate `ApiError`.
-fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
+pub(crate) fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
     match e {
         AggregateSignatureError::DuplicateSignature => ApiError::SignatureAlreadyCollected(
             "Signature already collected for this key".to_string(),

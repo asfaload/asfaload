@@ -1,11 +1,12 @@
 use super::git_actor::{CommitFile, GitActor};
+use super::signature_collector::map_aggregate_signature_error;
 use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseAdders;
 use aggregate_signature::get_authorized_signers_for_file;
-use common::SignedFileLoader;
 use common::errors::AggregateSignatureError;
+use common::{SignedFileLoader, errors::SignedFileError};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
 use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
@@ -17,6 +18,7 @@ use tracing::info;
 use uuid::Uuid;
 
 const ACTOR_NAME: &str = "release_actor";
+
 pub struct ReleaseActor {
     git_actor: kameo::actor::ActorRef<GitActor>,
     config: crate::config::AppConfig,
@@ -30,6 +32,35 @@ pub struct ProcessRelease {
 
 pub struct RegisterResult {
     pub index_file_path: NormalisedPaths,
+}
+
+/// Map an error from `SignedFileTrait::add_signature` during release
+/// registration to a user-facing `ApiError`.
+///
+/// Errors the client caused (duplicate signature, signature file already
+/// complete, or a signature failing verification) map to a 4xx status; only
+/// genuinely unexpected errors map to the internal server error status.
+fn map_release_signature_error(e: SignedFileError) -> ApiError {
+    match e {
+        SignedFileError::AggregateSignatureError(agg_err) => match agg_err {
+            // A complete release signature file accepts no additional
+            // signature. The state surfaces as the dedicated variant, or as
+            // the logic error the artifact file implementation raises when
+            // no pending signature is left.
+            AggregateSignatureError::SignatureAlreadyComplete => {
+                ApiError::SignatureAlreadyComplete(
+                    "Cannot accept additional signatures".to_string(),
+                )
+            }
+            AggregateSignatureError::LogicError(msg) if msg.contains("already complete") => {
+                ApiError::SignatureAlreadyComplete(
+                    "Cannot accept additional signatures".to_string(),
+                )
+            }
+            other => map_aggregate_signature_error(other),
+        },
+        other => ApiError::InternalServerError(other.to_string()),
+    }
 }
 
 impl Actor for ReleaseActor {
@@ -186,7 +217,7 @@ impl ReleaseActor {
             "Index file written",
         );
 
-        // Create empty aggregate signature for the index file
+        // Add the client's signature to the release signature file.
         let index_signed_file = SignedFileLoader::load(index_file_path.clone())?;
         let sig_with_state = index_signed_file
             .add_signature(adder.signature().clone(), adder.pub_key().clone())
@@ -195,12 +226,9 @@ impl ReleaseActor {
                     request_id = %msg.request_id,
                     actor = %ACTOR_NAME,
                     error = %e,
-                    "Could not create empty aggregate signature for index file"
+                    "Could not add the client signature to the release signature file"
                 );
-                ApiError::Generic(format!(
-                    "Problem registering signature of release to be registered:{}",
-                    e
-                ))
+                map_release_signature_error(e)
             })?;
         info!(
             request_id = %msg.request_id,
@@ -227,5 +255,92 @@ impl ReleaseActor {
             .map_err(|e| ApiError::InternalServerError(format!("Failed to commit file: {}", e)))?;
 
         Ok(RegisterResult { index_file_path })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+
+    use super::*;
+
+    /// Status code and user-facing message the mapper produces for an
+    /// `add_signature` error.
+    fn mapped(e: SignedFileError) -> (StatusCode, String) {
+        let api_error = map_release_signature_error(e);
+        (api_error.to_http_status(), api_error.to_string())
+    }
+
+    // A duplicate signature is the client re-registering an already signed
+    // release: not a server fault, so it must not surface as a 500.
+    #[test]
+    fn duplicate_signature_maps_to_signature_already_collected() {
+        let (status, message) = mapped(SignedFileError::AggregateSignatureError(
+            AggregateSignatureError::DuplicateSignature,
+        ));
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            message.contains("already") && message.contains("collected"),
+            "Expected a message about the signature already collected, got: {}",
+            message
+        );
+    }
+
+    // A complete release signature file accepts no additional signature.
+    // The artifact file implementation of `add_signature` reports this state
+    // through a logic error mentioning "already complete".
+    #[test]
+    fn logic_error_for_complete_file_maps_to_signature_already_complete() {
+        let (status, message) = mapped(SignedFileError::AggregateSignatureError(
+            AggregateSignatureError::LogicError(
+                "Signature is already complete; cannot add another signature.".to_string(),
+            ),
+        ));
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            message.contains("already complete"),
+            "Expected a message about the signature being complete, got: {}",
+            message
+        );
+    }
+
+    #[test]
+    fn signature_already_complete_maps_to_signature_already_complete_status() {
+        let (status, _) = mapped(SignedFileError::AggregateSignatureError(
+            AggregateSignatureError::SignatureAlreadyComplete,
+        ));
+
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    // A signature failing verification of the index digest is sent by the
+    // client.
+    #[test]
+    fn failed_signature_verification_maps_to_unauthorized() {
+        let (status, _) = mapped(SignedFileError::AggregateSignatureError(
+            AggregateSignatureError::Signature(
+                "signature verification failed against digest".to_string(),
+            ),
+        ));
+
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    // Errors not knowingly caused by the client stay internal server errors,
+    // including a logic error that does not indicate a complete file.
+    #[test]
+    fn unexpected_errors_map_to_internal_server_error() {
+        for e in [
+            SignedFileError::NotFound("no signatures file".to_string()),
+            SignedFileError::AggregateSignatureError(AggregateSignatureError::LogicError(
+                "Public key is not authorized to revoke this file".to_string(),
+            )),
+            SignedFileError::StdIoError(std::io::Error::other("disk gone")),
+        ] {
+            let (status, _) = mapped(e);
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        }
     }
 }

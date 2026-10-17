@@ -5,11 +5,7 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use common::fs::names::{
-        find_global_signers_for, local_signers_path_for, pending_signatures_path_for,
-        signatures_path_on_disk_for,
-    };
-    use features_lib::SignaturesFile;
+    use common::fs::names::{find_global_signers_for, local_signers_path_for};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
     use forge_release::github::ClientProvidedData;
@@ -19,8 +15,10 @@ pub mod tests {
     };
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
-    use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
-    use rest_api_test_helpers::{init_git_repo, print_logs};
+    use rest_api_test_helpers::{
+        SignatureFileState, assert_recorded_signature, build_test_config, get_random_port,
+        init_git_repo, print_logs, url_for, wait_for_server,
+    };
     use rest_api_types::RegisterAssetsPayload;
     use rest_api_types::models::GithubReleasePayload;
     use rest_api_types::rustls::setup_crypto_provider;
@@ -181,29 +179,9 @@ pub mod tests {
             }]
         );
 
-        // Verify signature file exists
-        let sig_path = pending_signatures_path_for(&index_path)?;
-        assert!(
-            sig_path.exists(),
-            "Signature file should exist at {}",
-            sig_path.display()
-        );
-
-        let sig_content = tokio::fs::read_to_string(&sig_path).await?;
-        let sig_file: SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(
-            sig_file.entries.len(),
-            1,
-            "The client signature must be recorded in the pending aggregate signature"
-        );
-        let tagged_sig = sig_file
-            .entries
-            .get(&public_key_b64)
-            .expect("The recorded signature must come from the client key");
-        assert!(
-            !tagged_sig.signature.is_empty(),
-            "The recorded signature must not be empty"
-        );
+        // The client signature recorded at registration must verify over the
+        // persisted index bytes, in the still-pending signature file.
+        assert_recorded_signature(&index_path, test_public_key, SignatureFileState::Pending, 1);
 
         // attempt re-registration
         // -----------------------
@@ -313,28 +291,13 @@ pub mod tests {
             index_path.display()
         );
 
-        // The aggregate signature is complete with 1 sig at registration.
-        let complete_sig_path = signatures_path_on_disk_for(&index_path)?;
-        let sig_content = fs::read_to_string(&complete_sig_path)?;
-        let sig_file: SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(
-            sig_file.entries.len(),
+        // The aggregate signature is complete with 1 signature at
+        // registration, and the pending file is gone after the rename.
+        assert_recorded_signature(
+            &index_path,
+            test_public_key,
+            SignatureFileState::Complete,
             1,
-            "Threshold-1 completion must hold exactly one signature"
-        );
-        let tagged_sig = sig_file
-            .entries
-            .get(&public_key_b64)
-            .expect("The recorded signature must come from the client key");
-        assert!(
-            !tagged_sig.signature.is_empty(),
-            "The recorded signature must not be empty"
-        );
-
-        // The pending signatures file must be gone.
-        assert!(
-            !pending_signatures_path_for(&index_path)?.exists(),
-            "The pending signatures file must have been renamed on completion"
         );
 
         // A local copy of the signers file is created next to the index,

@@ -411,6 +411,15 @@ pub mod tests {
 
     impl InvalidDataServer {
         async fn start() -> Result<Self> {
+            // Key 0, which authenticates the requests, is declared as the sole
+            // artifact signer.
+            Self::start_with_artifact_signers(&[0]).await
+        }
+
+        // Start a server whose signers config declares exactly the keys whose
+        // indices are given as the project's artifact signers, with a group
+        // threshold of 1.
+        async fn start_with_artifact_signers(artifact_signers: &[usize]) -> Result<Self> {
             setup_crypto_provider();
             let temp_dir = TempDir::new().expect("Failed to create temp directory");
             let git_repo_path = temp_dir.path().to_path_buf();
@@ -422,15 +431,14 @@ pub mod tests {
             // The signers file must exist for the owner/repo of the mocked
             // release and parse in the current format. The rejections
             // exercised through this server all happen while validating the
-            // client data, before the signature is recorded, so the signers
-            // file is not consulted for authorization here. Key 0, which
-            // authenticates the requests, is declared as the sole artifact
-            // signer.
+            // client data or the submitter's authorisation, before the
+            // signature is recorded, so the signers file is not consulted
+            // for signature recording here.
             let test_keys = test_helpers::TestKeys::new(2);
             test_helpers::write_artifact_signers_config(
                 &git_repo_path.join("https/github.com/443/testowner/testrepo"),
                 &test_keys,
-                &[0],
+                artifact_signers,
                 1,
             )?;
 
@@ -520,6 +528,35 @@ pub mod tests {
         assert!(
             text.contains("Signature sent by client"),
             "Expected error about the client signature, got: {}",
+            text
+        );
+        assert!(
+            !ctx.release_dir().exists(),
+            "A rejected registration must not create the release directory"
+        );
+
+        ctx.stop();
+        Ok(())
+    }
+
+    // The submitter must be one of the project's authorised artifact
+    // signers: a validly authenticated request signed by a key outside the
+    // artifact signers group is rejected before any file is written.
+    #[tokio::test]
+    async fn test_register_github_release_rejects_unauthorised_signer() -> Result<()> {
+        // Only key 1 is an artifact signer: key 0, used to authenticate the
+        // request, must be rejected.
+        let ctx = InvalidDataServer::start_with_artifact_signers(&[1]).await?;
+
+        let data = mocked_client_provided_data_with_keys(ctx.public_key(), ctx.secret_key());
+        let response = ctx.post_release(&data).await?;
+        let status = response.status();
+        let text = response.text().await?;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            text.contains("Not authorized"),
+            "Expected error about the unauthorised signing key, got: {}",
             text
         );
         assert!(

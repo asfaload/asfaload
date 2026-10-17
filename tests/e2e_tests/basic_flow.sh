@@ -240,39 +240,40 @@ tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download never-registered artifact (v9.9)" \
     cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 9.9)
 
-# v0.1 is registered but has zero signatures yet (still pending).
+# v0.1 is registered but has one of two required signatures (the submitter's,
+# recorded at registration): still below threshold, not active.
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download unsigned artifact (v0.1, 0 signatures)" \
+expect_fail "Download unsigned artifact (v0.1, 1 of 2 signatures)" \
     cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.1)
 
-run_step_json "List pending for key3" \
-    '.pending_files | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
-
-RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
-run_step_json "Sign release index with key1" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
-
-assert_release_index_signature_count "0.1" 1
-
-# v0.1 now has 1 of 2 required signatures: still below threshold, not active.
-tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download partially-signed artifact (v0.1, 1 of 2 signatures)" \
-    cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.1)
-
+# The index is not complete yet: its status must still be pending.
 run_step_json "Check signature status for v0.1 index (pending)" \
     '.is_complete == false' \
     cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
+
+# Registration records the submitter's signature, so the registrant (key2)
+# has already signed the index: only keys that still have to sign see it as
+# pending.
+run_step_json "List pending for key0 (should show pending release index)" \
+    '.pending_files | length > 0' \
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
+
+RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
+run_step_json "Sign release index with key0 (completes, threshold=2)" \
+    '.is_complete == true' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
+
+assert_release_index_signature_count "0.1" 2
 
 expect_fail "Register release with key3 (fails as already registered)" \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 
 # Ensure a second release registration does not override the signatures already collected
-assert_release_index_signature_count "0.1" 1
+assert_release_index_signature_count "0.1" 2
 
-run_step_json "Sign release index with key2 (completes, threshold=2)" \
-    '.is_complete == true' \
+# The index was completed by key0's signature (key2 signed at registration):
+# further signatures must be rejected.
+expect_fail "Sign release index with key1 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 # --- Backend: verify release index activated ---
@@ -398,25 +399,26 @@ assert_json_field "$(_release_dir "0.2")/$INDEX_FILE" \
     "$V0_2_INDEX_CONTENT_FILTER" \
     "Release v0.2 index content matches github release assets"
 
-run_step_json "List pending for key3" \
+# As for v0.1: key2 signed the index at registration time, so it no longer
+# sees it as pending.
+run_step_json "List pending for key0 (should show pending release index)" \
     '.pending_files | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
 RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
-run_step_json "Sign release index with key1" \
+run_step_json "Sign release index with key0 (2 of 3 signatures)" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
-assert_release_index_signature_count "0.2" 1
-
-run_step_json "Sign release index with key2" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
-
 assert_release_index_signature_count "0.2" 2
 
-run_step_json "Sign release index with key4 (key3 does not sign)" \
+run_step_json "Sign release index with key1 (completes, threshold=3)" \
     '.is_complete == true' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
+
+assert_release_index_signature_count "0.2" 3
+
+expect_fail "Sign release index with key3 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 # --- Backend: verify v0.2 release index activated ---

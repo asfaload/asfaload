@@ -69,6 +69,10 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
         Self: Sized;
 
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError>;
+    /// Content of the index file to persist, exactly as sent by the client.
+    ///
+    /// The returned bytes are the client-provided index as verified against
+    /// the release: they must be written to disk byte-for-byte identical.
     async fn index_content(&self) -> Result<String, ApiError>;
 
     // Error if index already exists

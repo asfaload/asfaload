@@ -6,7 +6,6 @@ use crate::file_auth::releasers::ReleaseAdders;
 use aggregate_signature::get_authorized_signers_for_file;
 use common::SignedFileLoader;
 use common::errors::AggregateSignatureError;
-use common::fs::names::{pending_signatures_path_for, signatures_path_on_disk_for};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
 use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
@@ -211,23 +210,8 @@ impl ReleaseActor {
             "Release registration signature registered",
         );
 
-        let sig_absolute_path = if sig_with_state.is_complete() {
-            signatures_path_on_disk_for(&index_file_path)?
-        } else {
-            pending_signatures_path_for(&index_file_path)?
-        };
-        // We need a NormalisedPaths, which is build from a relative path.
-        // IMPROVE: put this in a helper function or NormalisedPaths constructor taking an absolute
-        // path and the git repo path.
-        let sig_relative_path = sig_absolute_path
-            .strip_prefix(index_file_path.base_dir())
-            .map_err(|e| {
-                ApiError::InvalidFilePath(format!("Failed to compute relative path: {}", e))
-            })?;
-        let sig_path = NormalisedPaths::new(index_file_path.base_dir(), sig_relative_path).await?;
-
         let commit_msg = CommitFile {
-            file_paths: vec![index_file_path.clone(), sig_path],
+            file_paths: vec![release_info.release_path().clone()],
             commit_message: format!(
                 "Add index and signature for {}/{}/{}",
                 release_info.owner(),

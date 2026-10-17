@@ -5,7 +5,10 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use common::fs::names::pending_signatures_path_for;
+    use common::fs::names::{
+        find_global_signers_for, local_signers_path_for, pending_signatures_path_for,
+        signatures_path_on_disk_for,
+    };
     use features_lib::SignaturesFile;
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
@@ -23,6 +26,7 @@ pub mod tests {
     use rest_api_types::rustls::setup_crypto_provider;
     use serde_json::Value;
     use std::fs;
+    use std::process::Command;
     use tempfile::TempDir;
     use tokio::time::Duration;
 
@@ -228,6 +232,158 @@ pub mod tests {
 
         let response_text = response.text().await?;
         assert!(response_text.contains("already registered"));
+
+        server_handle.abort();
+        Ok(())
+    }
+
+    // With a threshold-1 signers config the client's signature completes the
+    // aggregate at registration: the release must land fully activated:
+    // - the complete signatures file replaces the pending one,
+    // - a local copy of the signers file is created next to the index,
+    #[tokio::test]
+    async fn test_register_github_release_threshold_1_completes() -> Result<()> {
+        setup_crypto_provider();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let git_repo_path = temp_dir.path().to_path_buf();
+        print_logs();
+        init_git_repo(&git_repo_path).expect("Failed to initialize git repository");
+
+        let port = get_random_port().await?;
+
+        let test_keys = test_helpers::TestKeys::new_generated(2);
+        let test_secret_key = test_keys.sec_key(0).unwrap();
+        let test_public_key = test_keys.pub_key(0).unwrap();
+        let public_key_b64 = test_public_key.to_base64();
+
+        // A single artifact signer with threshold 1: the client's signature,
+        // recorded at registration, completes the aggregate immediately.
+        test_helpers::write_artifact_signers_config(
+            &git_repo_path.join("https/github.com/443/testowner/testrepo"),
+            &test_keys,
+            &[0],
+            1,
+        )?;
+
+        let config = build_test_config(&git_repo_path, port);
+
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        let payload = github_release_body(
+            "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
+            test_public_key,
+            test_secret_key,
+        );
+        let payload_str = payload.to_string();
+
+        let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(10),
+            client
+                .post(url_for("assets", port))
+                .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
+                .header(HEADER_NONCE, auth_info.nonce())
+                .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+                .header(HEADER_PUBLIC_KEY, &public_key_b64)
+                .json(&payload)
+                .send(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("HTTP error: {}", e))?;
+
+        assert_eq!(response.status(), StatusCode::OK, "Expected 200 OK status");
+        let response_json: Value = response.json().await?;
+        assert_eq!(response_json["success"], true, "Expected success=true");
+
+        let index_path_str = response_json["index_file_path"]
+            .as_str()
+            .expect("index_file_path should be a string");
+        let index_path = git_repo_path.join(index_path_str);
+        assert!(
+            index_path.exists(),
+            "Index file should exist at {}",
+            index_path.display()
+        );
+
+        // The aggregate signature is complete with 1 sig at registration.
+        let complete_sig_path = signatures_path_on_disk_for(&index_path)?;
+        let sig_content = fs::read_to_string(&complete_sig_path)?;
+        let sig_file: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(
+            sig_file.entries.len(),
+            1,
+            "Threshold-1 completion must hold exactly one signature"
+        );
+        let tagged_sig = sig_file
+            .entries
+            .get(&public_key_b64)
+            .expect("The recorded signature must come from the client key");
+        assert!(
+            !tagged_sig.signature.is_empty(),
+            "The recorded signature must not be empty"
+        );
+
+        // The pending signatures file must be gone.
+        assert!(
+            !pending_signatures_path_for(&index_path)?.exists(),
+            "The pending signatures file must have been renamed on completion"
+        );
+
+        // A local copy of the signers file is created next to the index,
+        // with the same content as the global signers file.
+        let local_signers_path = local_signers_path_for(&index_path)?;
+        assert!(
+            local_signers_path.exists(),
+            "A local signers copy must exist at {}",
+            local_signers_path.display()
+        );
+        let global_signers_path = find_global_signers_for(&index_path)?;
+        assert_eq!(
+            fs::read_to_string(&local_signers_path)?,
+            fs::read_to_string(&global_signers_path)?,
+            "The local signers copy must match the global signers file"
+        );
+
+        // The whole release directory is committed exactly once, with the
+        // registration message, and the registration leaves no untracked or
+        // modified files in the release directory.
+        let release_rel_path = "https/github.com/443/testowner/testrepo/releases/tag/v1.0.0";
+        let log_output = Command::new("git")
+            .arg("-C")
+            .arg(&git_repo_path)
+            .args(["log", "--format=%s", "--", release_rel_path])
+            .output()
+            .expect("failed to run git log");
+        assert!(
+            log_output.status.success(),
+            "git log failed: {}",
+            String::from_utf8_lossy(&log_output.stderr)
+        );
+        let commits = String::from_utf8(log_output.stdout)?;
+        assert_eq!(
+            commits, "Add index and signature for testowner/testrepo/v1.0.0\n",
+            "Exactly one commit must touch the release directory, with the registration message"
+        );
+
+        let status_output = Command::new("git")
+            .arg("-C")
+            .arg(&git_repo_path)
+            .args(["status", "--porcelain", "--", release_rel_path])
+            .output()
+            .expect("failed to run git status");
+        assert_eq!(
+            String::from_utf8(status_output.stdout)?,
+            "",
+            "The registration must leave no untracked or modified files in the release directory"
+        );
 
         server_handle.abort();
         Ok(())

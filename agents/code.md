@@ -5,6 +5,10 @@
 - Keep functions small and focused
 - Use meaningful variable and function names
 - Add comments for complex logic, but again, explain the why, not the what.
+- Code comments must not reference plan documents, plan tasks or steps,
+  review notes, todo files or other process artifacts: a reader of the code
+  has none of those documents. Comments explain what the code does; such
+  references belong in commit messages and todo files instead.
 
 # BEST PRACTICES
 - **DRY (Don't Repeat Yourself)**: Avoid code duplication. Extract repeated code to functions.

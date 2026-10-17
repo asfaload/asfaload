@@ -3,9 +3,11 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseAdders;
+use aggregate_signature::get_authorized_signers_for_file;
 use common::SignedFileLoader;
+use common::errors::AggregateSignatureError;
 use common::fs::names::{pending_signatures_path_for, signatures_path_on_disk_for};
-use features_lib::SignedFileWithKindTrait;
+use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
 use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
 use kameo::message::Context;
@@ -121,6 +123,40 @@ impl ReleaseActor {
                 ReleaseError::SerdeError(e) => ApiError::InternalServerError(e.to_string()),
             }
         })?;
+
+        let index_path = adder.index_path().await?;
+        let authorised_signers =
+            get_authorized_signers_for_file(index_path.clone()).map_err(|e| {
+                tracing::error!(
+                    actor = %ACTOR_NAME,
+                    error = %e,
+                    index_path = %index_path,
+                    "Failed to get authorised signers for index path"
+                );
+                match e {
+                    // A missing signers config for the project is a
+                    // client-side configuration problem, reported as a bad
+                    // request. Other errors are server-side faults.
+                    AggregateSignatureError::Io(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        ApiError::NoActiveSignersFile
+                    }
+                    _ => ApiError::Generic(
+                        "Could not retrieve authorised signers for index path".to_string(),
+                    ),
+                }
+            })?;
+        if !authorised_signers.contains(adder.pub_key()) {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                index_path = %index_path,
+                signing_key = %adder.pub_key().to_base64(),
+                "Submitter key not found in authorised signers for path"
+            );
+
+            return Err(ApiError::NotAuthorized(
+                "Signing key is not present in authorised keys.".into(),
+            ));
+        }
 
         let release_info = adder.release_info();
 

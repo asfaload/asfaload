@@ -10,12 +10,13 @@ use std::{
 use anyhow::Result;
 use common::fs::names::{
     metadata_path_for, metadata_signatures_path_for, pending_signatures_path_for,
-    signatures_path_for,
+    signatures_path_for, signatures_path_on_disk_for,
 };
 use constants::{SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys, AsfaloadSignatureTrait,
-    SignaturesFile, TaggedSignature, sha512_for_content,
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
+    AsfaloadSignatureTrait, AsfaloadSignatures, SignaturesFile, TaggedSignature,
+    sha512_for_content, sha512_for_file,
 };
 use rest_api::server::run_server;
 use rest_api_auth::{
@@ -122,6 +123,74 @@ pub fn read_on_disk_index(index_path: &Path) -> Result<features_lib::AsfaloadInd
         "index file must not end with two consecutive newlines"
     );
     Ok(serde_json::from_str(&content)?)
+}
+
+/// Which signatures file is expected to hold the recorded signatures.
+pub enum SignatureFileState {
+    Pending,
+    Complete,
+}
+
+/// Asserts the full signature-record state for a signed file that was
+/// registered by `signer`:
+/// - exactly the expected signatures file exists, and the other one does
+///   not,
+/// - the existing file holds exactly `expected_signature_count`
+///   signatures, one of which is recorded by `signer`,
+/// - the signer's recorded signature verifies over the sha512 digest of
+///   the signed file persisted on disk.
+///
+/// All paths are derived from `signed_file_path`: the caller cannot mix a
+/// signature from one signatures file with the contents of another file.
+pub fn assert_recorded_signature(
+    signed_file_path: &Path,
+    signer: &AsfaloadPublicKeys,
+    expected: SignatureFileState,
+    expected_signature_count: usize,
+) {
+    let pending_path =
+        pending_signatures_path_for(signed_file_path).expect("the signed file has a file name");
+    let complete_path =
+        signatures_path_on_disk_for(signed_file_path).expect("the signed file must exist on disk");
+    let (expected_path, forbidden_path) = match expected {
+        SignatureFileState::Pending => (&pending_path, &complete_path),
+        SignatureFileState::Complete => (&complete_path, &pending_path),
+    };
+    assert!(
+        expected_path.exists(),
+        "The signatures file holding the recorded signature should exist at {}",
+        expected_path.display()
+    );
+    assert!(
+        !forbidden_path.exists(),
+        "The other signatures file should not be present at {}",
+        forbidden_path.display()
+    );
+
+    let sig_content = fs::read_to_string(expected_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", expected_path.display(), e));
+    let sig_file: SignaturesFile =
+        serde_json::from_str(&sig_content).expect("the signatures file must parse");
+    assert_eq!(
+        sig_file.entries.len(),
+        expected_signature_count,
+        "{} should hold {} signatures, got {}",
+        expected_path.display(),
+        expected_signature_count,
+        sig_file.entries.len()
+    );
+    let tagged_sig = sig_file
+        .entries
+        .get(&signer.to_base64())
+        .expect("The recorded signatures must include one from the registered signer key");
+
+    let signature =
+        AsfaloadSignatures::from_base64_with_format(&tagged_sig.signature, &tagged_sig.format)
+            .expect("the recorded signature must parse in the format recorded for it");
+    let digest = sha512_for_file(signed_file_path).expect("failed to hash the signed file");
+    signer
+        .verify(&signature, &digest)
+        .expect("the recorded signature must verify over the persisted signed file bytes");
 }
 
 pub async fn get_random_port() -> Result<u16, ApiError> {

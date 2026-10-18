@@ -592,6 +592,30 @@ mod verified_client_data_tests {
         verify_rejects_with(data, "not identical to index generated server side").await;
     }
 
+    // The publication date is part of the index identity: an index published
+    // on another date must not pass as the release's own index.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_published_on() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedOn"] = serde_json::json!("2000-01-01T00:00:00Z");
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
+    // The index version is part of the index identity: an index with another
+    // version must not pass as the release's own index.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_version() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["version"] = serde_json::json!(2);
+        });
+
+        verify_rejects_with(data, "not identical to index generated server side").await;
+    }
+
     #[tokio::test]
     async fn rejects_unparsable_public_key() {
         let (pub_key, secret_key) = keys_with_password();

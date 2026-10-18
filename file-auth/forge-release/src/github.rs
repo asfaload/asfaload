@@ -181,6 +181,11 @@ impl VerifiedClientData {
         client_provided_index: &AsfaloadIndex,
         server_built_index: &AsfaloadIndex,
     ) -> Option<String> {
+        let mut lines = Vec::new();
+        if client_provided_index.published_files.len() != server_built_index.published_files.len() {
+            lines.push("Files published differ in number".to_string());
+        };
+
         // To compare the lists of published files of both indexes, we build a HashSet for each,
         // where the item in the set is the FileChecksum itself. This ensures all fields, and so
         // incl. the filename and the digest algorithms are used in the comparison.
@@ -188,10 +193,9 @@ impl VerifiedClientData {
 
         let provided: HashSet<&FileChecksum> =
             client_provided_index.published_files.iter().collect();
-        let mut lines = Vec::new();
         if expected != provided {
             if expected.len() != provided.len() {
-                lines.push("Files published differ in number".to_string());
+                lines.push("Files published differ in number of distinct entries".to_string());
             } else {
                 lines.push("Files published differ.".to_string());
             }

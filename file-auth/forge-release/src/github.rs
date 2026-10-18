@@ -253,7 +253,10 @@ impl VerifiedClientData {
         let provided: HashSet<&FileChecksum> =
             client_provided_index.published_files.iter().collect();
 
-        if expected != provided {
+        if expected != provided
+            || index.published_on != client_provided_index.published_on
+            || index.version != client_provided_index.version
+        {
             return Err(ReleaseHandlingError::InvalidData(format!(
                 "Index provided by client is not identical to index generated server side for release at {}",
                 data.github_release_url

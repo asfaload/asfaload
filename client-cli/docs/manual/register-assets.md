@@ -7,6 +7,8 @@ Register assets for signing. Tell the backend about a new set of files — eithe
 
 After registration you still need to sign the assets yourself with [`sign-pending`](sign-pending.md).
 
+Registration is authenticated with your secret key. In GitHub release mode, that key must also be an authorized artifact signer for the release path; otherwise the backend answers `403 Forbidden`. In checksums mode, the backend currently checks only that a signers config exists for the target directory.
+
 ## Options
 
 ### `--github-release-url <URL>`

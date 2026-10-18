@@ -7,6 +7,14 @@ Register assets for signing. Accepts either a GitHub release URL or a list of ch
 
 In GitHub mode, the server fetches the release metadata, downloads all assets, builds an index file, and commits everything to the repository. In checksums mode, it downloads the referenced checksums files, builds the index, and commits.
 
+## Authorization
+
+All requests must be authenticated (see [Request headers](#request-headers)).
+
+In GitHub release mode, the caller's public key (`X-asfld-pk`) must also be an authorized artifact signer for the release path. The server reads the `artifact_signers` group of the project's active signers config and refuses a key that is not a member with `403 Forbidden`.
+
+In checksums mode, the server currently requires only that a signers config exists for the target directory; it does not check the caller's key against it.
+
 ## Request headers
 
 Standard Asfaload authentication headers, signed by the caller's secret key:
@@ -68,9 +76,10 @@ Fields:
 
 ## Errors
 
-- `400 Bad Request` — invalid URL format, non-GitHub host for `github_release_url`, or invalid checksums URLs.
+- `400 Bad Request` — invalid URL format, non-GitHub host for `github_release_url`, invalid checksums URLs, or no active signers file for the target directory.
 - `422 Unprocessable Entity` — the body does not carry a valid payload: unknown tag, both tags at once, or missing fields in a payload.
 - `401 Unauthorized` — missing or invalid authentication headers.
+- `403 Forbidden` — in GitHub release mode, the caller's public key is not an authorized artifact signer for the release path.
 - `409 Conflict` — release already registered.
 - `500 Internal Server Error` — release processing, checksums download, or Git commit failed.
 

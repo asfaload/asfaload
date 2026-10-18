@@ -126,9 +126,7 @@ where
                 .map_err(|e| e.into())
         } else {
             Err(SignedFileError::AggregateSignatureError(
-                common::errors::AggregateSignatureError::LogicError(
-                    "Signature is already complete; cannot add another signature.".to_string(),
-                ),
+                common::errors::AggregateSignatureError::SignatureAlreadyComplete,
             ))
         }
     }
@@ -175,9 +173,7 @@ where
             // This should never happend for a revocation, as the signature subject is moved once
             // the signature is complete.
             Err(SignedFileError::AggregateSignatureError(
-                common::errors::AggregateSignatureError::LogicError(
-                    "Signature is already complete; cannot add another signature.".to_string(),
-                ),
+                common::errors::AggregateSignatureError::SignatureAlreadyComplete,
             ))
         }
     }
@@ -829,6 +825,74 @@ mod tests_signers_add_signature {
             Ok(_) => {
                 panic!("Expected error when adding signature to already complete signers file")
             }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests_signed_file_artifact {
+    use super::*;
+    use ::constants::{SIGNERS_DIR, SIGNERS_FILE};
+    use common::errors::AggregateSignatureError;
+    use signatures::keys::AsfaloadSecretKeyTrait;
+    use signers_file_types::SignersConfig;
+    use std::fs;
+    use tempfile::TempDir;
+    use test_helpers::TestKeys;
+
+    /// Set up a temp directory with an active signers config (artifact
+    /// threshold 1) and a dummy artifact file. Returns the artifact path.
+    fn setup_artifact_test(
+        temp_dir: &TempDir,
+        test_keys: &TestKeys,
+    ) -> anyhow::Result<std::path::PathBuf> {
+        let root = temp_dir.path();
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)?;
+
+        let release_dir = root.join("releases");
+        fs::create_dir_all(&release_dir)?;
+        let artifact_path = release_dir.join("artifact.bin");
+        fs::write(&artifact_path, b"artifact content")?;
+        Ok(artifact_path)
+    }
+
+    // Once the artifact signature file is complete, adding another signature
+    // must report the dedicated `SignatureAlreadyComplete` variant, so callers
+    // do not depend on the error message.
+    #[test]
+    fn test_artifact_add_signature_errors_when_already_complete() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(2);
+        let artifact_path = setup_artifact_test(&temp_dir, &test_keys)?;
+        let file_hash = sha512_for_file(&artifact_path)?;
+
+        // The threshold-1 signature completes the artifact signature file.
+        let sig0 = test_keys.sec_key(0).unwrap().sign(&file_hash)?;
+        let sf =
+            SignedFile::<ArtifactMarker>::new(artifact_path.to_string_lossy().to_string(), None);
+        assert!(
+            sf.add_signature(sig0, test_keys.pub_key(0).unwrap().clone())?
+                .is_complete()
+        );
+
+        // A further signature must report the complete state.
+        let sig1 = test_keys.sec_key(1).unwrap().sign(&file_hash)?;
+        let sf =
+            SignedFile::<ArtifactMarker>::new(artifact_path.to_string_lossy().to_string(), None);
+        match sf.add_signature(sig1, test_keys.pub_key(1).unwrap().clone()) {
+            Err(SignedFileError::AggregateSignatureError(
+                AggregateSignatureError::SignatureAlreadyComplete,
+            )) => {}
+            Err(other) => panic!("Expected SignatureAlreadyComplete error, got: {}", other),
+            Ok(_) => panic!("Expected error when adding signature to already complete artifact"),
         }
 
         Ok(())

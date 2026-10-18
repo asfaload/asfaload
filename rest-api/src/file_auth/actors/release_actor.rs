@@ -44,15 +44,8 @@ fn map_release_signature_error(e: SignedFileError) -> ApiError {
     match e {
         SignedFileError::AggregateSignatureError(agg_err) => match agg_err {
             // A complete release signature file accepts no additional
-            // signature. The state surfaces as the dedicated variant, or as
-            // the logic error the artifact file implementation raises when
-            // no pending signature is left.
+            // signature.
             AggregateSignatureError::SignatureAlreadyComplete => {
-                ApiError::SignatureAlreadyComplete(
-                    "Cannot accept additional signatures".to_string(),
-                )
-            }
-            AggregateSignatureError::LogicError(msg) if msg.contains("already complete") => {
                 ApiError::SignatureAlreadyComplete(
                     "Cannot accept additional signatures".to_string(),
                 )
@@ -287,25 +280,9 @@ mod tests {
         );
     }
 
-    // A complete release signature file accepts no additional signature.
-    // The artifact file implementation of `add_signature` reports this state
-    // through a logic error mentioning "already complete".
-    #[test]
-    fn logic_error_for_complete_file_maps_to_signature_already_complete() {
-        let (status, message) = mapped(SignedFileError::AggregateSignatureError(
-            AggregateSignatureError::LogicError(
-                "Signature is already complete; cannot add another signature.".to_string(),
-            ),
-        ));
-
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert!(
-            message.contains("already complete"),
-            "Expected a message about the signature being complete, got: {}",
-            message
-        );
-    }
-
+    // A complete release signature file accepts no additional signature: the
+    // artifact file implementation reports the state as
+    // `SignatureAlreadyComplete`.
     #[test]
     fn signature_already_complete_maps_to_signature_already_complete_status() {
         let (status, _) = mapped(SignedFileError::AggregateSignatureError(

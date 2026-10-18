@@ -116,6 +116,12 @@ impl ChecksumFileRegistrar {
                 f.write_all(content.as_bytes()).await.map_err(|e| {
                     ApiError::FileWriteFailed(format!("Failed to write index file: {}", e))
                 })?;
+                // tokio buffers file writes: without an awaited flush the
+                // index file can still be empty on disk when this returns.
+                // The git actor commits the file right after.
+                f.flush().await.map_err(|e| {
+                    ApiError::FileWriteFailed(format!("Failed to flush index file: {}", e))
+                })?;
                 Ok(index_path)
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -203,8 +209,12 @@ mod test_utils_tests {
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use forge_url::path_prefix_from_url;
 
+    // The index written on disk is what consumers read: its content must
+    // match the entries of the parsed checksums file, and follow the POSIX
+    // JSON contract.
     #[tokio::test]
-    async fn release_index_written_with_trailing_newline() {
+    async fn create_index_writes_expected_content_to_disk() {
+        use features_lib::HashAlgorithm;
         let temp_dir = tempfile::tempdir().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
@@ -228,10 +238,12 @@ mod test_utils_tests {
             .await
             .unwrap();
 
-        let registrar = ChecksumFileRegistrar::new(git_repo_path.clone(), vec![checksum_url])
-            .await
-            .unwrap();
+        let registrar =
+            ChecksumFileRegistrar::new(git_repo_path.clone(), vec![checksum_url.clone()])
+                .await
+                .unwrap();
 
+        let before = chrono::Utc::now();
         let index_path_result = registrar.create_index().await;
         assert!(
             index_path_result.is_ok(),
@@ -240,16 +252,30 @@ mod test_utils_tests {
         );
 
         let index_abs = index_path_result.unwrap().absolute_path();
-        let content = tokio::fs::read_to_string(&index_abs).await.unwrap();
+        let index = rest_api_test_helpers::read_on_disk_index(&index_abs).unwrap();
 
-        assert!(
-            content.ends_with("}\n"),
-            "Index file on disk must end with exactly one trailing newline; got: {:?}",
-            &content[content.len().saturating_sub(10)..]
+        assert_eq!(index.version, 1);
+        // A checksums file carries no upstream publication date: both
+        // timestamps are set at registration time.
+        assert_eq!(
+            index.published_on, index.mirrored_on,
+            "published_on must equal mirrored_on when registering from a checksums file"
         );
         assert!(
-            !content.ends_with("\n\n"),
-            "Index file on disk must not end with two consecutive newlines"
+            index.mirrored_on >= before && index.mirrored_on <= chrono::Utc::now(),
+            "mirrored_on must be the registration time, got {}",
+            index.mirrored_on
+        );
+        assert_eq!(
+            index.published_files,
+            vec![FileChecksum {
+                file_name: "file.tar.gz".to_string(),
+                algo: HashAlgorithm::Sha256,
+                source: checksum_url.to_string(),
+                source_format: ChecksumSourceFormat::ShaSum,
+                hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                    .to_string(),
+            }]
         );
     }
 }

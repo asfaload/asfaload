@@ -3,6 +3,7 @@ use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use forge_release::common::ReleaseInfo;
+use forge_release::github::ClientProvidedData;
 use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -27,6 +28,7 @@ impl ReleaseIndexWriter for ReleaseAdders {
 impl ReleaseAdder for ReleaseAdders {
     async fn new(
         release_url: &url::Url,
+        client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>
@@ -38,7 +40,9 @@ impl ReleaseAdder for ReleaseAdders {
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
         if is_github_release_host(host) {
-            let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
+            let github_adder =
+                GithubReleaseAdder::new(release_url, client_provided_data, git_repo_path, config)
+                    .await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
@@ -64,6 +68,17 @@ impl ReleaseAdder for ReleaseAdders {
     fn release_info(&self) -> BackendReleaseInfos {
         match self {
             Self::Github(github) => github.release_info(),
+        }
+    }
+
+    fn pub_key(&self) -> &features_lib::AsfaloadPublicKeys {
+        match self {
+            Self::Github(github) => github.pub_key(),
+        }
+    }
+    fn signature(&self) -> &features_lib::AsfaloadSignatures {
+        match self {
+            Self::Github(github) => github.signature(),
         }
     }
 }
@@ -109,6 +124,7 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
+    use forge_release::github::test_utils::create_mocked_client_provided_data;
     use rest_api_test_helpers::get_random_port;
 
     // The github rest api serves release info, but a release url must target
@@ -134,7 +150,14 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        match ReleaseAdders::new(&release_url, temp_dir.path().to_path_buf(), &mock_config).await {
+        match ReleaseAdders::new(
+            &release_url,
+            create_mocked_client_provided_data(),
+            temp_dir.path().to_path_buf(),
+            &mock_config,
+        )
+        .await
+        {
             Err(ReleaseError::ReleaseUrlError(ReleaseUrlError::UnsupportedPlatform(host))) => {
                 assert!(
                     host.contains("api.github.com"),
@@ -150,6 +173,7 @@ mod test_utils_tests {
     async fn test_release_adders_github_release() {
         use crate::file_auth::release_types::ReleaseAdder;
         use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
         use tempfile::TempDir;
         use tokio::fs;
 
@@ -195,9 +219,45 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let client_data = create_mocked_client_provided_data();
+        // Keep the index bytes the client sent, to compare after verification.
+        let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
+
+        let adder = ReleaseAdders::new(
+            &release_url,
+            client_data,
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
+
+        let ReleaseAdders::Github(github) = &adder;
+        // The data accepted by the adder must be kept unchanged, no re-serialization
+        // must happen by the verification process, as the registration process
+        // should only use verified client data.
+        let verified = &github.verified_client_data;
+        assert_eq!(
+            verified.github_release_url(),
+            release_url.to_string(),
+            "the verified data must keep the release url sent by the client"
+        );
+        assert_eq!(
+            verified.index_string(),
+            sent_index_bytes,
+            "the verified data must keep the bytes of the index sent by the client"
+        );
+        assert!(
+            !verified.signature().to_base64().is_empty(),
+            "the verified data must keep the signature sent by the client"
+        );
+        assert!(
+            verified
+                .pub_key()
+                .to_base64()
+                .starts_with(features_lib::ASFALOAD_PUB_PREFIX),
+            "the verified data must keep the public key sent by the client"
+        );
 
         let index_content = adder.index_content().await.unwrap();
         let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
@@ -252,14 +312,108 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let adder = ReleaseAdders::new(
+            &release_url,
+            create_mocked_client_provided_data(),
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
 
         let result = adder.create_index().await;
         assert!(
             result.is_ok(),
             "create_index should succeed when signers file exists at origin prefix path"
+        );
+    }
+
+    // The index file written on disk is what consumers read: registration
+    // persists the client-provided index unchanged, so the file must contain
+    // exactly the bytes the client sent, verified against the mock release.
+    // Expected values are pinned to the response returned by the test-utils
+    // mock fetcher.
+    #[tokio::test]
+    async fn test_create_index_writes_expected_index_content() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
+        use std::net::{IpAddr, Ipv4Addr};
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("https/github.com/443/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await.unwrap();
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), "{}")
+            .await
+            .unwrap();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let port = get_random_port().await.unwrap();
+        let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => crate::config::GitBackendConfig::Sha256,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND: {other}"),
+            Err(_e) => crate::config::GitBackendConfig::Sha256,
+        };
+        let mock_config = crate::config::AppConfig {
+            server_port: port,
+            server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            git_repo_path: git_repo_path.clone(),
+            log_level: "info".to_string(),
+            git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let client_data = create_mocked_client_provided_data();
+        // Keep the index bytes the client sent: the persisted file must be
+        // byte-identical, as the client signature covers those bytes only.
+        let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
+
+        let adder = ReleaseAdders::new(
+            &release_url,
+            client_data,
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
+
+        let index_path = adder.create_index().await.unwrap();
+        assert_eq!(
+            tokio::fs::read_to_string(&index_path.absolute_path())
+                .await
+                .unwrap(),
+            sent_index_bytes,
+            "the persisted index must be exactly the bytes the client signed"
+        );
+        let index = rest_api_test_helpers::read_on_disk_index(&index_path.absolute_path()).unwrap();
+
+        assert_eq!(index.version, 1);
+        assert_eq!(
+            index.published_on,
+            "2024-01-01T00:00:00Z"
+                .parse::<chrono::DateTime<chrono::Utc>>()
+                .unwrap(),
+            "published_on must come from the release's published_at timestamp"
+        );
+        assert_eq!(
+            index.published_files,
+            vec![FileChecksum {
+                file_name: "test.tar.gz".to_string(),
+                algo: HashAlgorithm::Sha256,
+                source: "https://api.github.com/repos/testowner/testrepo/releases/123".to_string(),
+                source_format: ChecksumSourceFormat::GithubRelease,
+                hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                    .to_string(),
+            }]
         );
     }
 
@@ -291,9 +445,14 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
-            .await
-            .unwrap();
+        let adder = ReleaseAdders::new(
+            &release_url,
+            create_mocked_client_provided_data(),
+            git_repo_path.clone(),
+            &mock_config,
+        )
+        .await
+        .unwrap();
 
         let result = adder.create_index().await;
         assert!(

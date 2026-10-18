@@ -1,14 +1,23 @@
-use std::fmt::{self};
+use std::{
+    collections::HashSet,
+    fmt::{self},
+};
 
 use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::{http::fetch_request_with_retry, into_url::IntoUrl};
+use common::{
+    http::fetch_request_with_retry, into_url::IntoUrl, sha512_for_content, string_from_base64,
+};
 use core::time::Duration;
 use features_lib::{
-    AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
+    AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait,
+    AsfaloadSignatures, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
     ParsedChecksum,
 };
 use forge_url::path_prefix_from_url;
 use url::Url;
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 const MAX_RETRIES: u32 = 3;
 const REQUEST_TIMEOUT_SEC: u64 = 10;
@@ -71,7 +80,7 @@ impl GithubReleaseResponse {
             })
             .collect()
     }
-    pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+    pub fn generate_index(&self) -> Result<AsfaloadIndex, ReleaseHandlingError> {
         let assets = self.extract_assets();
         if assets.is_empty() {
             return Err(ReleaseHandlingError::InvalidData(
@@ -91,13 +100,16 @@ impl GithubReleaseResponse {
         })?;
         let mirrored_on = chrono::Utc::now();
 
-        let index = AsfaloadIndex {
+        Ok(AsfaloadIndex {
             mirrored_on,
             published_on: published_on.to_utc(),
             version: 1,
             published_files,
-        };
+        })
+    }
 
+    pub fn generate_index_json(&self) -> Result<String, ReleaseHandlingError> {
+        let index = self.generate_index()?;
         common::to_posix_json(&index).map_err(|e| {
             ReleaseHandlingError::InvalidData(format!("Failed to serialize index: {}", e))
         })
@@ -144,6 +156,172 @@ pub struct GithubReleaseInfo {
     pub owner: String,
     pub repo: String,
     pub tag: String,
+}
+
+pub struct ClientProvidedData {
+    pub github_release_url: String,
+    pub client_pub_key: String,
+    pub client_sent_index: String,
+    pub client_sent_signature: String,
+}
+
+pub struct VerifiedClientData {
+    client_provided_data: ClientProvidedData,
+    pub_key: AsfaloadPublicKeys,
+    index_string: String,
+    signature: AsfaloadSignatures,
+}
+
+impl VerifiedClientData {
+    /// Helper to get explicit message about indexes differences. Returns None if no difference.
+    /// We keep it simple and don't try to report detailed differences in the published files found
+    /// in each index. Differences are expected to be very rare as client and servers build their
+    /// respective indexes from the same source and in a short timespan.
+    fn report_indexes_differences(
+        client_provided_index: &AsfaloadIndex,
+        server_built_index: &AsfaloadIndex,
+    ) -> Option<String> {
+        let mut lines = Vec::new();
+        if client_provided_index.published_files.len() != server_built_index.published_files.len() {
+            lines.push("Files published differ in number".to_string());
+        };
+
+        // To compare the lists of published files of both indexes, we build a HashSet for each,
+        // where the item in the set is the FileChecksum itself. This ensures all fields, and so
+        // incl. the filename and the digest algorithms are used in the comparison.
+        let expected: HashSet<&FileChecksum> = server_built_index.published_files.iter().collect();
+
+        let provided: HashSet<&FileChecksum> =
+            client_provided_index.published_files.iter().collect();
+        if expected != provided {
+            if expected.len() != provided.len() {
+                lines.push("Files published differ in number of distinct entries".to_string());
+            } else {
+                lines.push("Files published differ.".to_string());
+            }
+        }
+        if server_built_index.published_on != client_provided_index.published_on {
+            lines.push(format!(
+                "Provided published_on ({}) differs from the one retrieved ({})",
+                client_provided_index.published_on, server_built_index.published_on
+            ));
+        }
+        if server_built_index.version != client_provided_index.version {
+            lines.push(format!(
+                "Provided version ({}) differs from the one retrieved ({})",
+                client_provided_index.version, server_built_index.version
+            ));
+        }
+
+        if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
+    }
+
+    /// Verify the data provided by the client and return it wrapped in a
+    /// type guaranteeing the data has been checked.
+    ///
+    /// Two checks are done:
+    /// - the signature sent by the client verifies with the public key it
+    ///   declares, over the exact bytes of the index it sent, and
+    /// - the index it sent publishes exactly the files and hashes we find
+    ///   in the release we retrieve from github.
+    pub async fn new<F>(data: ClientProvidedData, fetcher: &F) -> Result<Self, ReleaseHandlingError>
+    where
+        F: ReleaseFetcher<GithubReleaseResponse>,
+    {
+        // Parse the signature sent
+        let signature =
+            AsfaloadSignatures::from_base64(&data.client_sent_signature).map_err(|e| {
+                ReleaseHandlingError::InvalidData(format!(
+                    "Could not parse signature sent by client for github release {}: {}",
+                    data.github_release_url, e
+                ))
+            })?;
+
+        // Parse the index sent
+        let index_string = string_from_base64(&data.client_sent_index).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Could not decode index sent by client: {}",
+                e
+            ))
+        })?;
+
+        // Compute digest of client sent index json, for signature validation
+        let index_sha512 = sha512_for_content(index_string.as_bytes()).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Could not compute sha512 of the index sent by client for github release {}: {}",
+                data.github_release_url, e
+            ))
+        })?;
+
+        let pub_key = AsfaloadPublicKeys::from_base64(&data.client_pub_key).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Could not parse public key sent by client for github release {}: {}",
+                data.github_release_url, e
+            ))
+        })?;
+
+        // Verify the signature sent by client
+        pub_key.verify(&signature, &index_sha512).map_err(|e| {
+            ReleaseHandlingError::InvalidData(format!(
+                "Signature sent by client for github release {} does not verify: {}",
+                data.github_release_url, e
+            ))
+        })?;
+
+        // Now we will check that the index we build ourself for the release is equivalent
+        let client_provided_index: AsfaloadIndex =
+            serde_json::from_str(&index_string).map_err(|e| {
+                ReleaseHandlingError::InvalidData(format!(
+                    "Could not parse index sent by client for github release {}: {}",
+                    data.github_release_url, e
+                ))
+            })?;
+
+        // Retrieve the release and build our own index: the client index
+        // must publish exactly the files we find there, with identical hashes.
+        let release: GithubReleaseResponse = fetcher
+            .fetch(data.github_release_url.clone())
+            .await
+            .map_err(|e| {
+            ReleaseHandlingError::Generic(format!("Could not retrieve github release: {}", e))
+        })?;
+
+        let index = release.generate_index()?;
+
+        if let Some(msg) = Self::report_indexes_differences(&client_provided_index, &index) {
+            return Err(ReleaseHandlingError::InvalidData(format!(
+                "Index provided by client is not identical to index generated server side for release at {}: {}",
+                data.github_release_url, msg
+            )));
+        }
+
+        Ok(VerifiedClientData {
+            client_provided_data: data,
+            pub_key,
+            index_string,
+            signature,
+        })
+    }
+
+    pub fn github_release_url(&self) -> &str {
+        &self.client_provided_data.github_release_url
+    }
+
+    pub fn pub_key(&self) -> &AsfaloadPublicKeys {
+        &self.pub_key
+    }
+
+    pub fn index_string(&self) -> &str {
+        &self.index_string
+    }
+
+    pub fn signature(&self) -> &AsfaloadSignatures {
+        &self.signature
+    }
 }
 
 impl ReleaseInfo for GithubReleaseInfo {
@@ -323,5 +501,445 @@ mod tests {
 
         assert_eq!(response.published_at, None);
         assert!(response.created_at.is_some());
+    }
+}
+
+// Verification needs the mock fetcher, so tests run with the test-utils
+// feature enabled.
+#[cfg(all(test, feature = "test-utils"))]
+mod verified_client_data_tests {
+    use super::*;
+    use crate::github::test_utils::{
+        MockGithubReleaseFetcher, client_provided_data_for_index,
+        create_mocked_client_provided_data, mocked_client_provided_data_with_keys,
+        mocked_release_index,
+    };
+    use common::{base64_for_string, string_from_base64};
+    use features_lib::{
+        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
+        AsfaloadSecretKeys, AsfaloadSignatureTrait, sha512_for_content,
+    };
+    use std::sync::OnceLock;
+
+    const TEST_KEY_PASSWORD: &str = "test_password";
+
+    fn keys_with_password() -> (&'static AsfaloadPublicKeys, &'static AsfaloadSecretKeys) {
+        static KEYS: OnceLock<(AsfaloadPublicKeys, AsfaloadSecretKeys)> = OnceLock::new();
+        let keys = KEYS.get_or_init(|| {
+            let key_pair = AsfaloadKeyPairs::new(TEST_KEY_PASSWORD).unwrap();
+            (
+                key_pair.public_key(),
+                key_pair.secret_key(TEST_KEY_PASSWORD).unwrap(),
+            )
+        });
+        (&keys.0, &keys.1)
+    }
+
+    /// Unrelated key pair: its signature must be rejected when the client
+    /// declares the first pair's public key.
+    fn other_keys_with_password() -> (&'static AsfaloadPublicKeys, &'static AsfaloadSecretKeys) {
+        static KEYS: OnceLock<(AsfaloadPublicKeys, AsfaloadSecretKeys)> = OnceLock::new();
+        let keys = KEYS.get_or_init(|| {
+            let key_pair = AsfaloadKeyPairs::new("other_test_password").unwrap();
+            (
+                key_pair.public_key(),
+                key_pair.secret_key("other_test_password").unwrap(),
+            )
+        });
+        (&keys.0, &keys.1)
+    }
+
+    async fn verify_rejects_with(data: ClientProvidedData, expected_message: &str) {
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Err(ReleaseHandlingError::InvalidData(msg)) => assert!(
+                msg.contains(expected_message),
+                "Expected message containing '{expected_message}', got: {msg}"
+            ),
+            Err(e) => panic!("Expected InvalidData but got: {e}"),
+            Ok(_) => panic!("Expected client data verification to fail, but it succeeded"),
+        }
+    }
+
+    // Verifies the client index is rejected as not identical to the server
+    // generated index, and that the error reports every expected difference.
+    // This keeps the differences reporting under test. Asserting that a line
+    // ends with the expected detail matters because one reported detail is a
+    // prefix of another ("Files published differ in number" and "... in
+    // number of distinct entries"), and because the first detail shares its
+    // line with the error prefix.
+    async fn verify_rejects_index_with(data: ClientProvidedData, expected_details: &[&str]) {
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Err(ReleaseHandlingError::InvalidData(msg)) => {
+                assert!(
+                    msg.contains("not identical to index generated server side"),
+                    "Expected index mismatch rejection, got: {msg}"
+                );
+                for expected_detail in expected_details {
+                    assert!(
+                        msg.lines().any(|line| line.ends_with(*expected_detail)),
+                        "Expected a line ending with '{expected_detail}', got: {msg}"
+                    );
+                }
+            }
+            Err(e) => panic!("Expected InvalidData but got: {e}"),
+            Ok(_) => panic!("Expected client data verification to fail, but it succeeded"),
+        }
+    }
+
+    // The verified data must be exactly what the client sent: the server
+    // keeps using it to register the release.
+    #[tokio::test]
+    async fn accepts_client_index_and_signature_matching_server_index() {
+        let data = create_mocked_client_provided_data();
+        let expected_url = data.github_release_url.clone();
+        let expected_pub_key = data.client_pub_key.clone();
+        let expected_index = data.client_sent_index.clone();
+        let expected_signature = data.client_sent_signature.clone();
+
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+
+        match outcome {
+            Ok(verified) => {
+                // The accessors must expose exactly the data sent by the
+                // client, in their parsed form as the server will use it.
+                assert_eq!(verified.github_release_url(), expected_url);
+                assert_eq!(verified.pub_key().to_base64(), expected_pub_key);
+                let expected_index_bytes = string_from_base64(&expected_index).unwrap();
+                assert_eq!(verified.index_string(), expected_index_bytes);
+                assert_eq!(verified.signature().to_base64(), expected_signature);
+            }
+            Err(e) => panic!("Expected client data to be verified, but got: {e}"),
+        }
+    }
+
+    // The client index and the signature must attest the same content: a
+    // signature computed over other content must be rejected even if the
+    // sent index is exactly the one the server builds itself.
+    #[tokio::test]
+    async fn rejects_signature_computed_over_other_content() {
+        let (pub_key, secret_key) = keys_with_password();
+        let tampered_index = format!("{}\ntampered content\n", mocked_release_index());
+        let mut data = client_provided_data_for_index(pub_key, secret_key, &tampered_index);
+        // Send the genuine index with the signature over the tampered one.
+        data.client_sent_index = base64_for_string(mocked_release_index());
+
+        verify_rejects_with(data, "Signature sent by client").await;
+    }
+
+    // The signature must be made with the key corresponding to the public
+    // key sent by the client.
+    #[tokio::test]
+    async fn rejects_signature_of_other_key_than_declared_public_key() {
+        let (pub_key, _secret_key) = keys_with_password();
+        let (_other_pub_key, other_secret_key) = other_keys_with_password();
+        // Index over the mocked release, but signed with the unrelated key.
+        let data = mocked_client_provided_data_with_keys(pub_key, other_secret_key);
+
+        verify_rejects_with(data, "Signature sent by client").await;
+    }
+
+    // Even with a valid signature, the client index must publish exactly the
+    // files and hashes found in the release for which it is registered.
+    #[tokio::test]
+    async fn rejects_index_not_identical_to_server_generated_index() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
+        value["publishedFiles"][0]["hash"] = serde_json::Value::String("f".repeat(64));
+        let index_string = serde_json::to_string(&value).unwrap();
+        let data = client_provided_data_for_index(pub_key, secret_key, &index_string);
+
+        // The file count is unchanged, so only the content difference is
+        // reported.
+        verify_rejects_index_with(data, &["Files published differ."]).await;
+    }
+
+    // The number of entries in `publishedFiles` and the number of distinct
+    // entries can differ when the client sends duplicates. A client index with
+    // the same total number of files as the server index, but with a duplicate
+    // in place of a distinct file, must report the distinct-entries difference
+    // and not the plain number difference.
+    #[test]
+    fn reports_distinct_published_files_difference() {
+        let file_a = file_checksum("a.tar.gz", "a");
+        let file_b = file_checksum("b.tar.gz", "b");
+        let server_built_index = index_with_files(vec![file_a.clone(), file_b]);
+        // Same total number of entries as the server index, but `file_a` is
+        // duplicated, so only one distinct file is published.
+        let client_provided_index = index_with_files(vec![file_a.clone(), file_a]);
+
+        let message = VerifiedClientData::report_indexes_differences(
+            &client_provided_index,
+            &server_built_index,
+        )
+        .expect("the indexes differ");
+
+        assert!(
+            message.contains("Files published differ in number of distinct entries"),
+            "Expected a distinct-entries difference, got: {message}"
+        );
+        // The total number of entries is equal, so the plain number
+        // difference must not be reported.
+        assert!(
+            !message
+                .lines()
+                .any(|line| line == "Files published differ in number"),
+            "The total number of published files is equal, got: {message}"
+        );
+    }
+
+    // A duplicate that keeps the set of distinct files identical to the server
+    // index changes only the total number of entries. In that case the plain
+    // number difference is the only difference reported.
+    #[test]
+    fn reports_published_files_number_difference_for_duplicates() {
+        let file_a = file_checksum("a.tar.gz", "a");
+        let file_b = file_checksum("b.tar.gz", "b");
+        let server_built_index = index_with_files(vec![file_a.clone(), file_b.clone()]);
+        // The client repeats `file_a`: the total number of entries differs,
+        // but the set of distinct files is the same as the server's.
+        let client_provided_index = index_with_files(vec![file_a.clone(), file_b.clone(), file_a]);
+
+        let message = VerifiedClientData::report_indexes_differences(
+            &client_provided_index,
+            &server_built_index,
+        )
+        .expect("the indexes differ");
+
+        assert_eq!(message, "Files published differ in number");
+    }
+
+    fn file_checksum(file_name: &str, hash_char: &str) -> FileChecksum {
+        FileChecksum {
+            file_name: file_name.to_string(),
+            algo: HashAlgorithm::Sha256,
+            source: "https://api.github.com/repos/testowner/testrepo/releases/123".to_string(),
+            source_format: ChecksumSourceFormat::GithubRelease,
+            hash: hash_char.repeat(64),
+        }
+    }
+
+    fn index_with_files(published_files: Vec<FileChecksum>) -> AsfaloadIndex {
+        let timestamp = "2024-01-01T00:00:00Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .unwrap();
+        AsfaloadIndex {
+            mirrored_on: timestamp,
+            published_on: timestamp,
+            version: 1,
+            published_files,
+        }
+    }
+
+    // The publication date is part of the index identity: an index published
+    // on another date must not pass as the release's own index.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_published_on() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedOn"] = serde_json::json!("2000-01-01T00:00:00Z");
+        });
+
+        // The provided and the retrieved dates must both be reported.
+        verify_rejects_index_with(
+            data,
+            &["Provided published_on (2000-01-01 00:00:00 UTC) differs from the one retrieved (2024-01-01 00:00:00 UTC)"],
+        )
+        .await;
+    }
+
+    // The index version is part of the index identity: an index with another
+    // version must not pass as the release's own index.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_version() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["version"] = serde_json::json!(2);
+        });
+
+        verify_rejects_index_with(
+            data,
+            &["Provided version (2) differs from the one retrieved (1)"],
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn rejects_unparsable_public_key() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut data = mocked_client_provided_data_with_keys(pub_key, secret_key);
+        data.client_pub_key = "not-a-key".to_string();
+
+        verify_rejects_with(data, "Could not parse public key sent by client").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_index_encoded_with_invalid_base64() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut data = mocked_client_provided_data_with_keys(pub_key, secret_key);
+        data.client_sent_index = "!!! not base64 !!!".to_string();
+
+        verify_rejects_with(data, "Could not decode index sent by client").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_signature_encoded_with_invalid_base64() {
+        let (pub_key, secret_key) = keys_with_password();
+        let mut data = mocked_client_provided_data_with_keys(pub_key, secret_key);
+        data.client_sent_signature = "!!! not base64 !!!".to_string();
+
+        verify_rejects_with(data, "Could not parse signature sent by client").await;
+    }
+
+    // The sent index must parse as an index: valid base64 with a signature
+    // over it, but content that is not index json, is invalid client data.
+    #[tokio::test]
+    async fn rejects_index_that_does_not_parse_as_index() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_provided_data_for_index(pub_key, secret_key, "not index json at all");
+
+        verify_rejects_with(data, "Could not parse index sent by client").await;
+    }
+
+    // Signs the json of the mocked release index after applying the given
+    // change, so only the comparison against the server-generated index can
+    // reject the data: the signature is valid over the sent content.
+    fn client_data_with_index(
+        pub_key: &AsfaloadPublicKeys,
+        secret_key: &AsfaloadSecretKeys,
+        change: impl FnOnce(&mut serde_json::Value),
+    ) -> ClientProvidedData {
+        let mut value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
+        change(&mut value);
+        let index_string = serde_json::to_string(&value).unwrap();
+        client_provided_data_for_index(pub_key, secret_key, &index_string)
+    }
+
+    // A file missing from the client index means a plausible checksum may
+    // be replaced by an unchecked download, so it must be rejected.
+    #[tokio::test]
+    async fn rejects_client_index_omitting_a_published_file() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"].as_array_mut().unwrap().clear();
+        });
+
+        verify_rejects_index_with(data, &["Files published differ in number"]).await;
+    }
+
+    // A file added to the client index is an injection attempt: it would
+    // validate a download the release never published.
+    #[tokio::test]
+    async fn rejects_client_index_with_extra_published_file() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            let extra = serde_json::json!({
+                "fileName": "extra.tar.gz",
+                "algo": "Sha256",
+                "source": "https://api.github.com/repos/testowner/testrepo/releases/123",
+                "sourceFormat": "GithubRelease",
+                "hash": "a".repeat(64),
+            });
+            value["publishedFiles"]
+                .as_array_mut()
+                .unwrap()
+                .insert(0, extra);
+        });
+
+        verify_rejects_index_with(data, &["Files published differ in number"]).await;
+    }
+
+    // A well-formed but empty index would validate downloads of nothing:
+    // it must not be accepted as "equal to" the server index.
+    #[tokio::test]
+    async fn rejects_client_index_with_empty_published_files() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"] = serde_json::json!([]);
+        });
+
+        verify_rejects_index_with(data, &["Files published differ in number"]).await;
+    }
+
+    // The digest algorithm is a trust decision: a hash checked as sha256
+    // cannot be published as sha512.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_digest_algorithm() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"][0]["algo"] = serde_json::Value::String("Sha512".to_string());
+        });
+
+        verify_rejects_index_with(data, &["Files published differ."]).await;
+    }
+
+    // The source tells where the digest comes from; the client index and
+    // the server index must publish the same one.
+    #[tokio::test]
+    async fn rejects_client_index_with_other_source() {
+        let (pub_key, secret_key) = keys_with_password();
+        let data = client_data_with_index(pub_key, secret_key, |value| {
+            value["publishedFiles"][0]["source"] =
+                serde_json::Value::String("https://downloads.example.com".to_string());
+        });
+
+        verify_rejects_index_with(data, &["Files published differ."]).await;
+    }
+
+    // The comparison is on the parsed content, not on the exact bytes: an
+    // index equal to the server one but serialized differently (key order,
+    // whitespace) validated with the matching signature must be accepted.
+    #[tokio::test]
+    async fn accepts_semantically_identical_index_with_other_serialization() {
+        let (pub_key, secret_key) = keys_with_password();
+        let value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
+        let pretty_index = serde_json::to_string_pretty(&value).unwrap();
+        // Serializing differently changes the bytes, so the signature must
+        // cover the sent (pretty) content.
+        let data = client_provided_data_for_index(pub_key, secret_key, &pretty_index);
+
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Ok(verified) => {
+                // The kept data is the exact bytes the client sent, not a
+                // re-serialization: the signature must cover the
+                // persisted data.
+                assert_eq!(verified.index_string(), pretty_index);
+            }
+            Err(e) => panic!("Expected semantically identical index to be verified, got: {e}"),
+        }
+    }
+
+    // The accessors must expose consistent parsed data: the signature the
+    // client sent verifies over the digest of the index bytes it sent,
+    // with the public key it declared.
+    #[tokio::test]
+    async fn exposes_parsed_client_data() {
+        let (pub_key, secret_key) = keys_with_password();
+        let index = mocked_release_index();
+        let data = client_provided_data_for_index(pub_key, secret_key, &index);
+
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Ok(verified) => {
+                assert_eq!(verified.index_string(), index);
+                assert_eq!(verified.pub_key().to_base64(), pub_key.to_base64());
+                let index_sha512 = sha512_for_content(verified.index_string().as_bytes()).unwrap();
+                assert!(
+                    verified
+                        .pub_key()
+                        .verify(verified.signature(), &index_sha512)
+                        .is_ok(),
+                    "the exposed signature must verify over the exposed index with the exposed key"
+                );
+            }
+            Err(e) => panic!("Expected client data to be verified, but got: {e}"),
+        }
     }
 }

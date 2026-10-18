@@ -44,6 +44,9 @@ fn test_register_assets_requires_secret_key_for_csum_file() {
         .stderr(predicate::str::contains("required"));
 }
 
+// Without the test-utils mock fetcher the CLI would query the real github
+// rest-api: this test runs only when the test-utils feature is enabled.
+#[cfg(feature = "test-utils")]
 #[test]
 fn test_register_assets_github_release_network_error_without_server() {
     let temp_dir = tempfile::TempDir::new().unwrap();

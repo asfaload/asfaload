@@ -6,6 +6,7 @@ pub mod index_types;
 pub mod index_validation;
 pub mod into_url;
 
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use constants::{
     METADATA_SUFFIX, PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
     REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
@@ -162,6 +163,28 @@ pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io:
     }
 
     Ok(AsfaloadHashes::Sha512(hasher.finalize()))
+}
+
+pub fn base64_for_string<S: AsRef<str>>(s: S) -> String {
+    let input_string = s.as_ref();
+    STANDARD_NO_PAD.encode(input_string)
+}
+
+pub fn string_from_base64<S: AsRef<str>>(s: S) -> Result<String, String> {
+    // The client encodes the index bytes with the standard base64
+    // alphabet without padding, but accept padded input too: the
+    // signature covers the decoded bytes either way.
+    let index_engine = base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::GeneralPurposeConfig::new()
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+    );
+    let decoded_bytes = index_engine
+        .decode(s.as_ref())
+        .map_err(|e| format!("Could not decode base64 string: {}", e))?;
+    let decoded_string = String::from_utf8(decoded_bytes)
+        .map_err(|e| format!("Could not handle base64 decoded bytes as a string: {}", e,))?;
+    Ok(decoded_string)
 }
 
 // We distincuish 3 types of signed files, which have different criteria
@@ -1018,6 +1041,58 @@ mod asfaload_common_tests {
         assert!(!s.ends_with("\n\n"));
         // pretty format preserved (multi-line, indented)
         assert!(s.contains("\n  \"a\": 1"));
+    }
+
+    // --- base64_for_string tests ---
+
+    #[test]
+    fn base64_for_string_known_value() {
+        assert_eq!(base64_for_string("hello world"), "aGVsbG8gd29ybGQ");
+    }
+
+    #[test]
+    fn base64_for_string_empty_is_empty() {
+        assert_eq!(base64_for_string(""), "");
+    }
+
+    #[test]
+    fn base64_for_string_is_unpadded() {
+        // "a" needs two padding chars under standard base64 ("YQ==").
+        // With STANDARD_NO_PAD the padding must be dropped.
+        let encoded = base64_for_string("a");
+        assert_eq!(encoded, "YQ");
+        assert!(
+            !encoded.contains('='),
+            "output must not contain base64 padding"
+        );
+    }
+
+    #[test]
+    fn base64_for_string_encodes_utf8_bytes() {
+        // "é" is U+00E9, encoded as the UTF-8 bytes C3 A9 -> "w6k".
+        assert_eq!(base64_for_string("é"), "w6k");
+    }
+
+    #[test]
+    fn base64_for_string_round_trips() {
+        for input in ["", "a", "ab", "abc", "hello world", "with/slash+plus"] {
+            let encoded = base64_for_string(input);
+            let decoded = STANDARD_NO_PAD
+                .decode(&encoded)
+                .expect("output must be valid unpadded base64");
+            assert_eq!(String::from_utf8(decoded).unwrap(), input);
+        }
+    }
+
+    #[test]
+    fn base64_for_string_accepts_str_and_string() {
+        let owned = String::from("hello world");
+        // Both &str and &String must be accepted.
+        assert_eq!(
+            base64_for_string("hello world"),
+            base64_for_string(owned.as_str())
+        );
+        assert_eq!(base64_for_string("hello world"), base64_for_string(owned));
     }
 }
 

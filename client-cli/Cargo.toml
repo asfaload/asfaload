@@ -7,6 +7,9 @@ edition = "2024"
 name = "asfaload-cli"
 path = "src/main.rs"
 
+[features]
+test-utils = ["admin-lib/test-utils"]
+
 [dependencies]
 anstream = "0.6"
 anstyle = "1"

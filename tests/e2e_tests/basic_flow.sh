@@ -184,7 +184,18 @@ expect_fail "Sign signers file with key0 (already completed)" \
 section "Release Registration and Signing"
 ################################################################################
 
-run_step_json "Register release with key3 (does not sign it)" \
+# A release may only be registered by one of the project's authorised
+# artifact signers. Key3 is not in the active signers file (keys 0, 1 and 2
+# are), so its registration request must be rejected before any file is
+# written for the release.
+expect_fail_json "Register release with key3 (not an authorised signer)" \
+    '.error | contains("Not authorized")' \
+    cargo run --quiet -- register-assets --secret-key "$KEY_3" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
+
+assert_file_not_exists "release v0.1 index after rejected registration" \
+    "$(_release_dir "0.1")/$INDEX_FILE"
+
+run_step_json "Register release with key2 (which signs it)" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 
@@ -197,11 +208,25 @@ run_step_json "Check index digests against digest sources" \
     '.files_checked > 0' \
     cargo run --quiet -- check-index -u "$backend" $(release_index 0.1)
 
-# Validate that the source of the digest is the github rest api url to retrieve release info.
-# This is a one-time test, not warranting a helper. We also hard-code the expected url as it is
-# set by GH. Should not be a problem as we don't expect to replace this v0.1 release.
-published_files_digest_source="$(jq -r '.publishedFiles[0].source' < "$(_release_dir "0.1")/$INDEX_FILE")"
-[[ "$published_files_digest_source" == "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244" ]] || { echo "Unexpected published file's digest source"; exit 1; }
+# Pin the on-disk index content to the release data served by github, so a
+# change in index generation (fields, casing, digest source, published date
+# handling) fails the flow instead of silently changing what gets signed.
+# Values are hard-coded to the v0.1 release assets: the release is immutable,
+# so the expectation cannot drift. Digests and dates fetched from the GH api
+# on 2026-10-14. mirroredOn is the registration time (non-deterministic), so
+# it is only checked to be later than the release publication date.
+V0_1_INDEX_CONTENT_FILTER='.version == 1 and .publishedOn == "2026-02-14T11:01:47Z" and .mirroredOn > .publishedOn and .publishedFiles == [
+    {fileName: "artifact.bin",  algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244", sourceFormat: "GithubRelease", hash: "e88bf264f6b3f8364154083af4e3d8e9dfea20902ed737170056effc944d7a3e"},
+    {fileName: "artifact1.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244", sourceFormat: "GithubRelease", hash: "ec6dcee07ba8df5bbd129a0db6c2c7d30fcb48f586883759910ce7f755ff399f"},
+    {fileName: "artifact2.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244", sourceFormat: "GithubRelease", hash: "59bbfc692ecd7e93fbc7d6fa8839e574f10ab83917a8512e25b7db9bf8647d60"},
+    {fileName: "artifact3.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244", sourceFormat: "GithubRelease", hash: "31e16442f3bdeda534e9c73122959b2caf03a3faaf8d047993282c0ab9dd50dc"},
+    {fileName: "artifact4.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244", sourceFormat: "GithubRelease", hash: "62b01279a210dd74324e5cef7cb1980d189ed33501c2011c01afc46ad443810d"},
+    {fileName: "artifact5.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244", sourceFormat: "GithubRelease", hash: "152ddb72d4e846266b830b2bc06b8c4021a121e6a2be26944617c2de81d7eeea"}
+]'
+assert_index_posix_json_contract "0.1"
+assert_json_field "$(_release_dir "0.1")/$INDEX_FILE" \
+    "$V0_1_INDEX_CONTENT_FILTER" \
+    "Release v0.1 index content matches github release assets"
 
 # Tamper the index held by the backend: one recorded digest no longer matches
 # the digest computed from its source, and check-index must detect it. The
@@ -226,39 +251,40 @@ tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download never-registered artifact (v9.9)" \
     cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 9.9)
 
-# v0.1 is registered but has zero signatures yet (still pending).
+# v0.1 is registered but has one of two required signatures (the submitter's,
+# recorded at registration): still below threshold, not active.
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download unsigned artifact (v0.1, 0 signatures)" \
+expect_fail "Download unsigned artifact (v0.1, 1 of 2 signatures)" \
     cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.1)
 
-run_step_json "List pending for key3" \
-    '.pending_files | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
-
-RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
-run_step_json "Sign release index with key1" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
-
-assert_release_index_signature_count "0.1" 1
-
-# v0.1 now has 1 of 2 required signatures: still below threshold, not active.
-tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download partially-signed artifact (v0.1, 1 of 2 signatures)" \
-    cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.1)
-
+# The index is not complete yet: its status must still be pending.
 run_step_json "Check signature status for v0.1 index (pending)" \
     '.is_complete == false' \
     cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
+
+# Registration records the submitter's signature, so the registrant (key2)
+# has already signed the index: only keys that still have to sign see it as
+# pending.
+run_step_json "List pending for key0 (should show pending release index)" \
+    '.pending_files | length > 0' \
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
+
+RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
+run_step_json "Sign release index with key0 (completes, threshold=2)" \
+    '.is_complete == true' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
+
+assert_release_index_signature_count "0.1" 2
 
 expect_fail "Register release with key3 (fails as already registered)" \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 
 # Ensure a second release registration does not override the signatures already collected
-assert_release_index_signature_count "0.1" 1
+assert_release_index_signature_count "0.1" 2
 
-run_step_json "Sign release index with key2 (completes, threshold=2)" \
-    '.is_complete == true' \
+# The index was completed by key0's signature (key2 signed at registration):
+# further signatures must be rejected.
+expect_fail "Sign release index with key1 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 # --- Backend: verify release index activated ---
@@ -369,25 +395,41 @@ run_step_json "Register second release with key3" \
 assert_release_index_exists "0.2"
 assert_release_index_pending "0.2"
 
-run_step_json "List pending for key3" \
+# Same content pinning as v0.1, with the v0.2 release assets (fetched from
+# the GH api on 2026-10-14).
+V0_2_INDEX_CONTENT_FILTER='.version == 1 and .publishedOn == "2026-02-14T11:07:06Z" and .mirroredOn > .publishedOn and .publishedFiles == [
+    {fileName: "artifact.bin",  algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893", sourceFormat: "GithubRelease", hash: "e88bf264f6b3f8364154083af4e3d8e9dfea20902ed737170056effc944d7a3e"},
+    {fileName: "artifact1.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893", sourceFormat: "GithubRelease", hash: "4b6c7044ba94a0e181f9af0c32700f1e8148f0eecc271b7641fa65dfeaad9d9c"},
+    {fileName: "artifact2.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893", sourceFormat: "GithubRelease", hash: "ccc33ee7566da198aa81772d0c9819487b28e8a9aabe7297000ad6d0c2504823"},
+    {fileName: "artifact3.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893", sourceFormat: "GithubRelease", hash: "0d152981fc9b4b8de5828064211b3e23d943a68c83b2ea2cbb3d861bb8d27f87"},
+    {fileName: "artifact4.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893", sourceFormat: "GithubRelease", hash: "19ca33cd92fa00ccf7550315577051757837d33a084ecc8b871afba135c944f0"},
+    {fileName: "artifact5.bin", algo: "Sha256", source: "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360893", sourceFormat: "GithubRelease", hash: "ed69fc21157da16e2504650eb75c9a41f51a769a33c3fcff0a5b02517491e44f"}
+]'
+assert_index_posix_json_contract "0.2"
+assert_json_field "$(_release_dir "0.2")/$INDEX_FILE" \
+    "$V0_2_INDEX_CONTENT_FILTER" \
+    "Release v0.2 index content matches github release assets"
+
+# As for v0.1: key2 signed the index at registration time, so it no longer
+# sees it as pending.
+run_step_json "List pending for key0 (should show pending release index)" \
     '.pending_files | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
 RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
-run_step_json "Sign release index with key1" \
+run_step_json "Sign release index with key0 (2 of 3 signatures)" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
-assert_release_index_signature_count "0.2" 1
-
-run_step_json "Sign release index with key2" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
-
 assert_release_index_signature_count "0.2" 2
 
-run_step_json "Sign release index with key4 (key3 does not sign)" \
+run_step_json "Sign release index with key1 (completes, threshold=3)" \
     '.is_complete == true' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
+
+assert_release_index_signature_count "0.2" 3
+
+expect_fail "Sign release index with key3 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 # --- Backend: verify v0.2 release index activated ---

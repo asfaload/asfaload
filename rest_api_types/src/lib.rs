@@ -493,16 +493,25 @@ pub mod models {
         pub message: String,
     }
 
-    /// Request to register assets — either a GitHub release URL or checksums file URLs.
-    /// Exactly one of `github_release_url` or `csum_files` must be provided.
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RegisterAssetsRequest {
-        /// GitHub release URL (mutually exclusive with csum_files)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub github_release_url: Option<String>,
-        /// Checksums file URLs (mutually exclusive with github_release_url)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub csum_files: Option<Vec<String>>,
+    pub struct GithubReleasePayload {
+        pub github_release_url: String,
+        /// Index JSON computed by the client, base64-encoded
+        pub index: String,
+        /// Base64-encoded signature of the sha512 of the decoded index content
+        pub signature: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ChecksumFilesPayload {
+        pub csum_files: Vec<String>,
+    }
+
+    /// Typed payload for register-assets requests.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum RegisterAssetsPayload {
+        GithubRelease(GithubReleasePayload),
+        ChecksumFiles(ChecksumFilesPayload),
     }
 
     /// Response to an assets registration request.
@@ -595,7 +604,7 @@ pub mod rustls {
 // Re-export commonly used types at the module level
 pub use models::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
-    PingAuthStatus, PingResponse, RegisterAssetsRequest, RegisterAssetsResponse,
+    PingAuthStatus, PingResponse, RegisterAssetsPayload, RegisterAssetsResponse,
     RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
 };

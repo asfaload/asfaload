@@ -7,6 +7,14 @@ Register assets for signing. Accepts either a GitHub release URL or a list of ch
 
 In GitHub mode, the server fetches the release metadata, downloads all assets, builds an index file, and commits everything to the repository. In checksums mode, it downloads the referenced checksums files, builds the index, and commits.
 
+## Authorization
+
+All requests must be authenticated (see [Request headers](#request-headers)).
+
+In GitHub release mode, the caller's public key (`X-asfld-pk`) must also be an authorized artifact signer for the release path. The server reads the `artifact_signers` group of the project's active signers config and refuses a key that is not a member with `403 Forbidden`.
+
+In checksums mode, the server currently requires only that a signers config exists for the target directory; it does not check the caller's key against it.
+
 ## Request headers
 
 Standard Asfaload authentication headers, signed by the caller's secret key:
@@ -18,27 +26,37 @@ Standard Asfaload authentication headers, signed by the caller's secret key:
 
 ## Request body
 
-JSON object with exactly one of the two fields set:
+JSON object carrying the payload under one variant tag. The tag selects the
+registration mode. An unknown tag, both tags at once, or a payload with
+missing fields is refused.
 
 ### GitHub release mode
 
     {
-      "github_release_url": "https://github.com/acme/repo/releases/tag/v1.0"
+      "GithubRelease": {
+        "github_release_url": "https://github.com/acme/repo/releases/tag/v1.0",
+        "index": "<base64 index json>",
+        "signature": "<base64 index signature>"
+      }
     }
 
 ### Checksums mode
 
     {
-      "csum_files": [
-        "https://example.com/releases/v1.0/SHA256SUMS",
-        "https://example.com/releases/v1.0/SHA512SUMS"
-      ]
+      "ChecksumFiles": {
+        "csum_files": [
+          "https://example.com/releases/v1.0/SHA256SUMS",
+          "https://example.com/releases/v1.0/SHA512SUMS"
+        ]
+      }
     }
 
 Fields:
 
-- `github_release_url` — full URL to a GitHub release page. Must point to a known GitHub host. Mutually exclusive with `csum_files`.
-- `csum_files` — list of URLs to checksums files. All URLs must share the same origin and parent directory. Mutually exclusive with `github_release_url`.
+- `github_release_url` — full URL to a GitHub release page. Must point to a known GitHub host.
+- `index` — the release index JSON, base64 encoded.
+- `signature` — signature over the index JSON, base64 encoded.
+- `csum_files` — list of URLs to checksums files. All URLs must share the same origin and parent directory.
 
 ## Response
 
@@ -58,8 +76,10 @@ Fields:
 
 ## Errors
 
-- `400 Bad Request` — both or neither fields provided, invalid URL format, non-GitHub host for `github_release_url`, or invalid checksums URLs.
+- `400 Bad Request` — invalid URL format, non-GitHub host for `github_release_url`, invalid checksums URLs, or no active signers file for the target directory.
+- `422 Unprocessable Entity` — the body does not carry a valid payload: unknown tag, both tags at once, or missing fields in a payload.
 - `401 Unauthorized` — missing or invalid authentication headers.
+- `403 Forbidden` — in GitHub release mode, the caller's public key is not an authorized artifact signer for the release path.
 - `409 Conflict` — release already registered.
 - `500 Internal Server Error` — release processing, checksums download, or Git commit failed.
 
@@ -74,7 +94,11 @@ Fields:
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \
       -d '{
-        "github_release_url": "https://github.com/acme/repo/releases/tag/v1.0"
+        "GithubRelease": {
+          "github_release_url": "https://github.com/acme/repo/releases/tag/v1.0",
+          "index": "<base64 index json>",
+          "signature": "<base64 index signature>"
+        }
       }'
 
     {"success":true,"message":"Release registered successfully","index_file_path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json"}
@@ -87,14 +111,14 @@ Fields:
       -H 'X-asfld-nonce: <random-uuid-v4>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \
-      -d '{
-        "csum_files": ["https://example.com/releases/v1.0/SHA256SUMS"]
-      }'
+      -d '{"ChecksumFiles":{"csum_files":["https://example.com/releases/v1.0/SHA256SUMS"]}}'
 
     {"success":true,"message":"Assets registered successfully","index_file_path":"https/example.com/443/releases/v1.0/asfaload.index.json"}
 
-### Mutually exclusive fields
+### Unknown payload type
 
-    HTTP/1.1 400 Bad Request
+A body tagged with a name that is not `GithubRelease` or `ChecksumFiles` is
+refused by the payload type before the endpoint runs. The answer body is a
+plain text message from the JSON layer.
 
-    {"error":"github_release_url and csum_files are mutually exclusive"}
+    HTTP/1.1 422 Unprocessable Entity

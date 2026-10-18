@@ -2,22 +2,26 @@ use std::collections::HashMap;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
-//use common::sha512_for_content;
+use common::{base64_for_string, sha512_for_content};
+use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures,
 };
-//use forge_release::common::ReleaseFetcher;
-//use forge_release::github::GithubReleaseFetcher;
-// use features_lib::AsfaloadSecretKeyTrait;
+use forge_release::common::ReleaseFetcher;
+#[cfg(not(feature = "test-utils"))]
+use forge_release::github::GithubReleaseFetcher;
+#[cfg(feature = "test-utils")]
+use forge_release::github::test_utils::MockGithubReleaseFetcher;
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{
-    ClientPendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
+    ChecksumFilesPayload, ClientPendingFile, GithubReleasePayload, UpdateRepoSignersRequest,
+    UpdateRepoSignersResponse,
 };
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, ListPendingResponse, PingResponse,
-    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
-    SubmitSignatureRequest, SubmitSignatureResponse,
+    RegisterAssetsPayload, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
+    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -30,20 +34,22 @@ pub struct Client {
     base_url: String,
 }
 
-/// Typed payload for register-assets requests.
-/// Uses untagged serialization so each variant produces a flat JSON object
-/// with only the relevant field.
-#[derive(serde::Serialize)]
-#[serde(untagged)]
-enum RegisterAssetsPayload {
-    GithubRelease { github_release_url: String },
-    ChecksumFiles { csum_files: Vec<String> },
-}
-
 /// Registration mode for the register-assets command.
 pub enum RegistrationMode {
     GithubRelease { url: String },
     ChecksumFiles { urls: Vec<String> },
+}
+
+// The fetcher type depends on the build mode: the real fetcher in
+// production, one returning a fixed response when building tests.
+#[cfg(not(feature = "test-utils"))]
+fn create_github_fetcher() -> GithubReleaseFetcher {
+    GithubReleaseFetcher::new(None)
+}
+
+#[cfg(feature = "test-utils")]
+fn create_github_fetcher() -> MockGithubReleaseFetcher {
+    MockGithubReleaseFetcher::new()
 }
 
 impl Client {
@@ -245,18 +251,22 @@ impl Client {
 
         let payload = match mode {
             RegistrationMode::GithubRelease { url } => {
-                //let fetcher = GithubReleaseFetcher::new(None);
-                //let release = fetcher.fetch(url).await?;
-                //let index = release.generate_index_json()?;
-                //let hash = sha512_for_content(index.as_bytes())?;
-                //let _signature = secret_key.sign(&hash)?;
-                RegisterAssetsPayload::GithubRelease {
+                let fetcher = create_github_fetcher();
+                let release = fetcher.fetch(url).await?;
+                let index = release.generate_index_json()?;
+                let hash = sha512_for_content(index.as_bytes())?;
+                let signature = secret_key.sign(&hash)?;
+                RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
                     github_release_url: url.clone(),
-                }
+                    index: base64_for_string(index),
+                    signature: signature.to_base64(),
+                })
             }
-            RegistrationMode::ChecksumFiles { urls } => RegisterAssetsPayload::ChecksumFiles {
-                csum_files: urls.clone(),
-            },
+            RegistrationMode::ChecksumFiles { urls } => {
+                RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+                    csum_files: urls.clone(),
+                })
+            }
         };
 
         // Serialize once: same bytes for auth and body

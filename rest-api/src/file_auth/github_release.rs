@@ -1,14 +1,15 @@
-#[cfg(feature = "test-utils")]
-use self::test_utils::MockGithubReleaseFetcher;
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseIndexWriter, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
-use forge_release::common::{ReleaseFetcher, ReleaseInfo};
+use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures};
+use forge_release::common::ReleaseInfo;
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
-use forge_release::github::{GithubReleaseInfo, GithubReleaseResponse};
+#[cfg(feature = "test-utils")]
+use forge_release::github::test_utils::MockGithubReleaseFetcher;
+use forge_release::github::{ClientProvidedData, GithubReleaseInfo, VerifiedClientData};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -26,12 +27,7 @@ fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleas
 pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    // The fetcher type depends on the build mode: the real fetcher in
-    // production, one returning a fixed response when building tests.
-    #[cfg(not(feature = "test-utils"))]
-    pub fetcher: GithubReleaseFetcher,
-    #[cfg(feature = "test-utils")]
-    pub fetcher: MockGithubReleaseFetcher,
+    pub verified_client_data: VerifiedClientData,
     release_info: BackendGithubReleaseInfo,
 }
 
@@ -71,9 +67,10 @@ impl ReleaseIndexWriter for GithubReleaseAdder {}
 impl ReleaseAdder for GithubReleaseAdder {
     async fn new(
         release_url: &url::Url,
+        client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, crate::file_auth::release_types::ReleaseError>
+    ) -> Result<Self, ReleaseError>
     where
         Self: Sized,
     {
@@ -83,11 +80,17 @@ impl ReleaseAdder for GithubReleaseAdder {
 
         let fetcher = create_github_fetcher(config);
 
+        // We verify the client data here because:
+        // - our caller has access to all data we need such as the config to create a github
+        // fetcher.
+        // - validation of the data depends of the forge we will interact with, and so only a
+        // specific release adder can do the validation.
+        let verified_client_data = VerifiedClientData::new(client_provided_data, &fetcher).await?;
         Ok(Self {
             release_url: release_url.clone(),
             git_repo_path,
-            fetcher,
             release_info,
+            verified_client_data,
         })
     }
 
@@ -96,15 +99,13 @@ impl ReleaseAdder for GithubReleaseAdder {
         Ok(full_index_path)
     }
     async fn index_content(&self) -> Result<String, ApiError> {
-        let release: GithubReleaseResponse = self
-            .fetcher
-            .fetch(self.release_url.clone())
-            .await
-            .map_err(|e| ApiError::Generic(format!("Could not retrieve github release: {}", e)))?;
-
-        release
-            .generate_index_json()
-            .map_err(|e| ApiError::Generic(e.to_string()))
+        Ok(self.verified_client_data.index_string().to_string())
+    }
+    fn pub_key(&self) -> &AsfaloadPublicKeys {
+        self.verified_client_data.pub_key()
+    }
+    fn signature(&self) -> &AsfaloadSignatures {
+        self.verified_client_data.signature()
     }
 
     fn release_info(&self) -> BackendReleaseInfos {
@@ -138,59 +139,11 @@ pub async fn parse_release_url(
     })
 }
 
-#[cfg(feature = "test-utils")]
-pub mod test_utils {
-    use super::*;
-
-    use common::into_url::IntoUrl;
-
-    // Minimal shape of the github rest-api release response as parsed by
-    // GithubReleaseResponse.
-    pub const MOCK_RELEASE_JSON: &str = r#"{
-        "url": "https://api.github.com/repos/testowner/testrepo/releases/123",
-        "published_at": "2024-01-01T00:00:00Z",
-        "created_at": "2024-01-01T00:00:00Z",
-        "assets": [{
-            "name": "test.tar.gz",
-            "digest": "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-        }]
-    }"#;
-
-    pub fn create_mock_release_response() -> GithubReleaseResponse {
-        serde_json::from_str(MOCK_RELEASE_JSON).unwrap()
-    }
-
-    // Fetcher returning a fixed release response so tests never hit github.
-    // Serving error responses will be added later.
-    pub struct MockGithubReleaseFetcher;
-
-    impl MockGithubReleaseFetcher {
-        pub fn new() -> Self {
-            Self
-        }
-    }
-
-    impl Default for MockGithubReleaseFetcher {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl ReleaseFetcher<GithubReleaseResponse> for MockGithubReleaseFetcher {
-        async fn fetch<U: IntoUrl>(
-            &self,
-            _url: U,
-        ) -> Result<GithubReleaseResponse, forge_release::common::ReleaseHandlingError> {
-            Ok(create_mock_release_response())
-        }
-    }
-}
-
 #[cfg(all(test, feature = "test-utils"))]
 mod feature_gated_tests {
-    use super::test_utils::*;
-    use super::*;
     use features_lib::AsfaloadIndex;
+    use forge_release::github::GithubReleaseResponse;
+    use forge_release::github::test_utils::{MOCK_RELEASE_JSON, create_mock_release_response};
 
     // Gives the added asset its own download url so a regression to
     // browser_download_url as digest source cannot pass silently.

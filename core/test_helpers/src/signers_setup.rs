@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use common::errors::SignersConfigError;
 use common::sha512_for_file;
 use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
@@ -58,6 +59,39 @@ pub fn write_pending_signers_config(root: &Path, config: &SignersConfig) -> Path
     let json = serde_json::to_string_pretty(config).unwrap();
     fs::write(&signers_file, json).unwrap();
     signers_file
+}
+
+/// Build a signers config whose only group is the artifact signers group,
+/// built from the public keys of `test_keys` at `indices`, requiring
+/// `threshold` signatures from that group.
+///
+/// An empty `indices` slice produces a config with no artifact signers, for
+/// tests exercising the absence of authorised signers.
+pub fn artifact_signers_only_config(
+    test_keys: &TestKeys,
+    indices: &[usize],
+    threshold: u32,
+) -> Result<SignersConfig, SignersConfigError> {
+    let keys = indices
+        .iter()
+        .map(|i| test_keys.pub_key(*i).unwrap().clone())
+        .collect::<Vec<_>>();
+    SignersConfig::with_artifact_signers_only(1, (keys, threshold))
+}
+
+/// Build an artifact-signers-only config with
+/// `artifact_signers_only_config` and write it to
+/// `root/SIGNERS_DIR/SIGNERS_FILE`.
+///
+/// Returns the path to the written signers file.
+pub fn write_artifact_signers_config(
+    root: &Path,
+    test_keys: &TestKeys,
+    indices: &[usize],
+    threshold: u32,
+) -> Result<PathBuf, SignersConfigError> {
+    let config = artifact_signers_only_config(test_keys, indices, threshold)?;
+    Ok(write_signers_config(root, &config))
 }
 
 /// Create an artifact file at `root/nested/artifact.txt` with dummy content.

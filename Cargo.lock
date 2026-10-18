@@ -1135,6 +1135,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "e2e-sign-payload"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "common",
+ "features_lib",
+ "rest_api_auth",
+ "rest_api_types",
+ "serde_json",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1309,6 +1322,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "url",
 ]
 

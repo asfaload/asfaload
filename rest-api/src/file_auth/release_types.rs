@@ -1,6 +1,10 @@
 use crate::file_auth::releasers::BackendReleaseInfos;
 use common::fs::names::find_global_signers_for;
+use features_lib::AsfaloadPublicKeys;
+use features_lib::AsfaloadSignatures;
+use forge_release::common::ReleaseHandlingError;
 use forge_release::common::ReleaseInfo;
+use forge_release::github::ClientProvidedData;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::PathBuf;
@@ -13,6 +17,10 @@ pub enum ReleaseError {
     ReleaseUrlError(#[from] ReleaseUrlError),
     #[error("Client error: {0}")]
     ClientError(String),
+    #[error("Release verification error: {0}")]
+    Generic(#[from] ReleaseHandlingError),
+    #[error("Ser/Deserialisation error: {0}")]
+    SerdeError(#[from] serde_json::Error),
 }
 
 #[derive(Debug, Error)]
@@ -36,9 +44,15 @@ pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
     /// Unconditionally writes the index file to disk.
     /// This is an implementation detail — callers should use `ReleaseAdder::create_index` instead.
     async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
-        f.write(content)
+        f.write_all(content)
             .await
             .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
+        // tokio buffers file writes: without an awaited flush the index file
+        // can still be empty on disk when this returns. Other tasks (e.g. the
+        // git commit) read or hash the file right after.
+        f.flush()
+            .await
+            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to flush index file: {}", e)))?;
         Ok(())
     }
 }
@@ -47,6 +61,7 @@ pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
 pub trait ReleaseAdder: ReleaseIndexWriter {
     async fn new(
         release_url: &url::Url,
+        client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>
@@ -54,6 +69,10 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
         Self: Sized;
 
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError>;
+    /// Content of the index file to persist, exactly as sent by the client.
+    ///
+    /// The returned bytes are the client-provided index as verified against
+    /// the release: they must be written to disk byte-for-byte identical.
     async fn index_content(&self) -> Result<String, ApiError>;
 
     // Error if index already exists
@@ -89,4 +108,6 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
     }
 
     fn release_info(&self) -> BackendReleaseInfos;
+    fn pub_key(&self) -> &AsfaloadPublicKeys;
+    fn signature(&self) -> &AsfaloadSignatures;
 }

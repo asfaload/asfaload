@@ -173,6 +173,49 @@ pub struct VerifiedClientData {
 }
 
 impl VerifiedClientData {
+    /// Helper to get explicit message about indexes differences. Returns None if no difference.
+    /// We keep it simple and don't try to report detailed differences in the published files found
+    /// in each index. Differences are expected to be very rare as client and servers build their
+    /// respective indexes from the same source and in a short timespan.
+    fn report_indexes_differences(
+        client_provided_index: &AsfaloadIndex,
+        server_built_index: &AsfaloadIndex,
+    ) -> Option<String> {
+        // To compare the lists of published files of both indexes, we build a HashSet for each,
+        // where the item in the set is the FileChecksum itself. This ensures all fields, and so
+        // incl. the filename and the digest algorithms are used in the comparison.
+        let expected: HashSet<&FileChecksum> = server_built_index.published_files.iter().collect();
+
+        let provided: HashSet<&FileChecksum> =
+            client_provided_index.published_files.iter().collect();
+        let mut lines = Vec::new();
+        if expected != provided {
+            if expected.len() != provided.len() {
+                lines.push("Files published differ in number".to_string());
+            } else {
+                lines.push("Files published differ.".to_string());
+            }
+        }
+        if server_built_index.published_on != client_provided_index.published_on {
+            lines.push(format!(
+                "Provided published_on ({}) differs from the one retrieved ({})",
+                client_provided_index.published_on, server_built_index.published_on
+            ));
+        }
+        if server_built_index.version != client_provided_index.version {
+            lines.push(format!(
+                "Provided version ({}) differs from the one retrieved ({})",
+                client_provided_index.version, server_built_index.version
+            ));
+        }
+
+        if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
+    }
+
     /// Verify the data provided by the client and return it wrapped in a
     /// type guaranteeing the data has been checked.
     ///
@@ -245,21 +288,10 @@ impl VerifiedClientData {
 
         let index = release.generate_index()?;
 
-        // To compare the lists of published files of both indexes, we build a HashSet for each,
-        // where the item in the set is the FileChecksum itself. This ensures all fields, and so
-        // incl. the filename and the digest algorithms are used in the comparison.
-        let expected: HashSet<&FileChecksum> = index.published_files.iter().collect();
-
-        let provided: HashSet<&FileChecksum> =
-            client_provided_index.published_files.iter().collect();
-
-        if expected != provided
-            || index.published_on != client_provided_index.published_on
-            || index.version != client_provided_index.version
-        {
+        if let Some(msg) = Self::report_indexes_differences(&client_provided_index, &index) {
             return Err(ReleaseHandlingError::InvalidData(format!(
-                "Index provided by client is not identical to index generated server side for release at {}",
-                data.github_release_url
+                "Index provided by client is not identical to index generated server side for release at {}: {}",
+                data.github_release_url, msg
             )));
         }
 

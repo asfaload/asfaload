@@ -563,8 +563,12 @@ mod verified_client_data_tests {
     }
 
     // Verifies the client index is rejected as not identical to the server
-    // generated index, and that the error reports every expected difference
-    // detail. This keeps the differences reporting under test.
+    // generated index, and that the error reports every expected difference.
+    // This keeps the differences reporting under test. Asserting that a line
+    // ends with the expected detail matters because one reported detail is a
+    // prefix of another ("Files published differ in number" and "... in
+    // number of distinct entries"), and because the first detail shares its
+    // line with the error prefix.
     async fn verify_rejects_index_with(data: ClientProvidedData, expected_details: &[&str]) {
         let fetcher = MockGithubReleaseFetcher::new();
         let outcome = VerifiedClientData::new(data, &fetcher).await;
@@ -574,10 +578,10 @@ mod verified_client_data_tests {
                     msg.contains("not identical to index generated server side"),
                     "Expected index mismatch rejection, got: {msg}"
                 );
-                for detail in expected_details {
+                for expected_detail in expected_details {
                     assert!(
-                        msg.contains(detail),
-                        "Expected message containing '{detail}', got: {msg}"
+                        msg.lines().any(|line| line.ends_with(*expected_detail)),
+                        "Expected a line ending with '{expected_detail}', got: {msg}"
                     );
                 }
             }
@@ -654,6 +658,83 @@ mod verified_client_data_tests {
         verify_rejects_index_with(data, &["Files published differ."]).await;
     }
 
+    // The number of entries in `publishedFiles` and the number of distinct
+    // entries can differ when the client sends duplicates. A client index with
+    // the same total number of files as the server index, but with a duplicate
+    // in place of a distinct file, must report the distinct-entries difference
+    // and not the plain number difference.
+    #[test]
+    fn reports_distinct_published_files_difference() {
+        let file_a = file_checksum("a.tar.gz", "a");
+        let file_b = file_checksum("b.tar.gz", "b");
+        let server_built_index = index_with_files(vec![file_a.clone(), file_b]);
+        // Same total number of entries as the server index, but `file_a` is
+        // duplicated, so only one distinct file is published.
+        let client_provided_index = index_with_files(vec![file_a.clone(), file_a]);
+
+        let message = VerifiedClientData::report_indexes_differences(
+            &client_provided_index,
+            &server_built_index,
+        )
+        .expect("the indexes differ");
+
+        assert!(
+            message.contains("Files published differ in number of distinct entries"),
+            "Expected a distinct-entries difference, got: {message}"
+        );
+        // The total number of entries is equal, so the plain number
+        // difference must not be reported.
+        assert!(
+            !message
+                .lines()
+                .any(|line| line == "Files published differ in number"),
+            "The total number of published files is equal, got: {message}"
+        );
+    }
+
+    // A duplicate that keeps the set of distinct files identical to the server
+    // index changes only the total number of entries. In that case the plain
+    // number difference is the only difference reported.
+    #[test]
+    fn reports_published_files_number_difference_for_duplicates() {
+        let file_a = file_checksum("a.tar.gz", "a");
+        let file_b = file_checksum("b.tar.gz", "b");
+        let server_built_index = index_with_files(vec![file_a.clone(), file_b.clone()]);
+        // The client repeats `file_a`: the total number of entries differs,
+        // but the set of distinct files is the same as the server's.
+        let client_provided_index = index_with_files(vec![file_a.clone(), file_b.clone(), file_a]);
+
+        let message = VerifiedClientData::report_indexes_differences(
+            &client_provided_index,
+            &server_built_index,
+        )
+        .expect("the indexes differ");
+
+        assert_eq!(message, "Files published differ in number");
+    }
+
+    fn file_checksum(file_name: &str, hash_char: &str) -> FileChecksum {
+        FileChecksum {
+            file_name: file_name.to_string(),
+            algo: HashAlgorithm::Sha256,
+            source: "https://api.github.com/repos/testowner/testrepo/releases/123".to_string(),
+            source_format: ChecksumSourceFormat::GithubRelease,
+            hash: hash_char.repeat(64),
+        }
+    }
+
+    fn index_with_files(published_files: Vec<FileChecksum>) -> AsfaloadIndex {
+        let timestamp = "2024-01-01T00:00:00Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .unwrap();
+        AsfaloadIndex {
+            mirrored_on: timestamp,
+            published_on: timestamp,
+            version: 1,
+            published_files,
+        }
+    }
+
     // The publication date is part of the index identity: an index published
     // on another date must not pass as the release's own index.
     #[tokio::test]
@@ -666,7 +747,7 @@ mod verified_client_data_tests {
         // The provided and the retrieved dates must both be reported.
         verify_rejects_index_with(
             data,
-            &["Provided published_on (", "2000-01-01", "2024-01-01"],
+            &["Provided published_on (2000-01-01 00:00:00 UTC) differs from the one retrieved (2024-01-01 00:00:00 UTC)"],
         )
         .await;
     }

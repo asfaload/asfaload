@@ -195,7 +195,7 @@ expect_fail_json "Register release with key3 (not an authorised signer)" \
 assert_file_not_exists "release v0.1 index after rejected registration" \
     "$(_release_dir "0.1")/$INDEX_FILE"
 
-run_step_json "Register release with key3 (does not sign it)" \
+run_step_json "Register release with key2 (which signs it)" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 

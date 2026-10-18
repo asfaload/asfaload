@@ -558,6 +558,30 @@ mod verified_client_data_tests {
         }
     }
 
+    // Verifies the client index is rejected as not identical to the server
+    // generated index, and that the error reports every expected difference
+    // detail. This keeps the differences reporting under test.
+    async fn verify_rejects_index_with(data: ClientProvidedData, expected_details: &[&str]) {
+        let fetcher = MockGithubReleaseFetcher::new();
+        let outcome = VerifiedClientData::new(data, &fetcher).await;
+        match outcome {
+            Err(ReleaseHandlingError::InvalidData(msg)) => {
+                assert!(
+                    msg.contains("not identical to index generated server side"),
+                    "Expected index mismatch rejection, got: {msg}"
+                );
+                for detail in expected_details {
+                    assert!(
+                        msg.contains(detail),
+                        "Expected message containing '{detail}', got: {msg}"
+                    );
+                }
+            }
+            Err(e) => panic!("Expected InvalidData but got: {e}"),
+            Ok(_) => panic!("Expected client data verification to fail, but it succeeded"),
+        }
+    }
+
     // The verified data must be exactly what the client sent: the server
     // keeps using it to register the release.
     #[tokio::test]
@@ -621,7 +645,9 @@ mod verified_client_data_tests {
         let index_string = serde_json::to_string(&value).unwrap();
         let data = client_provided_data_for_index(pub_key, secret_key, &index_string);
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        // The file count is unchanged, so only the content difference is
+        // reported.
+        verify_rejects_index_with(data, &["Files published differ."]).await;
     }
 
     // The publication date is part of the index identity: an index published
@@ -633,7 +659,12 @@ mod verified_client_data_tests {
             value["publishedOn"] = serde_json::json!("2000-01-01T00:00:00Z");
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        // The provided and the retrieved dates must both be reported.
+        verify_rejects_index_with(
+            data,
+            &["Provided published_on (", "2000-01-01", "2024-01-01"],
+        )
+        .await;
     }
 
     // The index version is part of the index identity: an index with another
@@ -645,7 +676,11 @@ mod verified_client_data_tests {
             value["version"] = serde_json::json!(2);
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        verify_rejects_index_with(
+            data,
+            &["Provided version (2) differs from the one retrieved (1)"],
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -708,7 +743,7 @@ mod verified_client_data_tests {
             value["publishedFiles"].as_array_mut().unwrap().clear();
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        verify_rejects_index_with(data, &["Files published differ in number"]).await;
     }
 
     // A file added to the client index is an injection attempt: it would
@@ -730,7 +765,7 @@ mod verified_client_data_tests {
                 .insert(0, extra);
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        verify_rejects_index_with(data, &["Files published differ in number"]).await;
     }
 
     // A well-formed but empty index would validate downloads of nothing:
@@ -742,7 +777,7 @@ mod verified_client_data_tests {
             value["publishedFiles"] = serde_json::json!([]);
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        verify_rejects_index_with(data, &["Files published differ in number"]).await;
     }
 
     // The digest algorithm is a trust decision: a hash checked as sha256
@@ -754,7 +789,7 @@ mod verified_client_data_tests {
             value["publishedFiles"][0]["algo"] = serde_json::Value::String("Sha512".to_string());
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        verify_rejects_index_with(data, &["Files published differ."]).await;
     }
 
     // The source tells where the digest comes from; the client index and
@@ -767,7 +802,7 @@ mod verified_client_data_tests {
                 serde_json::Value::String("https://downloads.example.com".to_string());
         });
 
-        verify_rejects_with(data, "not identical to index generated server side").await;
+        verify_rejects_index_with(data, &["Files published differ."]).await;
     }
 
     // The comparison is on the parsed content, not on the exact bytes: an

@@ -710,6 +710,13 @@ pub mod tests {
             "Expected error about the mismatching index, got: {}",
             text
         );
+        // The difference detail must reach the client too: the file count is
+        // unchanged here, so only the content difference is reported.
+        assert!(
+            text.contains("Files published differ."),
+            "Expected the error to detail the published files difference, got: {}",
+            text
+        );
         assert!(
             !ctx.release_dir().exists(),
             "A rejected registration must not create the release directory"

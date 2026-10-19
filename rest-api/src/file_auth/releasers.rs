@@ -1,10 +1,9 @@
 use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter,
 };
 use forge_release::common::ReleaseInfo;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
-use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 #[cfg(all(test, feature = "test-utils"))]
@@ -28,49 +27,22 @@ impl ReleaseIndexWriter for ReleaseAdders {
 impl ReleaseAdders {
     /// Build the adder matching the client index source.
     ///
-    /// The release adder validates the client provided data because:
-    /// - we have access to all data we need such as the config to create a release
+    /// The source variant is the dispatch key: it selects the adder that
+    /// handles the client data. The selected adder validates the client
+    /// provided data because:
+    /// - the adder has access to all data it needs, such as the config to create the release
     ///   fetcher.
-    /// - validation of the data depends of the forge we will interact with, and so only a
+    /// - validation of the data depends on the forge we will interact with, and so only a
     ///   specific release adder can do the validation.
     pub async fn new(
         client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError> {
-        let ClientProvidedData {
-            sources,
-            client_pub_key,
-            client_sent_index,
-            client_sent_signature,
-        } = client_provided_data;
-
-        match sources {
-            ClientIndexSources::Github(source) => {
-                let release_url = source.url();
-                let host = release_url
-                    .host_str()
-                    .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
-
-                if !is_github_release_host(host) {
-                    return Err(ReleaseUrlError::UnsupportedPlatform(format!(
-                        "Host {} is not recognised as a Github release host",
-                        host,
-                    ))
-                    .into());
-                }
-
-                let github_adder = GithubReleaseAdder::new(
-                    ClientProvidedData {
-                        sources: ClientIndexSources::Github(source),
-                        client_pub_key,
-                        client_sent_index,
-                        client_sent_signature,
-                    },
-                    git_repo_path,
-                    config,
-                )
-                .await?;
+        match &client_provided_data.sources {
+            ClientIndexSources::Github(_) => {
+                let github_adder =
+                    GithubReleaseAdder::new(client_provided_data, git_repo_path, config).await?;
                 Ok(Self::Github(Box::new(github_adder)))
             }
         }
@@ -149,6 +121,7 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
+    use crate::file_auth::release_types::ReleaseUrlError;
     use forge_release::github::GithubReleaseSource;
     use forge_release::github::test_utils::create_mocked_client_provided_data;
     use rest_api_test_helpers::get_random_port;

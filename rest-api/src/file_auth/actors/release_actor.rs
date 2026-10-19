@@ -101,11 +101,7 @@ impl ReleaseActor {
         );
 
         // The release adder validates the client provided data during its initialisation.
-        // The release adder validates the client provided data because:
-        // - we have access to all data we need such as the config to create a github
-        // fetcher.
-        // - validation of the data depends of the forge we will interact with, and so only a
-        // specific release adder can do the validation.
+        // See `ReleaseAdders::new` for the rationale.
         let adder = ReleaseAdders::new(
             msg.client_provided_data,
             self.config.git_repo_path.clone(),
@@ -116,7 +112,7 @@ impl ReleaseActor {
             tracing::error!(
                 actor = %ACTOR_NAME,
                 error = %e,
-                "Failed to initialise GithubReleaseAdder"
+                "Failed to initialise release adder"
             );
             match e {
                 ReleaseError::ReleaseUrlError(url_error) => match url_error {

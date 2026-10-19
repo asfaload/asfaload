@@ -1112,14 +1112,17 @@ pub async fn register_assets_handler(
 /// Build the client-provided data from the public key header and the
 /// GitHub release payload.
 ///
-/// The release url sent by the client is parsed here so the data flowing
-/// down to the release actor carries a validated url.
+/// The release url sent by the client is validated here, before the source
+/// is erased into the runtime-dispatch enum, so an invalid url is reported
+/// to the client before the release actor is invoked.
 fn client_provided_data_for(
     client_pub_key: &str,
     payload: &rest_api_types::models::GithubReleasePayload,
 ) -> Result<ClientProvidedData, ApiError> {
     let release_url = url::Url::parse(&payload.github_release_url)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
+    GithubReleaseInfo::from_url(&release_url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e)))?;
     Ok(ClientProvidedData {
         sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
         client_pub_key: client_pub_key.to_string(),
@@ -1133,19 +1136,11 @@ async fn register_github_release(
     request_id: &str,
     client_provided_data: ClientProvidedData,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
-    let convert_github_release_error =
-        |e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e));
     tracing::info!(
         request_id = %request_id,
         github_release_url = %client_provided_data.sources,
         "Received register-assets request (GitHub mode)"
     );
-
-    // Validate the url by parsing it as a release info: an invalid url is
-    // reported to the client here, before the release actor is invoked.
-    let ClientIndexSources::Github(source) = &client_provided_data.sources;
-    let parsed_url = source.url().clone();
-    GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
     // We send the client provided data as is, and it will be validated before use in the actor as
     // it has access to the config needed to build a release fetcher.
@@ -1755,8 +1750,7 @@ mod client_provided_data_tests {
         let data = client_provided_data_for("pub-key-value", &payload).unwrap();
 
         let expected_url = url::Url::parse(&payload.github_release_url).unwrap();
-        let ClientIndexSources::Github(source) = &data.sources;
-        assert_eq!(source.url(), &expected_url);
+        assert_eq!(data.sources.to_urls(), std::slice::from_ref(&expected_url));
         assert_eq!(data.client_pub_key, "pub-key-value");
         assert_eq!(data.client_sent_index, "index-value");
         assert_eq!(data.client_sent_signature, "signature-value");

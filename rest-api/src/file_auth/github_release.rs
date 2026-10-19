@@ -11,6 +11,7 @@ use forge_release::github::GithubReleaseFetcher;
 use forge_release::github::GithubReleaseInfo;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
+use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -74,17 +75,26 @@ impl GithubReleaseAdder {
         let ClientIndexSources::Github(source) = &client_provided_data.sources;
         let release_url = source.url().clone();
 
+        // The release url must target a github release page: the api host
+        // is not a release page host.
+        let host = release_url
+            .host_str()
+            .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
+        if !is_github_release_host(host) {
+            return Err(ReleaseUrlError::UnsupportedPlatform(format!(
+                "Host {} is not recognised as a Github release host",
+                host,
+            ))
+            .into());
+        }
+
         let release_info = parse_release_url(&release_url, &git_repo_path)
             .await
             .map_err(|e| ReleaseUrlError::InvalidFormat(e.to_string()))?;
 
         let fetcher = create_github_fetcher(config);
 
-        // We verify the client data here because:
-        // - our caller has access to all data we need such as the config to create a github
-        // fetcher.
-        // - validation of the data depends of the forge we will interact with, and so only a
-        // specific release adder can do the validation.
+        // We verify the client data here. See `ReleaseAdders::new` for the rationale.
         let verified_client_data = VerifiedClientData::new(client_provided_data, &fetcher).await?;
         Ok(Self {
             release_url,

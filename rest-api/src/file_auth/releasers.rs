@@ -130,7 +130,6 @@ mod test_utils_tests {
     // the project's release pages: the api host is not a repo host.
     #[tokio::test]
     async fn test_release_adders_reject_github_api_url() {
-        use crate::file_auth::release_types::ReleaseAdder;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();

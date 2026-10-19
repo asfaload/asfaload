@@ -93,30 +93,15 @@ impl ClientIndexSource for ClientIndexSources {
     }
 }
 
-pub struct ClientProvidedData<T: ClientIndexSource> {
-    pub sources: T,
+pub struct ClientProvidedData {
+    pub sources: ClientIndexSources,
     pub client_pub_key: String,
     pub client_sent_index: String,
     pub client_sent_signature: String,
 }
 
-impl<T: ClientIndexSource> ClientProvidedData<T> {
-    /// Replace the source type, keeping the client payload unchanged.
-    pub fn map_sources<U: ClientIndexSource>(
-        self,
-        f: impl FnOnce(T) -> U,
-    ) -> ClientProvidedData<U> {
-        ClientProvidedData {
-            sources: f(self.sources),
-            client_pub_key: self.client_pub_key,
-            client_sent_index: self.client_sent_index,
-            client_sent_signature: self.client_sent_signature,
-        }
-    }
-}
-
-pub struct VerifiedClientData<T: ClientIndexSource> {
-    client_provided_data: ClientProvidedData<T>,
+pub struct VerifiedClientData {
+    client_provided_data: ClientProvidedData,
     pub_key: AsfaloadPublicKeys,
     index_string: String,
     signature: AsfaloadSignatures,
@@ -180,7 +165,7 @@ impl VerifiedClientData {
     /// - the index it sent publishes exactly the files and hashes we find
     ///   in the release we retrieve.
     pub async fn new<F, R>(
-        data: ClientProvidedData<T>,
+        data: ClientProvidedData,
         fetcher: &F,
     ) -> Result<Self, ReleaseHandlingError>
     where
@@ -273,31 +258,5 @@ impl VerifiedClientData {
 
     pub fn signature(&self) -> &AsfaloadSignatures {
         &self.signature
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Mapping a source to another type must keep the client payload
-    // untouched: only the sources field is replaced.
-    #[test]
-    fn map_sources_keeps_client_payload() {
-        let url = url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
-        let data = ClientProvidedData {
-            sources: GithubReleaseSource::new(url.clone()),
-            client_pub_key: "pub-key".to_string(),
-            client_sent_index: "index".to_string(),
-            client_sent_signature: "signature".to_string(),
-        };
-
-        let mapped: ClientProvidedData<ClientIndexSources> =
-            data.map_sources(ClientIndexSource::into_sources);
-
-        assert_eq!(mapped.sources.to_urls(), &[url]);
-        assert_eq!(mapped.client_pub_key, "pub-key");
-        assert_eq!(mapped.client_sent_index, "index");
-        assert_eq!(mapped.client_sent_signature, "signature");
     }
 }

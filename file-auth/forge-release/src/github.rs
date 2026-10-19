@@ -475,7 +475,7 @@ mod verified_client_data_tests {
     #[tokio::test]
     async fn accepts_client_index_and_signature_matching_server_index() {
         let data = create_mocked_client_provided_data();
-        let expected_url = data.sources.url().clone();
+        let expected_url = data.sources.to_urls()[0].clone();
         let expected_pub_key = data.client_pub_key.clone();
         let expected_index = data.client_sent_index.clone();
         let expected_signature = data.client_sent_signature.clone();

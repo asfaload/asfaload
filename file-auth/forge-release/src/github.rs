@@ -20,7 +20,7 @@ const REQUEST_TIMEOUT_SEC: u64 = 10;
 /// Builds an api url to retrieve the release info. This builds the url based on owner, repo and
 /// tag, and the document returned is a json object with all details of the release. The document
 /// has a url field, which is of the form
-///    https://api.github.com/repos/{owner}/{repo}/releases/252430053
+///    `https://api.github.com/repos/{owner}/{repo}/releases/252430053`
 /// This last url does not use the tag but a release id, and is probably the canonical url of the release.
 /// It returns the exact same document as the url we build with owner, repo and tag.
 pub fn github_release_api_url(release_page_url: &url::Url) -> Result<Url, ReleaseHandlingError> {

@@ -1141,10 +1141,10 @@ async fn register_github_release(
         "Received register-assets request (GitHub mode)"
     );
 
-    // Validate the url by parsing it as a release info
+    // Validate the url by parsing it as a release info: an invalid url is
+    // reported to the client here, before the release actor is invoked.
     let parsed_url = client_provided_data.sources.url().clone();
-    let release_info =
-        GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
+    GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
     // We send the client provided data as is, and it will be validated before use in the actor as
     // it has access to the config needed to build a release fetcher.
@@ -1152,7 +1152,6 @@ async fn register_github_release(
         .release_actor
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
-            release_info,
             client_provided_data,
         })
         .await

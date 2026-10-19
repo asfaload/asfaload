@@ -66,17 +66,15 @@ impl BackendReleaseInfo for BackendGithubReleaseInfo {
 
 impl ReleaseIndexWriter for GithubReleaseAdder {}
 
-impl ReleaseAdder for GithubReleaseAdder {
-    async fn new(
-        release_url: &url::Url,
+impl GithubReleaseAdder {
+    pub async fn new(
         client_provided_data: ClientProvidedData<GithubReleaseSource>,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, ReleaseError>
-    where
-        Self: Sized,
-    {
-        let release_info = parse_release_url(release_url, &git_repo_path)
+    ) -> Result<Self, ReleaseError> {
+        let release_url = client_provided_data.sources.url().clone();
+
+        let release_info = parse_release_url(&release_url, &git_repo_path)
             .await
             .map_err(|e| ReleaseUrlError::InvalidFormat(e.to_string()))?;
 
@@ -89,13 +87,15 @@ impl ReleaseAdder for GithubReleaseAdder {
         // specific release adder can do the validation.
         let verified_client_data = VerifiedClientData::new(client_provided_data, &fetcher).await?;
         Ok(Self {
-            release_url: release_url.clone(),
+            release_url,
             git_repo_path,
             release_info,
             verified_client_data,
         })
     }
+}
 
+impl ReleaseAdder for GithubReleaseAdder {
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
         let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
         Ok(full_index_path)

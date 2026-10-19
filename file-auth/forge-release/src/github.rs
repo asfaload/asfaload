@@ -176,6 +176,10 @@ impl crate::common::ClientIndexSource for GithubReleaseSource {
     fn to_urls(&self) -> &[Url] {
         std::slice::from_ref(&self.release_url)
     }
+
+    fn into_sources(self) -> crate::common::ClientIndexSources {
+        crate::common::ClientIndexSources::Github(self)
+    }
 }
 
 /// Information of a Github release

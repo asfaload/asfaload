@@ -8,7 +8,7 @@ use features_lib::{
 use thiserror::Error;
 use url::Url;
 
-use crate::github::GithubReleaseResponse;
+use crate::github::GithubReleaseSource;
 
 pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
     fn origin_prefix(&self) -> &str;
@@ -55,14 +55,64 @@ pub trait ReleaseResponseTrait {
 
 /// Trait implemented by each tyoe of client-generated index source, eg a github release of a list
 /// of checksums urls on a file server
-pub trait ClientIndexSource: Display + Clone {
+///
+/// The `Send + Sync + 'static` bounds are required because sources travel
+/// inside actor messages, which must be sendable between threads.
+pub trait ClientIndexSource: Display + Clone + Send + Sync + 'static {
     fn to_urls(&self) -> &[Url];
+
+    /// Erase the concrete source type into the runtime-dispatch enum
+    /// [`ClientIndexSources`].
+    fn into_sources(self) -> ClientIndexSources;
 }
+
+/// The client index sources, dispatched at runtime.
+///
+#[derive(Debug, Clone)]
+pub enum ClientIndexSources {
+    Github(GithubReleaseSource),
+}
+
+impl std::fmt::Display for ClientIndexSources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Github(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+impl ClientIndexSource for ClientIndexSources {
+    fn to_urls(&self) -> &[Url] {
+        match self {
+            Self::Github(s) => s.to_urls(),
+        }
+    }
+
+    fn into_sources(self) -> Self {
+        self
+    }
+}
+
 pub struct ClientProvidedData<T: ClientIndexSource> {
     pub sources: T,
     pub client_pub_key: String,
     pub client_sent_index: String,
     pub client_sent_signature: String,
+}
+
+impl<T: ClientIndexSource> ClientProvidedData<T> {
+    /// Replace the source type, keeping the client payload unchanged.
+    pub fn map_sources<U: ClientIndexSource>(
+        self,
+        f: impl FnOnce(T) -> U,
+    ) -> ClientProvidedData<U> {
+        ClientProvidedData {
+            sources: f(self.sources),
+            client_pub_key: self.client_pub_key,
+            client_sent_index: self.client_sent_index,
+            client_sent_signature: self.client_sent_signature,
+        }
+    }
 }
 
 pub struct VerifiedClientData<T: ClientIndexSource> {
@@ -223,5 +273,31 @@ impl VerifiedClientData {
 
     pub fn signature(&self) -> &AsfaloadSignatures {
         &self.signature
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mapping a source to another type must keep the client payload
+    // untouched: only the sources field is replaced.
+    #[test]
+    fn map_sources_keeps_client_payload() {
+        let url = url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
+        let data = ClientProvidedData {
+            sources: GithubReleaseSource::new(url.clone()),
+            client_pub_key: "pub-key".to_string(),
+            client_sent_index: "index".to_string(),
+            client_sent_signature: "signature".to_string(),
+        };
+
+        let mapped: ClientProvidedData<ClientIndexSources> =
+            data.map_sources(ClientIndexSource::into_sources);
+
+        assert_eq!(mapped.sources.to_urls(), &[url]);
+        assert_eq!(mapped.client_pub_key, "pub-key");
+        assert_eq!(mapped.client_sent_index, "index");
+        assert_eq!(mapped.client_sent_signature, "signature");
     }
 }

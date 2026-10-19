@@ -8,8 +8,9 @@ use aggregate_signature::get_authorized_signers_for_file;
 use common::errors::AggregateSignatureError;
 use common::{SignedFileLoader, errors::SignedFileError};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
-use forge_release::common::{ClientProvidedData, ReleaseHandlingError, ReleaseInfo};
-use forge_release::github::{GithubReleaseInfo, GithubReleaseSource};
+use forge_release::common::{
+    ClientIndexSource, ClientProvidedData, ReleaseHandlingError, ReleaseInfo,
+};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -24,10 +25,15 @@ pub struct ReleaseActor {
     config: crate::config::AppConfig,
 }
 
-pub struct ProcessRelease {
-    pub release_info: GithubReleaseInfo,
+/// Message asking the actor to register a release.
+///
+/// `S` is the forge specific source the client used to build its index
+/// (e.g. a `GithubReleaseSource`). It is erased into the runtime-dispatch
+/// `ClientIndexSources` enum by the actor, and the release identity is
+/// derived from it by the adder layer.
+pub struct ProcessRelease<S: ClientIndexSource> {
     pub request_id: String,
-    pub client_provided_data: ClientProvidedData<GithubReleaseSource>,
+    pub client_provided_data: ClientProvidedData<S>,
 }
 
 pub struct RegisterResult {
@@ -73,12 +79,12 @@ impl Actor for ReleaseActor {
     }
 }
 
-impl Message<ProcessRelease> for ReleaseActor {
+impl<S: ClientIndexSource> Message<ProcessRelease<S>> for ReleaseActor {
     type Reply = Result<RegisterResult, ApiError>;
 
     async fn handle(
         &mut self,
-        msg: ProcessRelease,
+        msg: ProcessRelease<S>,
         ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.process_release(msg, ctx).await
@@ -86,16 +92,22 @@ impl Message<ProcessRelease> for ReleaseActor {
 }
 
 impl ReleaseActor {
-    async fn process_release(
+    async fn process_release<S: ClientIndexSource>(
         &self,
-        msg: ProcessRelease,
+        msg: ProcessRelease<S>,
         _ctx: &mut Context<Self, Result<RegisterResult, ApiError>>,
     ) -> Result<RegisterResult, ApiError> {
         info!(
             request_id = %msg.request_id,
-            release_info = %msg.release_info,
+            sources = %msg.client_provided_data.sources,
             "Processing release"
         );
+
+        // Erase the forge specific source type into the runtime-dispatch
+        // enum, and let the adder layer process it.
+        let client_provided_data = msg
+            .client_provided_data
+            .map_sources(ClientIndexSource::into_sources);
 
         // The release adder validates the client provided data during its initialisation.
         // The release adder validates the client provided data because:
@@ -104,10 +116,7 @@ impl ReleaseActor {
         // - validation of the data depends of the forge we will interact with, and so only a
         // specific release adder can do the validation.
         let adder = ReleaseAdders::new(
-            &msg.release_info
-                .to_url()
-                .map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?,
-            msg.client_provided_data,
+            client_provided_data,
             self.config.git_repo_path.clone(),
             &self.config,
         )

@@ -160,7 +160,7 @@ impl VerifiedClientData {
         let signature =
             AsfaloadSignatures::from_base64(&data.client_sent_signature).map_err(|e| {
                 ReleaseHandlingError::InvalidData(format!(
-                    "Could not parse signature sent by client for github release {}: {}",
+                    "Could not parse signature sent by client for release {}: {}",
                     data.sources, e
                 ))
             })?;
@@ -183,7 +183,7 @@ impl VerifiedClientData {
 
         let pub_key = AsfaloadPublicKeys::from_base64(&data.client_pub_key).map_err(|e| {
             ReleaseHandlingError::InvalidData(format!(
-                "Could not parse public key sent by client for github release {}: {}",
+                "Could not parse public key sent by client for release {}: {}",
                 data.sources, e
             ))
         })?;
@@ -191,7 +191,7 @@ impl VerifiedClientData {
         // Verify the signature sent by client
         pub_key.verify(&signature, &index_sha512).map_err(|e| {
             ReleaseHandlingError::InvalidData(format!(
-                "Signature sent by client for github release {} does not verify: {}",
+                "Signature sent by client for release {} does not verify: {}",
                 data.sources, e
             ))
         })?;
@@ -200,7 +200,7 @@ impl VerifiedClientData {
         let client_provided_index: AsfaloadIndex =
             serde_json::from_str(&index_string).map_err(|e| {
                 ReleaseHandlingError::InvalidData(format!(
-                    "Could not parse index sent by client for github release {}: {}",
+                    "Could not parse index sent by client for release {}: {}",
                     data.sources, e
                 ))
             })?;
@@ -208,7 +208,7 @@ impl VerifiedClientData {
         // Retrieve the release and build our own index: the client index
         // must publish exactly the files we find there, with identical hashes.
         let release: R = fetcher.fetch(data.sources.to_urls()).await.map_err(|e| {
-            ReleaseHandlingError::Generic(format!("Could not retrieve github release: {}", e))
+            ReleaseHandlingError::Generic(format!("Could not retrieve release: {}", e))
         })?;
 
         let index = release.generate_index().await?;

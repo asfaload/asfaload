@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display};
+use std::collections::HashSet;
 
 use common::{into_url::IntoUrl, sha512_for_content, string_from_base64};
 use features_lib::{
@@ -53,19 +53,6 @@ pub trait ReleaseResponseTrait {
     ) -> impl Future<Output = Result<AsfaloadIndex, ReleaseHandlingError>> + Send;
 }
 
-/// Trait implemented by each tyoe of client-generated index source, eg a github release of a list
-/// of checksums urls on a file server
-///
-/// The `Send + Sync + 'static` bounds are required because sources travel
-/// inside actor messages, which must be sendable between threads.
-pub trait ClientIndexSource: Display + Clone + Send + Sync + 'static {
-    fn to_urls(&self) -> &[Url];
-
-    /// Erase the concrete source type into the runtime-dispatch enum
-    /// [`ClientIndexSources`].
-    fn into_sources(self) -> ClientIndexSources;
-}
-
 /// The client index sources, dispatched at runtime.
 ///
 #[derive(Debug, Clone)]
@@ -73,23 +60,20 @@ pub enum ClientIndexSources {
     Github(GithubReleaseSource),
 }
 
+impl ClientIndexSources {
+    /// The urls of the sources the client used to build its index.
+    pub fn to_urls(&self) -> &[Url] {
+        match self {
+            Self::Github(s) => std::slice::from_ref(s.url()),
+        }
+    }
+}
+
 impl std::fmt::Display for ClientIndexSources {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Github(s) => write!(f, "{s}"),
         }
-    }
-}
-
-impl ClientIndexSource for ClientIndexSources {
-    fn to_urls(&self) -> &[Url] {
-        match self {
-            Self::Github(s) => s.to_urls(),
-        }
-    }
-
-    fn into_sources(self) -> Self {
-        self
     }
 }
 
@@ -258,5 +242,20 @@ impl VerifiedClientData {
 
     pub fn signature(&self) -> &AsfaloadSignatures {
         &self.signature
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The enum exposes the urls of the wrapped source, and displays like it.
+    #[test]
+    fn github_source_exposes_its_url() {
+        let url = url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
+        let sources = ClientIndexSources::Github(GithubReleaseSource::new(url.clone()));
+
+        assert_eq!(sources.to_urls(), std::slice::from_ref(&url));
+        assert_eq!(sources.to_string(), url.to_string());
     }
 }

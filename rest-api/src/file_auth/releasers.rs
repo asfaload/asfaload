@@ -34,7 +34,7 @@ impl ReleaseAdders {
     /// - validation of the data depends of the forge we will interact with, and so only a
     ///   specific release adder can do the validation.
     pub async fn new(
-        client_provided_data: ClientProvidedData<ClientIndexSources>,
+        client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError> {
@@ -62,7 +62,7 @@ impl ReleaseAdders {
 
                 let github_adder = GithubReleaseAdder::new(
                     ClientProvidedData {
-                        sources: source,
+                        sources: ClientIndexSources::Github(source),
                         client_pub_key,
                         client_sent_index,
                         client_sent_signature,
@@ -251,13 +251,9 @@ mod test_utils_tests {
         // Keep the index bytes the client sent, to compare after verification.
         let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
 
-        let adder = ReleaseAdders::new(
-            client_data.map_sources(ClientIndexSources::Github),
-            git_repo_path.clone(),
-            &mock_config,
-        )
-        .await
-        .unwrap();
+        let adder = ReleaseAdders::new(client_data, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
 
         let ReleaseAdders::Github(github) = &adder;
         // The data accepted by the adder must be kept unchanged, no re-serialization
@@ -337,7 +333,7 @@ mod test_utils_tests {
         };
 
         let adder = ReleaseAdders::new(
-            create_mocked_client_provided_data().map_sources(ClientIndexSources::Github),
+            create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
         )
@@ -397,13 +393,9 @@ mod test_utils_tests {
         // byte-identical, as the client signature covers those bytes only.
         let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
 
-        let adder = ReleaseAdders::new(
-            client_data.map_sources(ClientIndexSources::Github),
-            git_repo_path.clone(),
-            &mock_config,
-        )
-        .await
-        .unwrap();
+        let adder = ReleaseAdders::new(client_data, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
 
         let index_path = adder.create_index().await.unwrap();
         assert_eq!(
@@ -462,7 +454,7 @@ mod test_utils_tests {
         };
 
         let adder = ReleaseAdders::new(
-            create_mocked_client_provided_data().map_sources(ClientIndexSources::Github),
+            create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
         )

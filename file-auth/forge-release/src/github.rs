@@ -226,22 +226,11 @@ impl GithubReleaseInfo {
             tag,
         })
     }
-
-    pub fn to_url(&self) -> Result<url::Url, ReleaseHandlingError> {
-        Ok(self.url.clone())
-    }
 }
 
 impl fmt::Display for GithubReleaseInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.to_url().map(|u| u.to_string()).unwrap_or(format!(
-                "GithubReleaseInfo(origin_prefix: {}, repo: {}/{}, tag: {})",
-                self.origin_prefix, self.owner, self.repo, self.tag
-            ))
-        )
+        write!(f, "{}", self.url)
     }
 }
 
@@ -423,10 +412,7 @@ mod verified_client_data_tests {
         (&keys.0, &keys.1)
     }
 
-    async fn verify_rejects_with(
-        data: ClientProvidedData<GithubReleaseSource>,
-        expected_message: &str,
-    ) {
+    async fn verify_rejects_with(data: ClientProvidedData, expected_message: &str) {
         let fetcher = MockGithubReleaseFetcher::new();
         let outcome = VerifiedClientData::new(data, &fetcher).await;
         match outcome {
@@ -446,10 +432,7 @@ mod verified_client_data_tests {
     // prefix of another ("Files published differ in number" and "... in
     // number of distinct entries"), and because the first detail shares its
     // line with the error prefix.
-    async fn verify_rejects_index_with(
-        data: ClientProvidedData<GithubReleaseSource>,
-        expected_details: &[&str],
-    ) {
+    async fn verify_rejects_index_with(data: ClientProvidedData, expected_details: &[&str]) {
         let fetcher = MockGithubReleaseFetcher::new();
         let outcome = VerifiedClientData::new(data, &fetcher).await;
         match outcome {
@@ -552,7 +535,7 @@ mod verified_client_data_tests {
         // duplicated, so only one distinct file is published.
         let client_provided_index = index_with_files(vec![file_a.clone(), file_a]);
 
-        let message = VerifiedClientData::<GithubReleaseSource>::report_indexes_differences(
+        let message = VerifiedClientData::report_indexes_differences(
             &client_provided_index,
             &server_built_index,
         )
@@ -584,7 +567,7 @@ mod verified_client_data_tests {
         // but the set of distinct files is the same as the server's.
         let client_provided_index = index_with_files(vec![file_a.clone(), file_b.clone(), file_a]);
 
-        let message = VerifiedClientData::<GithubReleaseSource>::report_indexes_differences(
+        let message = VerifiedClientData::report_indexes_differences(
             &client_provided_index,
             &server_built_index,
         )
@@ -692,7 +675,7 @@ mod verified_client_data_tests {
         pub_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
         change: impl FnOnce(&mut serde_json::Value),
-    ) -> ClientProvidedData<GithubReleaseSource> {
+    ) -> ClientProvidedData {
         let mut value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
         change(&mut value);
         let index_string = serde_json::to_string(&value).unwrap();

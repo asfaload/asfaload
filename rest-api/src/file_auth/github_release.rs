@@ -5,11 +5,10 @@ use crate::file_auth::release_types::{
 use crate::file_auth::releasers::BackendReleaseInfos;
 use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures};
 use forge_release::common::ReleaseInfo;
-use forge_release::common::{ClientProvidedData, VerifiedClientData};
+use forge_release::common::{ClientIndexSources, ClientProvidedData, VerifiedClientData};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 use forge_release::github::GithubReleaseInfo;
-use forge_release::github::GithubReleaseSource;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
 use rest_api_types::errors::ApiError;
@@ -29,7 +28,7 @@ fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleas
 pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    pub verified_client_data: VerifiedClientData<GithubReleaseSource>,
+    pub verified_client_data: VerifiedClientData,
     release_info: BackendGithubReleaseInfo,
 }
 
@@ -68,11 +67,12 @@ impl ReleaseIndexWriter for GithubReleaseAdder {}
 
 impl GithubReleaseAdder {
     pub async fn new(
-        client_provided_data: ClientProvidedData<GithubReleaseSource>,
+        client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError> {
-        let release_url = client_provided_data.sources.url().clone();
+        let ClientIndexSources::Github(source) = &client_provided_data.sources;
+        let release_url = source.url().clone();
 
         let release_info = parse_release_url(&release_url, &git_repo_path)
             .await

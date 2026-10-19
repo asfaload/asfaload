@@ -9,7 +9,7 @@ use features_lib::{
 };
 
 use super::{GithubReleaseResponse, GithubReleaseSource};
-use crate::common::{ClientProvidedData, ReleaseFetcher, ReleaseHandlingError};
+use crate::common::{ClientIndexSources, ClientProvidedData, ReleaseFetcher, ReleaseHandlingError};
 use common::into_url::IntoUrl;
 
 // Minimal shape of the github rest-api release response as parsed by
@@ -73,11 +73,13 @@ pub fn client_provided_data_for_index(
     public_key: &AsfaloadPublicKeys,
     secret_key: &AsfaloadSecretKeys,
     index: &str,
-) -> ClientProvidedData<GithubReleaseSource> {
+) -> ClientProvidedData {
     let hash = sha512_for_content(index.as_bytes()).unwrap();
     let signature = secret_key.sign(&hash).unwrap();
     ClientProvidedData {
-        sources: GithubReleaseSource::new(url::Url::parse(MOCK_RELEASE_PAGE_URL).unwrap()),
+        sources: ClientIndexSources::Github(GithubReleaseSource::new(
+            url::Url::parse(MOCK_RELEASE_PAGE_URL).unwrap(),
+        )),
         client_pub_key: public_key.to_base64(),
         client_sent_index: base64_for_string(index),
         client_sent_signature: signature.to_base64(),
@@ -89,14 +91,14 @@ pub fn client_provided_data_for_index(
 pub fn mocked_client_provided_data_with_keys(
     public_key: &AsfaloadPublicKeys,
     secret_key: &AsfaloadSecretKeys,
-) -> ClientProvidedData<GithubReleaseSource> {
+) -> ClientProvidedData {
     client_provided_data_for_index(public_key, secret_key, &mocked_release_index())
 }
 
 /// ClientProvidedData over the mocked release index, signed by a freshly
 /// generated key pair. Generation runs argon2, so prefer
 /// `mocked_client_provided_data_with_keys` when keys are already available.
-pub fn create_mocked_client_provided_data() -> ClientProvidedData<GithubReleaseSource> {
+pub fn create_mocked_client_provided_data() -> ClientProvidedData {
     let key_pair = AsfaloadKeyPairs::new(TEST_KEY_PASSWORD).unwrap();
     let secret_key = key_pair.secret_key(TEST_KEY_PASSWORD).unwrap();
     mocked_client_provided_data_with_keys(&key_pair.public_key(), &secret_key)

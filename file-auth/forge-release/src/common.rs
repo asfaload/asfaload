@@ -58,14 +58,6 @@ pub trait ReleaseResponseTrait {
 pub trait ClientIndexSource: Display + Clone {
     fn to_urls(&self) -> &[Url];
 }
-
-/// A single release page url is the client index source for a github
-/// release registration.
-impl ClientIndexSource for Url {
-    fn to_urls(&self) -> &[Url] {
-        std::slice::from_ref(self)
-    }
-}
 pub struct ClientProvidedData<T: ClientIndexSource> {
     pub sources: T,
     pub client_pub_key: String,

@@ -4,6 +4,7 @@ use crate::file_auth::release_types::{
 };
 use forge_release::common::ClientProvidedData;
 use forge_release::common::ReleaseInfo;
+use forge_release::github::GithubReleaseSource;
 use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -28,7 +29,7 @@ impl ReleaseIndexWriter for ReleaseAdders {
 impl ReleaseAdder for ReleaseAdders {
     async fn new(
         release_url: &url::Url,
-        client_provided_data: ClientProvidedData<url::Url>,
+        client_provided_data: ClientProvidedData<GithubReleaseSource>,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>

@@ -6,7 +6,7 @@ use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use forge_release::common::ClientProvidedData;
-use forge_release::github::GithubReleaseInfo;
+use forge_release::github::{GithubReleaseInfo, GithubReleaseSource};
 use rest_api_types::models::{
     GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
@@ -1117,11 +1117,11 @@ pub async fn register_assets_handler(
 fn client_provided_data_for(
     client_pub_key: &str,
     payload: &rest_api_types::models::GithubReleasePayload,
-) -> Result<ClientProvidedData<url::Url>, ApiError> {
+) -> Result<ClientProvidedData<GithubReleaseSource>, ApiError> {
     let release_url = url::Url::parse(&payload.github_release_url)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
     Ok(ClientProvidedData {
-        sources: release_url,
+        sources: GithubReleaseSource::new(release_url),
         client_pub_key: client_pub_key.to_string(),
         client_sent_index: payload.index.clone(),
         client_sent_signature: payload.signature.clone(),
@@ -1131,7 +1131,7 @@ fn client_provided_data_for(
 async fn register_github_release(
     state: &AppState,
     request_id: &str,
-    client_provided_data: ClientProvidedData<url::Url>,
+    client_provided_data: ClientProvidedData<GithubReleaseSource>,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
     let convert_github_release_error =
         |e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e));
@@ -1142,7 +1142,7 @@ async fn register_github_release(
     );
 
     // Validate the url by parsing it as a release info
-    let parsed_url = client_provided_data.sources.clone();
+    let parsed_url = client_provided_data.sources.url().clone();
     let release_info =
         GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
@@ -1755,8 +1755,8 @@ mod client_provided_data_tests {
         let data = client_provided_data_for("pub-key-value", &payload).unwrap();
 
         assert_eq!(
-            data.sources,
-            url::Url::parse(&payload.github_release_url).unwrap()
+            data.sources.url(),
+            &url::Url::parse(&payload.github_release_url).unwrap()
         );
         assert_eq!(data.client_pub_key, "pub-key-value");
         assert_eq!(data.client_sent_index, "index-value");

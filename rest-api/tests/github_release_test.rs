@@ -9,6 +9,7 @@ pub mod tests {
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
     use forge_release::common::ClientProvidedData;
+    use forge_release::github::GithubReleaseSource;
     use forge_release::github::test_utils::{
         MOCK_RELEASE_PAGE_URL, client_provided_data_for_index,
         mocked_client_provided_data_with_keys, mocked_release_index,
@@ -597,7 +598,7 @@ pub mod tests {
         // the given client provided data, authenticated as key 0.
         async fn post_release(
             &self,
-            data: &ClientProvidedData<url::Url>,
+            data: &ClientProvidedData<GithubReleaseSource>,
         ) -> Result<reqwest::Response> {
             let payload =
                 serde_json::to_value(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {

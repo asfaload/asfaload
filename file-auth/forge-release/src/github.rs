@@ -148,6 +148,36 @@ pub fn get_checksums_from_github_rest_api_answer(
 // Originally in rest-api, but made available to client to generate index for release registration
 // -----------------------------------------------------------------------------------------------
 
+/// The release urls the client used as source to build the index it sends.
+/// For a github release registration, this is the single release page url.
+#[derive(Debug, Clone)]
+pub struct GithubReleaseSource {
+    release_url: Url,
+}
+
+impl GithubReleaseSource {
+    pub fn new(release_url: Url) -> Self {
+        Self { release_url }
+    }
+
+    /// The release page url the client built its index from.
+    pub fn url(&self) -> &Url {
+        &self.release_url
+    }
+}
+
+impl std::fmt::Display for GithubReleaseSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.release_url)
+    }
+}
+
+impl crate::common::ClientIndexSource for GithubReleaseSource {
+    fn to_urls(&self) -> &[Url] {
+        std::slice::from_ref(&self.release_url)
+    }
+}
+
 /// Information of a Github release
 #[derive(Debug, Clone)]
 pub struct GithubReleaseInfo {
@@ -389,7 +419,10 @@ mod verified_client_data_tests {
         (&keys.0, &keys.1)
     }
 
-    async fn verify_rejects_with(data: ClientProvidedData<url::Url>, expected_message: &str) {
+    async fn verify_rejects_with(
+        data: ClientProvidedData<GithubReleaseSource>,
+        expected_message: &str,
+    ) {
         let fetcher = MockGithubReleaseFetcher::new();
         let outcome = VerifiedClientData::new(data, &fetcher).await;
         match outcome {
@@ -410,7 +443,7 @@ mod verified_client_data_tests {
     // number of distinct entries"), and because the first detail shares its
     // line with the error prefix.
     async fn verify_rejects_index_with(
-        data: ClientProvidedData<url::Url>,
+        data: ClientProvidedData<GithubReleaseSource>,
         expected_details: &[&str],
     ) {
         let fetcher = MockGithubReleaseFetcher::new();
@@ -438,7 +471,7 @@ mod verified_client_data_tests {
     #[tokio::test]
     async fn accepts_client_index_and_signature_matching_server_index() {
         let data = create_mocked_client_provided_data();
-        let expected_url = data.sources.clone();
+        let expected_url = data.sources.url().clone();
         let expected_pub_key = data.client_pub_key.clone();
         let expected_index = data.client_sent_index.clone();
         let expected_signature = data.client_sent_signature.clone();
@@ -450,7 +483,7 @@ mod verified_client_data_tests {
             Ok(verified) => {
                 // The accessors must expose exactly the data sent by the
                 // client, in their parsed form as the server will use it.
-                assert_eq!(verified.sources(), &[expected_url]);
+                assert_eq!(verified.sources(), &[expected_url][..]);
                 assert_eq!(verified.pub_key().to_base64(), expected_pub_key);
                 let expected_index_bytes = string_from_base64(&expected_index).unwrap();
                 assert_eq!(verified.index_string(), expected_index_bytes);
@@ -515,7 +548,7 @@ mod verified_client_data_tests {
         // duplicated, so only one distinct file is published.
         let client_provided_index = index_with_files(vec![file_a.clone(), file_a]);
 
-        let message = VerifiedClientData::<url::Url>::report_indexes_differences(
+        let message = VerifiedClientData::<GithubReleaseSource>::report_indexes_differences(
             &client_provided_index,
             &server_built_index,
         )
@@ -547,7 +580,7 @@ mod verified_client_data_tests {
         // but the set of distinct files is the same as the server's.
         let client_provided_index = index_with_files(vec![file_a.clone(), file_b.clone(), file_a]);
 
-        let message = VerifiedClientData::<url::Url>::report_indexes_differences(
+        let message = VerifiedClientData::<GithubReleaseSource>::report_indexes_differences(
             &client_provided_index,
             &server_built_index,
         )
@@ -655,7 +688,7 @@ mod verified_client_data_tests {
         pub_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
         change: impl FnOnce(&mut serde_json::Value),
-    ) -> ClientProvidedData<url::Url> {
+    ) -> ClientProvidedData<GithubReleaseSource> {
         let mut value: serde_json::Value = serde_json::from_str(&mocked_release_index()).unwrap();
         change(&mut value);
         let index_string = serde_json::to_string(&value).unwrap();

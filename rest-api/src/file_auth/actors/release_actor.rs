@@ -8,8 +8,8 @@ use aggregate_signature::get_authorized_signers_for_file;
 use common::errors::AggregateSignatureError;
 use common::{SignedFileLoader, errors::SignedFileError};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
-use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
-use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
+use forge_release::common::{ClientProvidedData, ReleaseHandlingError, ReleaseInfo};
+use forge_release::github::GithubReleaseInfo;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -27,7 +27,7 @@ pub struct ReleaseActor {
 pub struct ProcessRelease {
     pub release_info: GithubReleaseInfo,
     pub request_id: String,
-    pub client_provided_data: ClientProvidedData,
+    pub client_provided_data: ClientProvidedData<url::Url>,
 }
 
 pub struct RegisterResult {

@@ -8,7 +8,7 @@ pub mod tests {
     use common::fs::names::{find_global_signers_for, local_signers_path_for};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
-    use forge_release::github::ClientProvidedData;
+    use forge_release::common::ClientProvidedData;
     use forge_release::github::test_utils::{
         MOCK_RELEASE_PAGE_URL, client_provided_data_for_index,
         mocked_client_provided_data_with_keys, mocked_release_index,
@@ -595,7 +595,10 @@ pub mod tests {
 
         // Send a register-assets request for the mocked release page with
         // the given client provided data, authenticated as key 0.
-        async fn post_release(&self, data: &ClientProvidedData) -> Result<reqwest::Response> {
+        async fn post_release(
+            &self,
+            data: &ClientProvidedData<url::Url>,
+        ) -> Result<reqwest::Response> {
             let payload =
                 serde_json::to_value(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
                     github_release_url: MOCK_RELEASE_PAGE_URL.to_string(),

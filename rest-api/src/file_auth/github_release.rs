@@ -5,11 +5,12 @@ use crate::file_auth::release_types::{
 use crate::file_auth::releasers::BackendReleaseInfos;
 use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures};
 use forge_release::common::ReleaseInfo;
+use forge_release::common::{ClientProvidedData, VerifiedClientData};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
+use forge_release::github::GithubReleaseInfo;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
-use forge_release::github::{ClientProvidedData, GithubReleaseInfo, VerifiedClientData};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -27,7 +28,7 @@ fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleas
 pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    pub verified_client_data: VerifiedClientData,
+    pub verified_client_data: VerifiedClientData<url::Url>,
     release_info: BackendGithubReleaseInfo,
 }
 
@@ -67,7 +68,7 @@ impl ReleaseIndexWriter for GithubReleaseAdder {}
 impl ReleaseAdder for GithubReleaseAdder {
     async fn new(
         release_url: &url::Url,
-        client_provided_data: ClientProvidedData,
+        client_provided_data: ClientProvidedData<url::Url>,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>

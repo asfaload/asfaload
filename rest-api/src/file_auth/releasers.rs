@@ -2,8 +2,8 @@ use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAd
 use crate::file_auth::release_types::{
     BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
+use forge_release::common::ClientProvidedData;
 use forge_release::common::ReleaseInfo;
-use forge_release::github::ClientProvidedData;
 use forge_url::github::is_github_release_host;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -28,7 +28,7 @@ impl ReleaseIndexWriter for ReleaseAdders {
 impl ReleaseAdder for ReleaseAdders {
     async fn new(
         release_url: &url::Url,
-        client_provided_data: ClientProvidedData,
+        client_provided_data: ClientProvidedData<url::Url>,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>
@@ -238,8 +238,8 @@ mod test_utils_tests {
         // should only use verified client data.
         let verified = &github.verified_client_data;
         assert_eq!(
-            verified.github_release_url(),
-            release_url.to_string(),
+            verified.sources(),
+            &[release_url.clone()][..],
             "the verified data must keep the release url sent by the client"
         );
         assert_eq!(

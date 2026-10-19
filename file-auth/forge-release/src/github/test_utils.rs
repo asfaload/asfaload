@@ -8,8 +8,8 @@ use features_lib::{
     AsfaloadSecretKeyTrait, AsfaloadSecretKeys, AsfaloadSignatureTrait, sha512_for_content,
 };
 
-use super::{ClientProvidedData, GithubReleaseResponse};
-use crate::common::{ReleaseFetcher, ReleaseHandlingError};
+use super::GithubReleaseResponse;
+use crate::common::{ClientProvidedData, ReleaseFetcher, ReleaseHandlingError};
 use common::into_url::IntoUrl;
 
 // Minimal shape of the github rest-api release response as parsed by
@@ -45,9 +45,9 @@ impl Default for MockGithubReleaseFetcher {
 }
 
 impl ReleaseFetcher<GithubReleaseResponse> for MockGithubReleaseFetcher {
-    async fn fetch<U: IntoUrl>(
+    async fn fetch<U: IntoUrl + Clone + Sync>(
         &self,
-        _url: U,
+        _url: &[U],
     ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
         Ok(create_mock_release_response())
     }
@@ -73,11 +73,11 @@ pub fn client_provided_data_for_index(
     public_key: &AsfaloadPublicKeys,
     secret_key: &AsfaloadSecretKeys,
     index: &str,
-) -> ClientProvidedData {
+) -> ClientProvidedData<url::Url> {
     let hash = sha512_for_content(index.as_bytes()).unwrap();
     let signature = secret_key.sign(&hash).unwrap();
     ClientProvidedData {
-        github_release_url: MOCK_RELEASE_PAGE_URL.to_string(),
+        sources: url::Url::parse(MOCK_RELEASE_PAGE_URL).unwrap(),
         client_pub_key: public_key.to_base64(),
         client_sent_index: base64_for_string(index),
         client_sent_signature: signature.to_base64(),
@@ -89,14 +89,14 @@ pub fn client_provided_data_for_index(
 pub fn mocked_client_provided_data_with_keys(
     public_key: &AsfaloadPublicKeys,
     secret_key: &AsfaloadSecretKeys,
-) -> ClientProvidedData {
+) -> ClientProvidedData<url::Url> {
     client_provided_data_for_index(public_key, secret_key, &mocked_release_index())
 }
 
 /// ClientProvidedData over the mocked release index, signed by a freshly
 /// generated key pair. Generation runs argon2, so prefer
 /// `mocked_client_provided_data_with_keys` when keys are already available.
-pub fn create_mocked_client_provided_data() -> ClientProvidedData {
+pub fn create_mocked_client_provided_data() -> ClientProvidedData<url::Url> {
     let key_pair = AsfaloadKeyPairs::new(TEST_KEY_PASSWORD).unwrap();
     let secret_key = key_pair.secret_key(TEST_KEY_PASSWORD).unwrap();
     mocked_client_provided_data_with_keys(&key_pair.public_key(), &secret_key)

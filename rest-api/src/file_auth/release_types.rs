@@ -2,9 +2,9 @@ use crate::file_auth::releasers::BackendReleaseInfos;
 use common::fs::names::find_global_signers_for;
 use features_lib::AsfaloadPublicKeys;
 use features_lib::AsfaloadSignatures;
+use forge_release::common::ClientProvidedData;
 use forge_release::common::ReleaseHandlingError;
 use forge_release::common::ReleaseInfo;
-use forge_release::github::ClientProvidedData;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
 pub trait ReleaseAdder: ReleaseIndexWriter {
     async fn new(
         release_url: &url::Url,
-        client_provided_data: ClientProvidedData,
+        client_provided_data: ClientProvidedData<url::Url>,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError>

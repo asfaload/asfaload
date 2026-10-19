@@ -252,7 +252,7 @@ impl Client {
         let payload = match mode {
             RegistrationMode::GithubRelease { url } => {
                 let fetcher = create_github_fetcher();
-                let release = fetcher.fetch(url).await?;
+                let release = fetcher.fetch(&[url.as_str()]).await?;
                 let index = release.generate_index_json()?;
                 let hash = sha512_for_content(index.as_bytes())?;
                 let signature = secret_key.sign(&hash)?;

@@ -1,16 +1,12 @@
-use std::{
-    collections::HashSet,
-    fmt::{self},
-};
+use std::fmt::{self};
 
-use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo};
-use common::{
-    http::fetch_request_with_retry, into_url::IntoUrl, sha512_for_content, string_from_base64,
+use crate::common::{
+    ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo, ReleaseResponseTrait,
 };
+use common::{http::fetch_request_with_retry, into_url::IntoUrl};
 use core::time::Duration;
 use features_lib::{
-    AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait,
-    AsfaloadSignatures, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
+    AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
     ParsedChecksum,
 };
 use forge_url::path_prefix_from_url;
@@ -24,7 +20,7 @@ const REQUEST_TIMEOUT_SEC: u64 = 10;
 /// Builds an api url to retrieve the release info. This builds the url based on owner, repo and
 /// tag, and the document returned is a json object with all details of the release. The document
 /// has a url field, which is of the form
-///    https://api.github.com/repos/{owner}/{repo}/releases/252430053
+///    `https://api.github.com/repos/{owner}/{repo}/releases/252430053`
 /// This last url does not use the tag but a release id, and is probably the canonical url of the release.
 /// It returns the exact same document as the url we build with owner, repo and tag.
 pub fn github_release_api_url(release_page_url: &url::Url) -> Result<Url, ReleaseHandlingError> {
@@ -52,6 +48,12 @@ pub struct GithubReleaseResponse {
     pub published_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub assets: Vec<GithubReleaseAsset>,
+}
+
+impl ReleaseResponseTrait for GithubReleaseResponse {
+    async fn generate_index(&self) -> Result<AsfaloadIndex, ReleaseHandlingError> {
+        GithubReleaseResponse::generate_index(self)
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -146,6 +148,30 @@ pub fn get_checksums_from_github_rest_api_answer(
 // Originally in rest-api, but made available to client to generate index for release registration
 // -----------------------------------------------------------------------------------------------
 
+/// The release urls the client used as source to build the index it sends.
+/// For a github release registration, this is the single release page url.
+#[derive(Debug, Clone)]
+pub struct GithubReleaseSource {
+    release_url: Url,
+}
+
+impl GithubReleaseSource {
+    pub fn new(release_url: Url) -> Self {
+        Self { release_url }
+    }
+
+    /// The release page url the client built its index from.
+    pub fn url(&self) -> &Url {
+        &self.release_url
+    }
+}
+
+impl std::fmt::Display for GithubReleaseSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.release_url)
+    }
+}
+
 /// Information of a Github release
 #[derive(Debug, Clone)]
 pub struct GithubReleaseInfo {
@@ -156,172 +182,6 @@ pub struct GithubReleaseInfo {
     pub owner: String,
     pub repo: String,
     pub tag: String,
-}
-
-pub struct ClientProvidedData {
-    pub github_release_url: String,
-    pub client_pub_key: String,
-    pub client_sent_index: String,
-    pub client_sent_signature: String,
-}
-
-pub struct VerifiedClientData {
-    client_provided_data: ClientProvidedData,
-    pub_key: AsfaloadPublicKeys,
-    index_string: String,
-    signature: AsfaloadSignatures,
-}
-
-impl VerifiedClientData {
-    /// Helper to get explicit message about indexes differences. Returns None if no difference.
-    /// We keep it simple and don't try to report detailed differences in the published files found
-    /// in each index. Differences are expected to be very rare as client and servers build their
-    /// respective indexes from the same source and in a short timespan.
-    fn report_indexes_differences(
-        client_provided_index: &AsfaloadIndex,
-        server_built_index: &AsfaloadIndex,
-    ) -> Option<String> {
-        let mut lines = Vec::new();
-        if client_provided_index.published_files.len() != server_built_index.published_files.len() {
-            lines.push("Files published differ in number".to_string());
-        };
-
-        // To compare the lists of published files of both indexes, we build a HashSet for each,
-        // where the item in the set is the FileChecksum itself. This ensures all fields, and so
-        // incl. the filename and the digest algorithms are used in the comparison.
-        let expected: HashSet<&FileChecksum> = server_built_index.published_files.iter().collect();
-
-        let provided: HashSet<&FileChecksum> =
-            client_provided_index.published_files.iter().collect();
-        if expected != provided {
-            if expected.len() != provided.len() {
-                lines.push("Files published differ in number of distinct entries".to_string());
-            } else {
-                lines.push("Files published differ.".to_string());
-            }
-        }
-        if server_built_index.published_on != client_provided_index.published_on {
-            lines.push(format!(
-                "Provided published_on ({}) differs from the one retrieved ({})",
-                client_provided_index.published_on, server_built_index.published_on
-            ));
-        }
-        if server_built_index.version != client_provided_index.version {
-            lines.push(format!(
-                "Provided version ({}) differs from the one retrieved ({})",
-                client_provided_index.version, server_built_index.version
-            ));
-        }
-
-        if lines.is_empty() {
-            None
-        } else {
-            Some(lines.join("\n"))
-        }
-    }
-
-    /// Verify the data provided by the client and return it wrapped in a
-    /// type guaranteeing the data has been checked.
-    ///
-    /// Two checks are done:
-    /// - the signature sent by the client verifies with the public key it
-    ///   declares, over the exact bytes of the index it sent, and
-    /// - the index it sent publishes exactly the files and hashes we find
-    ///   in the release we retrieve from github.
-    pub async fn new<F>(data: ClientProvidedData, fetcher: &F) -> Result<Self, ReleaseHandlingError>
-    where
-        F: ReleaseFetcher<GithubReleaseResponse>,
-    {
-        // Parse the signature sent
-        let signature =
-            AsfaloadSignatures::from_base64(&data.client_sent_signature).map_err(|e| {
-                ReleaseHandlingError::InvalidData(format!(
-                    "Could not parse signature sent by client for github release {}: {}",
-                    data.github_release_url, e
-                ))
-            })?;
-
-        // Parse the index sent
-        let index_string = string_from_base64(&data.client_sent_index).map_err(|e| {
-            ReleaseHandlingError::InvalidData(format!(
-                "Could not decode index sent by client: {}",
-                e
-            ))
-        })?;
-
-        // Compute digest of client sent index json, for signature validation
-        let index_sha512 = sha512_for_content(index_string.as_bytes()).map_err(|e| {
-            ReleaseHandlingError::InvalidData(format!(
-                "Could not compute sha512 of the index sent by client for github release {}: {}",
-                data.github_release_url, e
-            ))
-        })?;
-
-        let pub_key = AsfaloadPublicKeys::from_base64(&data.client_pub_key).map_err(|e| {
-            ReleaseHandlingError::InvalidData(format!(
-                "Could not parse public key sent by client for github release {}: {}",
-                data.github_release_url, e
-            ))
-        })?;
-
-        // Verify the signature sent by client
-        pub_key.verify(&signature, &index_sha512).map_err(|e| {
-            ReleaseHandlingError::InvalidData(format!(
-                "Signature sent by client for github release {} does not verify: {}",
-                data.github_release_url, e
-            ))
-        })?;
-
-        // Now we will check that the index we build ourself for the release is equivalent
-        let client_provided_index: AsfaloadIndex =
-            serde_json::from_str(&index_string).map_err(|e| {
-                ReleaseHandlingError::InvalidData(format!(
-                    "Could not parse index sent by client for github release {}: {}",
-                    data.github_release_url, e
-                ))
-            })?;
-
-        // Retrieve the release and build our own index: the client index
-        // must publish exactly the files we find there, with identical hashes.
-        let release: GithubReleaseResponse = fetcher
-            .fetch(data.github_release_url.clone())
-            .await
-            .map_err(|e| {
-            ReleaseHandlingError::Generic(format!("Could not retrieve github release: {}", e))
-        })?;
-
-        let index = release.generate_index()?;
-
-        if let Some(msg) = Self::report_indexes_differences(&client_provided_index, &index) {
-            return Err(ReleaseHandlingError::InvalidData(format!(
-                "Index provided by client is not identical to index generated server side for release at {}: {}",
-                data.github_release_url, msg
-            )));
-        }
-
-        Ok(VerifiedClientData {
-            client_provided_data: data,
-            pub_key,
-            index_string,
-            signature,
-        })
-    }
-
-    pub fn github_release_url(&self) -> &str {
-        &self.client_provided_data.github_release_url
-    }
-
-    pub fn pub_key(&self) -> &AsfaloadPublicKeys {
-        &self.pub_key
-    }
-
-    pub fn index_string(&self) -> &str {
-        &self.index_string
-    }
-
-    pub fn signature(&self) -> &AsfaloadSignatures {
-        &self.signature
-    }
 }
 
 impl ReleaseInfo for GithubReleaseInfo {
@@ -356,22 +216,11 @@ impl GithubReleaseInfo {
             tag,
         })
     }
-
-    pub fn to_url(&self) -> Result<url::Url, ReleaseHandlingError> {
-        Ok(self.url.clone())
-    }
 }
 
 impl fmt::Display for GithubReleaseInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.to_url().map(|u| u.to_string()).unwrap_or(format!(
-                "GithubReleaseInfo(origin_prefix: {}, repo: {}/{}, tag: {})",
-                self.origin_prefix, self.owner, self.repo, self.tag
-            ))
-        )
+        write!(f, "{}", self.url)
     }
 }
 
@@ -405,12 +254,15 @@ impl GithubReleaseFetcher {
 
 impl ReleaseFetcher<GithubReleaseResponse> for GithubReleaseFetcher {
     /// Builds a GithubReleaseResponse, which can generate the index of the release
-    async fn fetch<U: IntoUrl>(
+    async fn fetch<U: IntoUrl + Clone + Sync>(
         &self,
-        url_in: U,
+        url_in: &[U],
     ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
-        let url_text = url_in.to_string();
-        let url = url_in.into_url().map_err(|e| {
+        let first = url_in
+            .first()
+            .ok_or(ReleaseHandlingError::InvalidData("Missing url".into()))?;
+        let url_text = first.to_string();
+        let url = first.clone().into_url().map_err(|e| {
             ReleaseHandlingError::InvalidUrl(format!("Could not parse url {}: {}", url_text, e))
         })?;
         // Build the api url once, so an invalid url fails at once and is not retried.
@@ -509,6 +361,7 @@ mod tests {
 #[cfg(all(test, feature = "test-utils"))]
 mod verified_client_data_tests {
     use super::*;
+    use crate::common::{ClientProvidedData, VerifiedClientData};
     use crate::github::test_utils::{
         MockGithubReleaseFetcher, client_provided_data_for_index,
         create_mocked_client_provided_data, mocked_client_provided_data_with_keys,
@@ -595,7 +448,7 @@ mod verified_client_data_tests {
     #[tokio::test]
     async fn accepts_client_index_and_signature_matching_server_index() {
         let data = create_mocked_client_provided_data();
-        let expected_url = data.github_release_url.clone();
+        let expected_url = data.sources.to_urls()[0].clone();
         let expected_pub_key = data.client_pub_key.clone();
         let expected_index = data.client_sent_index.clone();
         let expected_signature = data.client_sent_signature.clone();
@@ -607,7 +460,7 @@ mod verified_client_data_tests {
             Ok(verified) => {
                 // The accessors must expose exactly the data sent by the
                 // client, in their parsed form as the server will use it.
-                assert_eq!(verified.github_release_url(), expected_url);
+                assert_eq!(verified.sources(), &[expected_url][..]);
                 assert_eq!(verified.pub_key().to_base64(), expected_pub_key);
                 let expected_index_bytes = string_from_base64(&expected_index).unwrap();
                 assert_eq!(verified.index_string(), expected_index_bytes);

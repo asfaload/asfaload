@@ -1,10 +1,9 @@
 use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
+    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter,
 };
 use forge_release::common::ReleaseInfo;
-use forge_release::github::ClientProvidedData;
-use forge_url::github::is_github_release_host;
+use forge_release::common::{ClientIndexSources, ClientProvidedData};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 #[cfg(all(test, feature = "test-utils"))]
@@ -25,34 +24,32 @@ impl ReleaseIndexWriter for ReleaseAdders {
     }
 }
 
-impl ReleaseAdder for ReleaseAdders {
-    async fn new(
-        release_url: &url::Url,
+impl ReleaseAdders {
+    /// Build the adder matching the client index source.
+    ///
+    /// The source variant is the dispatch key: it selects the adder that
+    /// handles the client data. The selected adder validates the client
+    /// provided data because:
+    /// - the adder has access to all data it needs, such as the config to create the release
+    ///   fetcher.
+    /// - validation of the data depends on the forge we will interact with, and so only a
+    ///   specific release adder can do the validation.
+    pub async fn new(
         client_provided_data: ClientProvidedData,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, ReleaseError>
-    where
-        Self: Sized,
-    {
-        let host = release_url
-            .host_str()
-            .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
-
-        if is_github_release_host(host) {
-            let github_adder =
-                GithubReleaseAdder::new(release_url, client_provided_data, git_repo_path, config)
-                    .await?;
-            Ok(Self::Github(Box::new(github_adder)))
-        } else {
-            Err(ReleaseUrlError::UnsupportedPlatform(format!(
-                "Host {} is not recognised as a Github Relaese host",
-                host,
-            ))
-            .into())
+    ) -> Result<Self, ReleaseError> {
+        match &client_provided_data.sources {
+            ClientIndexSources::Github(_) => {
+                let github_adder =
+                    GithubReleaseAdder::new(client_provided_data, git_repo_path, config).await?;
+                Ok(Self::Github(Box::new(github_adder)))
+            }
         }
     }
+}
 
+impl ReleaseAdder for ReleaseAdders {
     async fn index_content(&self) -> Result<String, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_content().await,
@@ -124,6 +121,8 @@ impl BackendReleaseInfo for BackendReleaseInfos {
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
+    use crate::file_auth::release_types::ReleaseUrlError;
+    use forge_release::github::GithubReleaseSource;
     use forge_release::github::test_utils::create_mocked_client_provided_data;
     use rest_api_test_helpers::get_random_port;
 
@@ -131,12 +130,20 @@ mod test_utils_tests {
     // the project's release pages: the api host is not a repo host.
     #[tokio::test]
     async fn test_release_adders_reject_github_api_url() {
-        use crate::file_auth::release_types::ReleaseAdder;
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().unwrap();
         let release_url =
             url::Url::parse("https://api.github.com/repos/owner/repo/releases/123").unwrap();
+
+        // The host is validated before any verification of the client
+        // data, so only the source url matters here.
+        let client_data = ClientProvidedData {
+            sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
+            client_pub_key: "unused".to_string(),
+            client_sent_index: "unused".to_string(),
+            client_sent_signature: "unused".to_string(),
+        };
 
         let port = get_random_port().await.unwrap();
         let mock_config = crate::config::AppConfig {
@@ -150,14 +157,7 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        match ReleaseAdders::new(
-            &release_url,
-            create_mocked_client_provided_data(),
-            temp_dir.path().to_path_buf(),
-            &mock_config,
-        )
-        .await
-        {
+        match ReleaseAdders::new(client_data, temp_dir.path().to_path_buf(), &mock_config).await {
             Err(ReleaseError::ReleaseUrlError(ReleaseUrlError::UnsupportedPlatform(host))) => {
                 assert!(
                     host.contains("api.github.com"),
@@ -223,14 +223,9 @@ mod test_utils_tests {
         // Keep the index bytes the client sent, to compare after verification.
         let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
 
-        let adder = ReleaseAdders::new(
-            &release_url,
-            client_data,
-            git_repo_path.clone(),
-            &mock_config,
-        )
-        .await
-        .unwrap();
+        let adder = ReleaseAdders::new(client_data, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
 
         let ReleaseAdders::Github(github) = &adder;
         // The data accepted by the adder must be kept unchanged, no re-serialization
@@ -238,8 +233,8 @@ mod test_utils_tests {
         // should only use verified client data.
         let verified = &github.verified_client_data;
         assert_eq!(
-            verified.github_release_url(),
-            release_url.to_string(),
+            verified.sources(),
+            &[release_url.clone()][..],
             "the verified data must keep the release url sent by the client"
         );
         assert_eq!(
@@ -292,9 +287,6 @@ mod test_utils_tests {
             .await
             .unwrap();
 
-        let release_url =
-            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
-
         let port = get_random_port().await.unwrap();
         let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => crate::config::GitBackendConfig::Sha256,
@@ -313,7 +305,6 @@ mod test_utils_tests {
         };
 
         let adder = ReleaseAdders::new(
-            &release_url,
             create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,
@@ -352,9 +343,6 @@ mod test_utils_tests {
             .await
             .unwrap();
 
-        let release_url =
-            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
-
         let port = get_random_port().await.unwrap();
         let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => crate::config::GitBackendConfig::Sha256,
@@ -377,14 +365,9 @@ mod test_utils_tests {
         // byte-identical, as the client signature covers those bytes only.
         let sent_index_bytes = common::string_from_base64(&client_data.client_sent_index).unwrap();
 
-        let adder = ReleaseAdders::new(
-            &release_url,
-            client_data,
-            git_repo_path.clone(),
-            &mock_config,
-        )
-        .await
-        .unwrap();
+        let adder = ReleaseAdders::new(client_data, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
 
         let index_path = adder.create_index().await.unwrap();
         assert_eq!(
@@ -425,9 +408,6 @@ mod test_utils_tests {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let release_url =
-            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
-
         let port = get_random_port().await.unwrap();
         let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => crate::config::GitBackendConfig::Sha256,
@@ -446,7 +426,6 @@ mod test_utils_tests {
         };
 
         let adder = ReleaseAdders::new(
-            &release_url,
             create_mocked_client_provided_data(),
             git_repo_path.clone(),
             &mock_config,

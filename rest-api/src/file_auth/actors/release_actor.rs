@@ -8,8 +8,7 @@ use aggregate_signature::get_authorized_signers_for_file;
 use common::errors::AggregateSignatureError;
 use common::{SignedFileLoader, errors::SignedFileError};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
-use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
-use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
+use forge_release::common::{ClientProvidedData, ReleaseHandlingError, ReleaseInfo};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -24,8 +23,12 @@ pub struct ReleaseActor {
     config: crate::config::AppConfig,
 }
 
+/// Message asking the actor to register a release.
+///
+/// The client provided data carries the runtime-dispatch
+/// `ClientIndexSources` enum, and the release identity is derived from it
+/// by the adder layer.
 pub struct ProcessRelease {
-    pub release_info: GithubReleaseInfo,
     pub request_id: String,
     pub client_provided_data: ClientProvidedData,
 }
@@ -93,20 +96,13 @@ impl ReleaseActor {
     ) -> Result<RegisterResult, ApiError> {
         info!(
             request_id = %msg.request_id,
-            release_info = %msg.release_info,
+            sources = %msg.client_provided_data.sources,
             "Processing release"
         );
 
         // The release adder validates the client provided data during its initialisation.
-        // The release adder validates the client provided data because:
-        // - we have access to all data we need such as the config to create a github
-        // fetcher.
-        // - validation of the data depends of the forge we will interact with, and so only a
-        // specific release adder can do the validation.
+        // See `ReleaseAdders::new` for the rationale.
         let adder = ReleaseAdders::new(
-            &msg.release_info
-                .to_url()
-                .map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?,
             msg.client_provided_data,
             self.config.git_repo_path.clone(),
             &self.config,
@@ -116,7 +112,7 @@ impl ReleaseActor {
             tracing::error!(
                 actor = %ACTOR_NAME,
                 error = %e,
-                "Failed to initialise GithubReleaseAdder"
+                "Failed to initialise release adder"
             );
             match e {
                 ReleaseError::ReleaseUrlError(url_error) => match url_error {

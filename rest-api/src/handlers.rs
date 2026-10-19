@@ -5,7 +5,8 @@ use common::fs::names::{
 use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
-use forge_release::github::{ClientProvidedData, GithubReleaseInfo};
+use forge_release::common::{ClientIndexSources, ClientProvidedData};
+use forge_release::github::{GithubReleaseInfo, GithubReleaseSource};
 use rest_api_types::models::{
     GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
@@ -1099,7 +1100,7 @@ pub async fn register_assets_handler(
 
     match &request {
         RegisterAssetsPayload::GithubRelease(r) => {
-            let client_provided_data = client_provided_data_for(signing_key, r);
+            let client_provided_data = client_provided_data_for(signing_key, r)?;
             register_github_release(&state, request_id, client_provided_data).await
         }
         RegisterAssetsPayload::ChecksumFiles(f) => {
@@ -1110,16 +1111,24 @@ pub async fn register_assets_handler(
 
 /// Build the client-provided data from the public key header and the
 /// GitHub release payload.
+///
+/// The release url sent by the client is validated here, before the source
+/// is erased into the runtime-dispatch enum, so an invalid url is reported
+/// to the client before the release actor is invoked.
 fn client_provided_data_for(
     client_pub_key: &str,
     payload: &rest_api_types::models::GithubReleasePayload,
-) -> ClientProvidedData {
-    ClientProvidedData {
-        github_release_url: payload.github_release_url.clone(),
+) -> Result<ClientProvidedData, ApiError> {
+    let release_url = url::Url::parse(&payload.github_release_url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
+    GithubReleaseInfo::from_url(&release_url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e)))?;
+    Ok(ClientProvidedData {
+        sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
         client_pub_key: client_pub_key.to_string(),
         client_sent_index: payload.index.clone(),
         client_sent_signature: payload.signature.clone(),
-    }
+    })
 }
 
 async fn register_github_release(
@@ -1127,20 +1136,11 @@ async fn register_github_release(
     request_id: &str,
     client_provided_data: ClientProvidedData,
 ) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
-    let convert_github_release_error =
-        |e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e));
     tracing::info!(
         request_id = %request_id,
-        github_release_url = %client_provided_data.github_release_url,
+        github_release_url = %client_provided_data.sources,
         "Received register-assets request (GitHub mode)"
     );
-
-    let parsed_url = url::Url::parse(&client_provided_data.github_release_url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
-
-    // Validate the url by parsing it as a release info
-    let release_info =
-        GithubReleaseInfo::from_url(&parsed_url).map_err(convert_github_release_error)?;
 
     // We send the client provided data as is, and it will be validated before use in the actor as
     // it has access to the config needed to build a release fetcher.
@@ -1148,7 +1148,6 @@ async fn register_github_release(
         .release_actor
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
-            release_info,
             client_provided_data,
         })
         .await
@@ -1748,9 +1747,10 @@ mod client_provided_data_tests {
             signature: "signature-value".to_string(),
         };
 
-        let data = client_provided_data_for("pub-key-value", &payload);
+        let data = client_provided_data_for("pub-key-value", &payload).unwrap();
 
-        assert_eq!(data.github_release_url, payload.github_release_url);
+        let expected_url = url::Url::parse(&payload.github_release_url).unwrap();
+        assert_eq!(data.sources.to_urls(), std::slice::from_ref(&expected_url));
         assert_eq!(data.client_pub_key, "pub-key-value");
         assert_eq!(data.client_sent_index, "index-value");
         assert_eq!(data.client_sent_signature, "signature-value");

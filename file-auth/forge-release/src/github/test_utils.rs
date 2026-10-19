@@ -8,8 +8,8 @@ use features_lib::{
     AsfaloadSecretKeyTrait, AsfaloadSecretKeys, AsfaloadSignatureTrait, sha512_for_content,
 };
 
-use super::{ClientProvidedData, GithubReleaseResponse};
-use crate::common::{ReleaseFetcher, ReleaseHandlingError};
+use super::{GithubReleaseResponse, GithubReleaseSource};
+use crate::common::{ClientIndexSources, ClientProvidedData, ReleaseFetcher, ReleaseHandlingError};
 use common::into_url::IntoUrl;
 
 // Minimal shape of the github rest-api release response as parsed by
@@ -45,9 +45,9 @@ impl Default for MockGithubReleaseFetcher {
 }
 
 impl ReleaseFetcher<GithubReleaseResponse> for MockGithubReleaseFetcher {
-    async fn fetch<U: IntoUrl>(
+    async fn fetch<U: IntoUrl + Clone + Sync>(
         &self,
-        _url: U,
+        _url: &[U],
     ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
         Ok(create_mock_release_response())
     }
@@ -77,7 +77,9 @@ pub fn client_provided_data_for_index(
     let hash = sha512_for_content(index.as_bytes()).unwrap();
     let signature = secret_key.sign(&hash).unwrap();
     ClientProvidedData {
-        github_release_url: MOCK_RELEASE_PAGE_URL.to_string(),
+        sources: ClientIndexSources::Github(GithubReleaseSource::new(
+            url::Url::parse(MOCK_RELEASE_PAGE_URL).unwrap(),
+        )),
         client_pub_key: public_key.to_base64(),
         client_sent_index: base64_for_string(index),
         client_sent_signature: signature.to_base64(),

@@ -4,10 +4,8 @@ use features_lib::AsfaloadPublicKeys;
 use features_lib::AsfaloadSignatures;
 use forge_release::common::ReleaseHandlingError;
 use forge_release::common::ReleaseInfo;
-use forge_release::github::ClientProvidedData;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
-use std::path::PathBuf;
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncWriteExt};
 
@@ -59,15 +57,6 @@ pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
 
 #[allow(async_fn_in_trait, private_bounds)]
 pub trait ReleaseAdder: ReleaseIndexWriter {
-    async fn new(
-        release_url: &url::Url,
-        client_provided_data: ClientProvidedData,
-        git_repo_path: PathBuf,
-        config: &crate::config::AppConfig,
-    ) -> Result<Self, ReleaseError>
-    where
-        Self: Sized;
-
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError>;
     /// Content of the index file to persist, exactly as sent by the client.
     ///

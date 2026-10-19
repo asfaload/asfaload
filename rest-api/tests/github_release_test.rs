@@ -8,7 +8,7 @@ pub mod tests {
     use common::fs::names::{find_global_signers_for, local_signers_path_for};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use features_lib::{ChecksumSourceFormat, FileChecksum, HashAlgorithm};
-    use forge_release::github::ClientProvidedData;
+    use forge_release::common::ClientProvidedData;
     use forge_release::github::test_utils::{
         MOCK_RELEASE_PAGE_URL, client_provided_data_for_index,
         mocked_client_provided_data_with_keys, mocked_release_index,

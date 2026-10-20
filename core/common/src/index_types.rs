@@ -2,6 +2,8 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::to_posix_json;
+
 /// Indicates the format of the content retrieved from the FileChecksum.source url
 #[derive(Hash, Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
 pub enum ChecksumSourceFormat {
@@ -34,6 +36,12 @@ pub struct AsfaloadIndex {
     pub published_on: chrono::DateTime<chrono::Utc>,
     pub version: i32,
     pub published_files: Vec<FileChecksum>,
+}
+
+impl AsfaloadIndex {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        to_posix_json(self)
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]

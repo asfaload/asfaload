@@ -1,13 +1,9 @@
-use crate::constants::{INDEX_FILE, MAX_CHECKSUM_FILE_SIZE, MAX_PARALLEL_CSUMS};
-use common::checksums_parser::parse_checksums;
-use common::index_types::ChecksumSourceFormat;
-use features_lib::{AsfaloadIndex, FileChecksum};
-use futures::stream::{self, StreamExt};
+use crate::constants::INDEX_FILE;
+use forge_release::checksums::index_from_shasums_urls;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use rest_api_types::validate_common_parent;
 use std::path::PathBuf;
-use url::Url;
 
 /// Handles registration of files from checksums files (e.g. SHA256SUMS, SHA512SUMS).
 ///
@@ -18,54 +14,6 @@ pub struct ChecksumFileRegistrar {
     reqwest_client: reqwest::Client,
     directory_path: NormalisedPaths,
     urls: Vec<url::Url>,
-}
-
-pub async fn index_from_shasums_urls(
-    reqwest_client: &reqwest::Client,
-    urls: &[Url],
-) -> Result<AsfaloadIndex, ApiError> {
-    // Download and parse checksums files in parallel
-    let results: Vec<Result<Vec<FileChecksum>, ApiError>> = stream::iter(urls.iter().cloned())
-        .map(|url| {
-            let client = reqwest_client.clone();
-            async move {
-                let content = download_checksum_file(&client, url.as_str()).await?;
-                let checksums = parse_checksums(&content).map_err(|e| {
-                    ApiError::InvalidRequestBody(format!(
-                        "Failed to parse checksums file {}: {}",
-                        url, e
-                    ))
-                })?;
-                Ok(checksums
-                    .into_iter()
-                    .map(|c| FileChecksum {
-                        file_name: c.file_name,
-                        algo: c.algo,
-                        source: url.to_string(),
-                        source_format: ChecksumSourceFormat::ShaSum,
-                        hash: c.hash,
-                    })
-                    .collect())
-            }
-        })
-        .buffer_unordered(MAX_PARALLEL_CSUMS)
-        .collect()
-        .await;
-
-    let published_files: Vec<FileChecksum> = results
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-
-    let now = chrono::Utc::now();
-    Ok(AsfaloadIndex {
-        mirrored_on: now,
-        published_on: now,
-        version: 1,
-        published_files,
-    })
 }
 
 impl ChecksumFileRegistrar {
@@ -110,7 +58,9 @@ impl ChecksumFileRegistrar {
                 ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
             })?;
         }
-        let index = index_from_shasums_urls(&self.reqwest_client, &self.urls).await?;
+        let index = index_from_shasums_urls(&self.reqwest_client, &self.urls)
+            .await
+            .map_err(|e| ApiError::ReleaseApiError("ChecksumFile".to_string(), e.to_string()))?;
         let content = common::to_posix_json(&index).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to serialize index: {}", e))
         })?;
@@ -144,75 +94,11 @@ impl ChecksumFileRegistrar {
     }
 }
 
-/// Downloads the text content of a checksums file, enforcing a size limit.
-async fn download_checksum_file(client: &reqwest::Client, url: &str) -> Result<String, ApiError> {
-    use futures_util::StreamExt as _;
-
-    let response = client.get(url).send().await.map_err(|e| {
-        ApiError::ReleaseApiError(
-            "ChecksumFile".to_string(),
-            format!("Failed to download checksums file: {}", e),
-        )
-    })?;
-
-    if response.status() != reqwest::StatusCode::OK {
-        return Err(ApiError::ReleaseApiError(
-            "ChecksumFile".to_string(),
-            format!(
-                "HTTP error downloading checksums file {}: {}",
-                url,
-                response.status()
-            ),
-        ));
-    }
-
-    if let Some(len) = response.content_length()
-        && len > MAX_CHECKSUM_FILE_SIZE
-    {
-        return Err(ApiError::ReleaseApiError(
-            "ChecksumFile".to_string(),
-            format!(
-                "Checksums file size {} exceeds limit {}",
-                len, MAX_CHECKSUM_FILE_SIZE
-            ),
-        ));
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut body = Vec::new();
-    let mut total_bytes = 0u64;
-
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.map_err(|e| {
-            ApiError::ReleaseApiError(
-                "ChecksumFile".to_string(),
-                format!("Error reading checksums stream: {}", e),
-            )
-        })?;
-
-        total_bytes += chunk.len() as u64;
-        if total_bytes > MAX_CHECKSUM_FILE_SIZE {
-            return Err(ApiError::ReleaseApiError(
-                "ChecksumFile".to_string(),
-                format!(
-                    "Checksums file size exceeded limit during download: {}",
-                    MAX_CHECKSUM_FILE_SIZE
-                ),
-            ));
-        }
-
-        body.extend_from_slice(&chunk);
-    }
-
-    String::from_utf8(body).map_err(|e| {
-        ApiError::InvalidRequestBody(format!("Checksums file is not valid UTF-8: {}", e))
-    })
-}
-
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
+    use features_lib::{ChecksumSourceFormat, FileChecksum};
     use forge_url::path_prefix_from_url;
 
     // The index written on disk is what consumers read: its content must

@@ -1753,7 +1753,7 @@ pub async fn ping_handler(State(state): State<AppState>, headers: HeaderMap) -> 
 #[cfg(test)]
 mod client_provided_data_tests {
     use super::*;
-    use rest_api_types::models::GithubReleasePayload;
+    use rest_api_types::models::{ChecksumFilesPayload, GithubReleasePayload};
 
     // Pins the payload-to-struct mapping: a swap of index and signature, or
     // of the public key, must fail this test.
@@ -1773,5 +1773,89 @@ mod client_provided_data_tests {
         assert_eq!(data.client_pub_key, "pub-key-value");
         assert_eq!(data.client_sent_index, "index-value");
         assert_eq!(data.client_sent_signature, "signature-value");
+    }
+
+    // Pins the checksums-payload mapping, including the order of the
+    // checksum file urls given by the client.
+    #[test]
+    fn maps_checksums_payload_fields_to_client_provided_data() {
+        let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files: vec![
+                "https://example.org/SHA512SUMS".to_string(),
+                "https://example.net/SHA512SUMS".to_string(),
+            ],
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        let data = client_provided_data_for("pub-key-value", &payload).unwrap();
+
+        let expected_urls = vec![
+            url::Url::parse("https://example.org/SHA512SUMS").unwrap(),
+            url::Url::parse("https://example.net/SHA512SUMS").unwrap(),
+        ];
+        assert_eq!(data.sources.to_urls(), expected_urls.as_slice());
+        assert_eq!(data.client_pub_key, "pub-key-value");
+        assert_eq!(data.client_sent_index, "index-value");
+        assert_eq!(data.client_sent_signature, "signature-value");
+    }
+
+    // A checksum file url that does not parse is an invalid body.
+    #[test]
+    fn checksums_payload_rejects_invalid_checksum_file_url() {
+        let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files: vec![
+                "https://example.org/SHA512SUMS".to_string(),
+                "not a url".to_string(),
+            ],
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Url parse error",
+        );
+    }
+
+    // A github release url that does not parse is an invalid body.
+    #[test]
+    fn github_release_payload_rejects_unparsable_release_url() {
+        let payload = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            github_release_url: "not a url".to_string(),
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Invalid release URL",
+        );
+    }
+
+    // A valid url rejected by the forge validation is an invalid body, and
+    // is reported before any release actor is invoked.
+    #[test]
+    fn github_release_payload_rejects_non_github_release_url() {
+        let payload = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            github_release_url: "https://gitlab.com/owner/repo/releases/tag/v1".to_string(),
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Invalid release information",
+        );
+    }
+
+    fn assert_invalid_body(result: Result<ClientProvidedData, ApiError>, message_part: &str) {
+        match result {
+            Ok(_) => panic!("Expected an error, got Ok"),
+            Err(e) => {
+                assert_eq!(e.to_http_status(), axum::http::StatusCode::BAD_REQUEST);
+                assert!(e.to_string().contains(message_part), "got: {e}");
+            }
+        }
     }
 }

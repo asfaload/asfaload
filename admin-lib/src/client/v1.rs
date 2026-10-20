@@ -8,6 +8,7 @@ use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures,
 };
+use forge_release::checksums::index_from_shasums_urls;
 use forge_release::common::ReleaseFetcher;
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
@@ -263,8 +264,15 @@ impl Client {
                 })
             }
             RegistrationMode::ChecksumFiles { urls } => {
+                let client = reqwest::Client::new();
+                let index = index_from_shasums_urls(&client, urls).await?;
+                let json = index.to_json()?;
+                let hash = sha512_for_content(json.as_bytes())?;
+                let signature = secret_key.sign(&hash)?.to_base64();
                 RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
                     csum_files: urls.clone(),
+                    index: json,
+                    signature,
                 })
             }
         };

@@ -505,6 +505,10 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ChecksumFilesPayload {
         pub csum_files: Vec<String>,
+        /// Index JSON computed by the client, base64-encoded
+        pub index: String,
+        /// Base64-encoded signature of the sha512 of the decoded index content
+        pub signature: String,
     }
 
     /// Typed payload for register-assets requests.

@@ -347,6 +347,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn index_accepts_string_urls() -> Result<(), ReleaseHandlingError> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/sha256sums.txt")
+            .with_status(200)
+            .with_body(format!("{SHA256_HEX}  app.tar.gz\n"))
+            .create_async()
+            .await;
+        let url = format!("{}/sha256sums.txt", server.url());
+        let urls = [url.as_str()];
+
+        let index = index_from_shasums_urls(&reqwest::Client::new(), &urls).await?;
+
+        let expected = vec![FileChecksum {
+            file_name: "app.tar.gz".to_string(),
+            algo: HashAlgorithm::Sha256,
+            source: url.clone(),
+            source_format: ChecksumSourceFormat::ShaSum,
+            hash: SHA256_HEX.to_string(),
+        }];
+        assert_eq!(index.published_files, expected);
+
+        mock.assert_async().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn index_fails_when_a_string_url_is_invalid() {
+        let urls = [String::from("not a url")];
+
+        match index_from_shasums_urls(&reqwest::Client::new(), &urls).await {
+            Err(ReleaseHandlingError::UrlParseError(_)) => {}
+            Err(other) => panic!("expected a UrlParseError, got {other:?}"),
+            Ok(index) => panic!(
+                "expected a UrlParseError, got a successful index with {} published files",
+                index.published_files.len()
+            ),
+        }
+    }
+
+    #[tokio::test]
     async fn index_fails_when_a_checksum_file_cannot_be_downloaded() {
         let mut server = mockito::Server::new_async().await;
         server

@@ -6,7 +6,7 @@
 //! keyed by the variant name:
 //!
 //! - `GithubRelease` -> `{"GithubRelease": {"github_release_url": ..., "index": ..., "signature": ...}}`
-//! - `ChecksumFiles` -> `{"ChecksumFiles": {"csum_files": [...]}}`
+//! - `ChecksumFiles` -> `{"ChecksumFiles": {"csum_files": [...], "index": ..., "signature": ...}}`
 //!
 //! The enum makes the two registration modes mutually exclusive: exactly one
 //! variant is selected on deserialization.
@@ -33,7 +33,11 @@ fn github_release_json() -> String {
 
 fn checksum_files_json(urls: &[&str]) -> String {
     serde_json::json!({
-        "ChecksumFiles": { "csum_files": urls }
+        "ChecksumFiles": {
+            "csum_files": urls,
+            "index": INDEX,
+            "signature": SIGNATURE,
+        }
     })
     .to_string()
 }
@@ -63,6 +67,8 @@ fn test_deserialize_checksum_files() {
     match payload {
         RegisterAssetsPayload::ChecksumFiles(p) => {
             assert_eq!(p.csum_files, vec![CHECKSUM_URL_SHA256, CHECKSUM_URL_SHA512]);
+            assert_eq!(p.index, INDEX);
+            assert_eq!(p.signature, SIGNATURE);
         }
         other => panic!("expected ChecksumFiles variant, got {other:?}"),
     }
@@ -149,12 +155,18 @@ fn test_serialize_github_release_is_tagged() {
 fn test_serialize_checksum_files_is_tagged() {
     let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
         csum_files: vec![CHECKSUM_URL_SHA256.to_string()],
+        index: INDEX.to_string(),
+        signature: SIGNATURE.to_string(),
     });
 
     assert_eq!(
         serde_json::to_value(&payload).unwrap(),
         serde_json::json!({
-            "ChecksumFiles": { "csum_files": [CHECKSUM_URL_SHA256] }
+            "ChecksumFiles": {
+                "csum_files": [CHECKSUM_URL_SHA256],
+                "index": INDEX,
+                "signature": SIGNATURE,
+            }
         })
     );
 }
@@ -183,6 +195,8 @@ fn test_roundtrip_checksum_files() {
             CHECKSUM_URL_SHA256.to_string(),
             CHECKSUM_URL_SHA512.to_string(),
         ],
+        index: INDEX.to_string(),
+        signature: SIGNATURE.to_string(),
     });
 
     let json = serde_json::to_string(&original).unwrap();

@@ -1662,6 +1662,8 @@ pub mod test_utils_tests {
         let assets_body = rest_api_types::RegisterAssetsPayload::ChecksumFiles(
             rest_api_types::models::ChecksumFilesPayload {
                 csum_files: vec![checksums_url.clone()],
+                index: "index-content".to_string(),
+                signature: "signature-content".to_string(),
             },
         );
         let assets_payload_string = serde_json::to_string(&assets_body)?;

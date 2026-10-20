@@ -7,6 +7,7 @@ use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use rest_api_types::validate_common_parent;
 use std::path::PathBuf;
+use url::Url;
 
 /// Handles registration of files from checksums files (e.g. SHA256SUMS, SHA512SUMS).
 ///
@@ -17,6 +18,54 @@ pub struct ChecksumFileRegistrar {
     reqwest_client: reqwest::Client,
     directory_path: NormalisedPaths,
     urls: Vec<url::Url>,
+}
+
+pub async fn index_from_shasums_urls(
+    reqwest_client: &reqwest::Client,
+    urls: &[Url],
+) -> Result<AsfaloadIndex, ApiError> {
+    // Download and parse checksums files in parallel
+    let results: Vec<Result<Vec<FileChecksum>, ApiError>> = stream::iter(urls.iter().cloned())
+        .map(|url| {
+            let client = reqwest_client.clone();
+            async move {
+                let content = download_checksum_file(&client, url.as_str()).await?;
+                let checksums = parse_checksums(&content).map_err(|e| {
+                    ApiError::InvalidRequestBody(format!(
+                        "Failed to parse checksums file {}: {}",
+                        url, e
+                    ))
+                })?;
+                Ok(checksums
+                    .into_iter()
+                    .map(|c| FileChecksum {
+                        file_name: c.file_name,
+                        algo: c.algo,
+                        source: url.to_string(),
+                        source_format: ChecksumSourceFormat::ShaSum,
+                        hash: c.hash,
+                    })
+                    .collect())
+            }
+        })
+        .buffer_unordered(MAX_PARALLEL_CSUMS)
+        .collect()
+        .await;
+
+    let published_files: Vec<FileChecksum> = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let now = chrono::Utc::now();
+    Ok(AsfaloadIndex {
+        mirrored_on: now,
+        published_on: now,
+        version: 1,
+        published_files,
+    })
 }
 
 impl ChecksumFileRegistrar {
@@ -61,50 +110,7 @@ impl ChecksumFileRegistrar {
                 ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
             })?;
         }
-
-        // Download and parse checksums files in parallel
-        let results: Vec<Result<Vec<FileChecksum>, ApiError>> = stream::iter(self.urls.clone())
-            .map(|url| {
-                let client = self.reqwest_client.clone();
-                async move {
-                    let content = download_checksum_file(&client, url.as_str()).await?;
-                    let checksums = parse_checksums(&content).map_err(|e| {
-                        ApiError::InvalidRequestBody(format!(
-                            "Failed to parse checksums file {}: {}",
-                            url, e
-                        ))
-                    })?;
-                    Ok(checksums
-                        .into_iter()
-                        .map(|c| FileChecksum {
-                            file_name: c.file_name,
-                            algo: c.algo,
-                            source: url.to_string(),
-                            source_format: ChecksumSourceFormat::ShaSum,
-                            hash: c.hash,
-                        })
-                        .collect())
-                }
-            })
-            .buffer_unordered(MAX_PARALLEL_CSUMS)
-            .collect()
-            .await;
-
-        let published_files: Vec<FileChecksum> = results
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-
-        let now = chrono::Utc::now();
-        let index = AsfaloadIndex {
-            mirrored_on: now,
-            published_on: now,
-            version: 1,
-            published_files,
-        };
-
+        let index = index_from_shasums_urls(&self.reqwest_client, &self.urls).await?;
         let content = common::to_posix_json(&index).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to serialize index: {}", e))
         })?;

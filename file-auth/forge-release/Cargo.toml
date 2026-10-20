@@ -32,3 +32,4 @@ workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+mockito = "1.7"

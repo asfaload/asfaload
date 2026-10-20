@@ -64,3 +64,90 @@ impl fmt::Display for HashAlgorithm {
         write!(f, "{}", s)
     }
 }
+
+#[cfg(test)]
+mod asfaload_index_tests {
+    use chrono::TimeZone;
+    use serde_json::Value;
+
+    use super::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm};
+
+    fn utc_at(year: i32, month: u32, day: u32) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc
+            .with_ymd_and_hms(year, month, day, 12, 0, 0)
+            .unwrap()
+    }
+
+    fn index() -> AsfaloadIndex {
+        AsfaloadIndex {
+            mirrored_on: utc_at(2026, 1, 2),
+            published_on: utc_at(2025, 12, 31),
+            version: 1,
+            published_files: vec![
+                FileChecksum {
+                    file_name: "app-1.2.3.tar.gz".to_string(),
+                    algo: HashAlgorithm::Sha256,
+                    source: "https://example.test/checksums.txt".to_string(),
+                    source_format: ChecksumSourceFormat::ShaSum,
+                    hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        .to_string(),
+                },
+                FileChecksum {
+                    file_name: "app-1.2.3.zip".to_string(),
+                    algo: HashAlgorithm::Sha512,
+                    source: "https://example.test/checksums.txt".to_string(),
+                    source_format: ChecksumSourceFormat::ShaSum,
+                    hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                        .to_string(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn to_json_round_trips() {
+        let index = index();
+        let json = index.to_json().unwrap();
+
+        let parsed: AsfaloadIndex = serde_json::from_str(json.trim_end()).unwrap();
+
+        assert_eq!(parsed.mirrored_on, index.mirrored_on);
+        assert_eq!(parsed.published_on, index.published_on);
+        assert_eq!(parsed.version, index.version);
+        assert_eq!(parsed.published_files, index.published_files);
+    }
+
+    #[test]
+    fn to_json_is_pretty_with_single_trailing_newline() {
+        let json = index().to_json().unwrap();
+
+        assert!(json.ends_with("}\n"), "must end with a single newline");
+        assert!(!json.ends_with("\n\n"), "must not have a blank last line");
+        assert!(json.contains("\n  "), "must be pretty-printed, not flat");
+    }
+
+    #[test]
+    fn to_json_uses_camel_case_keys() {
+        let json = index().to_json().unwrap();
+        let value: Value = serde_json::from_str(json.trim_end()).unwrap();
+
+        let top = value.as_object().unwrap();
+        for key in ["mirroredOn", "publishedOn", "version", "publishedFiles"] {
+            assert!(top.contains_key(key), "missing top-level key {key}");
+        }
+
+        let files = value["publishedFiles"].as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        let checksum = files[0].as_object().unwrap();
+        for key in ["fileName", "algo", "source", "sourceFormat", "hash"] {
+            assert!(checksum.contains_key(key), "missing file-level key {key}");
+        }
+        // HashAlgorithm is serialized with PascalCase variant names.
+        assert_eq!(checksum["algo"], Value::String("Sha256".to_string()));
+        // ChecksumSourceFormat is serialized with the variant name as-is.
+        assert_eq!(
+            checksum["sourceFormat"],
+            Value::String("ShaSum".to_string())
+        );
+    }
+}

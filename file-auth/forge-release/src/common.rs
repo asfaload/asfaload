@@ -28,6 +28,9 @@ pub enum ReleaseHandlingError {
     #[error("Parse error: {0}")]
     ParseError(#[from] serde_json::Error),
 
+    #[error("Url parse error: {0}")]
+    UrlParseError(#[from] url::ParseError),
+
     #[error("Invalid data: {0}")]
     InvalidData(String),
 

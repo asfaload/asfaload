@@ -1,3 +1,4 @@
+use common::into_url::IntoUrl;
 use features_lib::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, parse_checksums};
 use futures_util::{StreamExt, stream};
 use url::Url;
@@ -59,10 +60,15 @@ async fn download_checksum_file(
         ReleaseHandlingError::InvalidData(format!("Checksums file is not valid UTF-8: {}", e))
     })
 }
-pub async fn index_from_shasums_urls(
+pub async fn index_from_shasums_urls<U: IntoUrl + Clone>(
     reqwest_client: &reqwest::Client,
-    urls: &[Url],
+    urls_in: &[U],
 ) -> Result<AsfaloadIndex, ReleaseHandlingError> {
+    let urls = urls_in
+        .iter()
+        .cloned()
+        .map(|u| u.into_url())
+        .collect::<Result<Vec<Url>, _>>()?;
     // Download and parse checksums files in parallel
     let results: Vec<Result<Vec<FileChecksum>, ReleaseHandlingError>> =
         stream::iter(urls.iter().cloned())
@@ -333,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn index_without_urls_is_empty() -> Result<(), ReleaseHandlingError> {
-        let index = index_from_shasums_urls(&reqwest::Client::new(), &[]).await?;
+        let index = index_from_shasums_urls(&reqwest::Client::new(), &Vec::<Url>::new()).await?;
 
         assert!(index.published_files.is_empty());
         assert_eq!(index.version, 1);

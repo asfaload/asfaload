@@ -138,6 +138,7 @@ impl ReleaseActor {
                     | ReleaseHandlingError::Generic(_) => {
                         ApiError::InvalidRequestBody(e.to_string())
                     }
+                    other => ApiError::Generic(format!("An error occured: {}", other)),
                 },
                 ReleaseError::SerdeError(e) => ApiError::InternalServerError(e.to_string()),
             }

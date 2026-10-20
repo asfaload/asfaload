@@ -14,12 +14,14 @@ use tokio::fs::File;
 #[derive(Debug)]
 pub enum ReleaseAdders {
     Github(Box<GithubReleaseAdder>),
+    Checksums,
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {
     async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
         match self {
             Self::Github(github) => github.as_ref().write_index(f, content).await,
+            Self::Checksums => todo!(),
         }
     }
 }
@@ -45,6 +47,7 @@ impl ReleaseAdders {
                     GithubReleaseAdder::new(client_provided_data, git_repo_path, config).await?;
                 Ok(Self::Github(Box::new(github_adder)))
             }
+            ClientIndexSources::Checksums(_) => todo!(),
         }
     }
 }
@@ -53,29 +56,34 @@ impl ReleaseAdder for ReleaseAdders {
     async fn index_content(&self) -> Result<String, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_content().await,
+            Self::Checksums => todo!(),
         }
     }
 
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_path().await,
+            Self::Checksums => todo!(),
         }
     }
 
     fn release_info(&self) -> BackendReleaseInfos {
         match self {
             Self::Github(github) => github.release_info(),
+            Self::Checksums => todo!(),
         }
     }
 
     fn pub_key(&self) -> &features_lib::AsfaloadPublicKeys {
         match self {
             Self::Github(github) => github.pub_key(),
+            Self::Checksums => todo!(),
         }
     }
     fn signature(&self) -> &features_lib::AsfaloadSignatures {
         match self {
             Self::Github(github) => github.signature(),
+            Self::Checksums => todo!(),
         }
     }
 }
@@ -227,7 +235,9 @@ mod test_utils_tests {
             .await
             .unwrap();
 
-        let ReleaseAdders::Github(github) = &adder;
+        let ReleaseAdders::Github(github) = &adder else {
+            panic!("We should have a github relese adder here")
+        };
         // The data accepted by the adder must be kept unchanged, no re-serialization
         // must happen by the verification process, as the registration process
         // should only use verified client data.

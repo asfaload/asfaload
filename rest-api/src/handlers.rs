@@ -5,6 +5,7 @@ use common::fs::names::{
 use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
+use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
 use forge_release::github::{GithubReleaseInfo, GithubReleaseSource};
 use rest_api_types::models::{
@@ -16,6 +17,7 @@ use rest_api_types::{
     RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
 use crate::file_auth::forges::ForgeInfo;
@@ -1098,9 +1100,9 @@ pub async fn register_assets_handler(
         .ok_or(ApiError::MissingAuthenticationHeaders)?
         .to_str()?;
 
+    let client_provided_data = client_provided_data_for(signing_key, &request)?;
     match &request {
-        RegisterAssetsPayload::GithubRelease(r) => {
-            let client_provided_data = client_provided_data_for(signing_key, r)?;
+        RegisterAssetsPayload::GithubRelease(_) => {
             register_github_release(&state, request_id, client_provided_data).await
         }
         RegisterAssetsPayload::ChecksumFiles(f) => {
@@ -1117,18 +1119,34 @@ pub async fn register_assets_handler(
 /// to the client before the release actor is invoked.
 fn client_provided_data_for(
     client_pub_key: &str,
-    payload: &rest_api_types::models::GithubReleasePayload,
+    payload: &RegisterAssetsPayload,
 ) -> Result<ClientProvidedData, ApiError> {
-    let release_url = url::Url::parse(&payload.github_release_url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
-    GithubReleaseInfo::from_url(&release_url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e)))?;
-    Ok(ClientProvidedData {
-        sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
-        client_pub_key: client_pub_key.to_string(),
-        client_sent_index: payload.index.clone(),
-        client_sent_signature: payload.signature.clone(),
-    })
+    match payload {
+        RegisterAssetsPayload::GithubRelease(info) => {
+            let release_url = url::Url::parse(&info.github_release_url)
+                .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
+            GithubReleaseInfo::from_url(&release_url).map_err(|e| {
+                ApiError::InvalidRequestBody(format!("Invalid release information: {}", e))
+            })?;
+            Ok(ClientProvidedData {
+                sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
+                client_pub_key: client_pub_key.to_string(),
+                client_sent_index: info.index.clone(),
+                client_sent_signature: info.signature.clone(),
+            })
+        }
+        RegisterAssetsPayload::ChecksumFiles(info) => Ok(ClientProvidedData {
+            sources: ClientIndexSources::Checksums(ChecksumsReleaseSource::new(
+                info.csum_files
+                    .iter()
+                    .map(|s| Url::parse(s))
+                    .collect::<Result<Vec<Url>, _>>()?,
+            )),
+            client_pub_key: client_pub_key.to_string(),
+            client_sent_index: info.index.clone(),
+            client_sent_signature: info.signature.clone(),
+        }),
+    }
 }
 
 async fn register_github_release(
@@ -1746,8 +1764,9 @@ mod client_provided_data_tests {
             index: "index-value".to_string(),
             signature: "signature-value".to_string(),
         };
+        let release_payload = RegisterAssetsPayload::GithubRelease(payload.clone());
 
-        let data = client_provided_data_for("pub-key-value", &payload).unwrap();
+        let data = client_provided_data_for("pub-key-value", &release_payload).unwrap();
 
         let expected_url = url::Url::parse(&payload.github_release_url).unwrap();
         assert_eq!(data.sources.to_urls(), std::slice::from_ref(&expected_url));

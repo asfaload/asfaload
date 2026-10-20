@@ -147,6 +147,9 @@ pub mod errors {
         #[error("Nonce cache error: {0}")]
         NonceCacheError(String),
 
+        #[error("Url parse error: {0}")]
+        UrlParseError(#[from] url::ParseError),
+
         #[error("An error occurred: {0}")]
         Generic(String),
     }
@@ -252,6 +255,7 @@ pub mod errors {
                 ApiError::SignersConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NonceCacheError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::Generic(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::UrlParseError(_) => StatusCode::BAD_REQUEST,
             }
         }
     }

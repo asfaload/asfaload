@@ -8,6 +8,31 @@ use crate::common::ReleaseHandlingError;
 pub const MAX_CHECKSUM_FILE_SIZE: u64 = 512 * 1024; // 512KB
 pub const MAX_PARALLEL_CSUMS: usize = 8;
 
+#[derive(Debug, Clone)]
+pub struct ChecksumsReleaseSource {
+    urls: Vec<Url>,
+}
+
+impl ChecksumsReleaseSource {
+    pub fn new(urls: Vec<Url>) -> Self {
+        Self { urls }
+    }
+
+    /// The release page url the client built its index from.
+    pub fn urls(&self) -> &[Url] {
+        &self.urls
+    }
+}
+
+impl std::fmt::Display for ChecksumsReleaseSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.urls.iter().map(|u| u.to_string()).collect::<String>()
+        )
+    }
+}
 /// Downloads the text content of a checksums file, enforcing a size limit.
 async fn download_checksum_file(
     client: &reqwest::Client,

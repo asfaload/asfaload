@@ -4,8 +4,8 @@ use crate::file_auth::release_types::{
 };
 use crate::file_auth::releasers::BackendReleaseInfos;
 use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures};
-use forge_release::common::ReleaseInfo;
 use forge_release::common::{ClientIndexSources, ClientProvidedData, VerifiedClientData};
+use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 use forge_release::github::GithubReleaseInfo;
@@ -72,7 +72,13 @@ impl GithubReleaseAdder {
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
     ) -> Result<Self, ReleaseError> {
-        let ClientIndexSources::Github(source) = &client_provided_data.sources;
+        let ClientIndexSources::Github(source) = &client_provided_data.sources else {
+            return Err(ReleaseHandlingError::Generic(format!(
+                "Unexpected index sources, expected github: {}",
+                client_provided_data.sources
+            ))
+            .into());
+        };
         let release_url = source.url().clone();
 
         // The release url must target a github release page: the api host

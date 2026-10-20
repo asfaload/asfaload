@@ -8,7 +8,7 @@ use features_lib::{
 use thiserror::Error;
 use url::Url;
 
-use crate::github::GithubReleaseSource;
+use crate::{checksums::ChecksumsReleaseSource, github::GithubReleaseSource};
 
 pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
     fn origin_prefix(&self) -> &str;
@@ -61,6 +61,7 @@ pub trait ReleaseResponseTrait {
 #[derive(Debug, Clone)]
 pub enum ClientIndexSources {
     Github(GithubReleaseSource),
+    Checksums(ChecksumsReleaseSource),
 }
 
 impl ClientIndexSources {
@@ -68,6 +69,7 @@ impl ClientIndexSources {
     pub fn to_urls(&self) -> &[Url] {
         match self {
             Self::Github(s) => std::slice::from_ref(s.url()),
+            Self::Checksums(s) => s.urls(),
         }
     }
 }
@@ -76,6 +78,7 @@ impl std::fmt::Display for ClientIndexSources {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Github(s) => write!(f, "{s}"),
+            Self::Checksums(s) => write!(f, "{s}"),
         }
     }
 }

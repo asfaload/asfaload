@@ -271,7 +271,7 @@ impl Client {
                 let signature = secret_key.sign(&hash)?.to_base64();
                 RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
                     csum_files: urls.clone(),
-                    index: json,
+                    index: base64_for_string(json),
                     signature,
                 })
             }

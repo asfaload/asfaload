@@ -7,7 +7,8 @@ use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
-use forge_release::github::{GithubReleaseInfo, GithubReleaseSource};
+use forge_release::github::GithubReleaseSource;
+use forge_url::github::validate_github_release_url;
 use rest_api_types::models::{
     GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
@@ -1125,7 +1126,7 @@ fn client_provided_data_for(
         RegisterAssetsPayload::GithubRelease(info) => {
             let release_url = url::Url::parse(&info.github_release_url)
                 .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
-            GithubReleaseInfo::from_url(&release_url).map_err(|e| {
+            validate_github_release_url(&release_url).map_err(|e| {
                 ApiError::InvalidRequestBody(format!("Invalid release information: {}", e))
             })?;
             Ok(ClientProvidedData {

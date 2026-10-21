@@ -1,17 +1,16 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
+    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseUrlError,
 };
-use crate::file_auth::releasers::BackendReleaseInfos;
 use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures};
+use forge_release::common::ReleaseHandlingError;
 use forge_release::common::{ClientIndexSources, ClientProvidedData, VerifiedClientData};
-use forge_release::common::{ReleaseHandlingError, ReleaseInfo};
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
-use forge_release::github::GithubReleaseInfo;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
-use forge_url::github::is_github_release_host;
+use forge_url::github::{is_github_release_host, validate_github_release_url};
+use forge_url::path_prefix_from_url;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::{Path, PathBuf};
@@ -29,39 +28,8 @@ fn create_github_fetcher(_config: &crate::config::AppConfig) -> MockGithubReleas
 pub struct GithubReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
+    release_path: NormalisedPaths,
     pub verified_client_data: VerifiedClientData,
-    release_info: BackendGithubReleaseInfo,
-}
-
-/// Information of a release on the backend
-#[derive(Debug, Clone)]
-pub struct BackendGithubReleaseInfo {
-    pub release_info: GithubReleaseInfo,
-    pub release_path: NormalisedPaths,
-}
-
-impl ReleaseInfo for BackendGithubReleaseInfo {
-    fn origin_prefix(&self) -> &str {
-        self.release_info.origin_prefix()
-    }
-
-    fn owner(&self) -> &str {
-        self.release_info.owner()
-    }
-
-    fn repo(&self) -> &str {
-        self.release_info.repo()
-    }
-
-    fn tag(&self) -> &str {
-        self.release_info.tag()
-    }
-}
-
-impl BackendReleaseInfo for BackendGithubReleaseInfo {
-    fn release_path(&self) -> &NormalisedPaths {
-        &self.release_path
-    }
 }
 
 impl ReleaseIndexWriter for GithubReleaseAdder {}
@@ -94,7 +62,7 @@ impl GithubReleaseAdder {
             .into());
         }
 
-        let release_info = parse_release_url(&release_url, &git_repo_path)
+        let release_path = release_path_from_url(&release_url, &git_repo_path)
             .await
             .map_err(|e| ReleaseUrlError::InvalidFormat(e.to_string()))?;
 
@@ -105,7 +73,7 @@ impl GithubReleaseAdder {
         Ok(Self {
             release_url,
             git_repo_path,
-            release_info,
+            release_path,
             verified_client_data,
         })
     }
@@ -113,8 +81,7 @@ impl GithubReleaseAdder {
 
 impl ReleaseAdder for GithubReleaseAdder {
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
-        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
-        Ok(full_index_path)
+        self.release_path.join(INDEX_FILE).await
     }
     async fn index_content(&self) -> Result<String, ApiError> {
         Ok(self.verified_client_data.index_string().to_string())
@@ -125,10 +92,6 @@ impl ReleaseAdder for GithubReleaseAdder {
     fn signature(&self) -> &AsfaloadSignatures {
         self.verified_client_data.signature()
     }
-
-    fn release_info(&self) -> BackendReleaseInfos {
-        BackendReleaseInfos::Github(self.release_info.clone())
-    }
 }
 
 impl std::fmt::Debug for GithubReleaseAdder {
@@ -136,25 +99,24 @@ impl std::fmt::Debug for GithubReleaseAdder {
         f.debug_struct("GithubReleaseAdder")
             .field("release_url", &self.release_url)
             .field("git_repo_path", &self.git_repo_path)
-            .field("release_info", &self.release_info)
+            .field("release_path", &self.release_path)
             .finish()
     }
 }
 
-pub async fn parse_release_url(
+/// Build the directory of the release under the git repository.
+///
+/// The path mirrors the release url: the scheme, host, and port prefix is
+/// followed by the url path.
+pub async fn release_path_from_url(
     url: &url::Url,
     git_repo: &Path,
-) -> Result<BackendGithubReleaseInfo, ApiError> {
-    let release_info =
-        GithubReleaseInfo::from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
-    let url_path = format!("{}{}", release_info.origin_prefix, url.path());
-    let release_path =
-        NormalisedPaths::new(git_repo.to_path_buf(), PathBuf::from(&url_path)).await?;
-
-    Ok(BackendGithubReleaseInfo {
-        release_info,
-        release_path,
-    })
+) -> Result<NormalisedPaths, ApiError> {
+    validate_github_release_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
+    let origin_prefix =
+        path_prefix_from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
+    let url_path = format!("{}{}", origin_prefix, url.path());
+    NormalisedPaths::new(git_repo.to_path_buf(), PathBuf::from(&url_path)).await
 }
 
 #[cfg(all(test, feature = "test-utils"))]
@@ -259,14 +221,10 @@ mod tests {
         let git_repo = temp_dir.path().to_path_buf();
         let url =
             url::Url::parse("https://github.com/asfaload/asfald/releases/tag/v0.9.0").unwrap();
-        let result = parse_release_url(&url, &git_repo).await.unwrap();
+        let result = release_path_from_url(&url, &git_repo).await.unwrap();
 
-        assert_eq!(result.owner(), "asfaload");
-        assert_eq!(result.repo(), "asfald");
-        assert_eq!(result.tag(), "v0.9.0");
-        assert_eq!(result.origin_prefix(), "https/github.com/443");
         assert_eq!(
-            result.release_path.relative_path(),
+            result.relative_path(),
             PathBuf::from("https/github.com/443/asfaload/asfald/releases/tag/v0.9.0")
         );
     }
@@ -276,7 +234,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let git_repo = temp_dir.path().to_path_buf();
         let url = url::Url::parse("https://github.com/owner/repo").unwrap();
-        let result = parse_release_url(&url, &git_repo).await;
+        let result = release_path_from_url(&url, &git_repo).await;
 
         assert!(result.is_err());
     }
@@ -286,7 +244,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let git_repo = temp_dir.path().to_path_buf();
         let url = url::Url::parse("https://github.com/asfaload/releases/tag/").unwrap();
-        let result = parse_release_url(&url, &git_repo).await;
+        let result = release_path_from_url(&url, &git_repo).await;
 
         assert!(result.is_err());
     }

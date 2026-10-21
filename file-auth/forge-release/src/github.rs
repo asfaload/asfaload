@@ -1,15 +1,10 @@
-use std::fmt::{self};
-
-use crate::common::{
-    ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseInfo, ReleaseResponseTrait,
-};
+use crate::common::{ReleaseAssetInfo, ReleaseFetcher, ReleaseHandlingError, ReleaseResponseTrait};
 use common::{http::fetch_request_with_retry, into_url::IntoUrl};
 use core::time::Duration;
 use features_lib::{
     AsfaloadIndex, ChecksumSourceFormat, FileChecksum, HashAlgorithm, IndexValidationError,
     ParsedChecksum,
 };
-use forge_url::path_prefix_from_url;
 use url::Url;
 
 #[cfg(feature = "test-utils")]
@@ -169,58 +164,6 @@ impl GithubReleaseSource {
 impl std::fmt::Display for GithubReleaseSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.release_url)
-    }
-}
-
-/// Information of a Github release
-#[derive(Debug, Clone)]
-pub struct GithubReleaseInfo {
-    /// The release page URL this info was built from.
-    pub url: Url,
-    /// scheme/host/port
-    pub origin_prefix: String,
-    pub owner: String,
-    pub repo: String,
-    pub tag: String,
-}
-
-impl ReleaseInfo for GithubReleaseInfo {
-    fn origin_prefix(&self) -> &str {
-        &self.origin_prefix
-    }
-
-    fn owner(&self) -> &str {
-        &self.owner
-    }
-
-    fn repo(&self) -> &str {
-        &self.repo
-    }
-
-    fn tag(&self) -> &str {
-        &self.tag
-    }
-}
-
-impl GithubReleaseInfo {
-    pub fn from_url(url: &url::Url) -> Result<Self, ReleaseHandlingError> {
-        let (_host, owner, repo, tag) = forge_url::github::validate_github_release_url(url)
-            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
-        let origin_prefix = path_prefix_from_url(url)
-            .map_err(|e| ReleaseHandlingError::InvalidUrl(e.to_string()))?;
-        Ok(GithubReleaseInfo {
-            url: url.clone(),
-            origin_prefix,
-            owner,
-            repo,
-            tag,
-        })
-    }
-}
-
-impl fmt::Display for GithubReleaseInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.url)
     }
 }
 

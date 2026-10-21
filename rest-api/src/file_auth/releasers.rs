@@ -1,8 +1,5 @@
-use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
-use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter,
-};
-use forge_release::common::ReleaseInfo;
+use crate::file_auth::github_release::GithubReleaseAdder;
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseIndexWriter};
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -67,13 +64,6 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    fn release_info(&self) -> BackendReleaseInfos {
-        match self {
-            Self::Github(github) => github.release_info(),
-            Self::Checksums => todo!(),
-        }
-    }
-
     fn pub_key(&self) -> &features_lib::AsfaloadPublicKeys {
         match self {
             Self::Github(github) => github.pub_key(),
@@ -88,44 +78,6 @@ impl ReleaseAdder for ReleaseAdders {
     }
 }
 
-#[derive(Debug)]
-pub enum BackendReleaseInfos {
-    Github(BackendGithubReleaseInfo),
-}
-
-impl ReleaseInfo for BackendReleaseInfos {
-    fn origin_prefix(&self) -> &str {
-        match self {
-            Self::Github(github) => github.origin_prefix(),
-        }
-    }
-
-    fn owner(&self) -> &str {
-        match self {
-            Self::Github(github) => github.owner(),
-        }
-    }
-
-    fn repo(&self) -> &str {
-        match self {
-            Self::Github(github) => github.repo(),
-        }
-    }
-
-    fn tag(&self) -> &str {
-        match self {
-            Self::Github(github) => github.tag(),
-        }
-    }
-}
-
-impl BackendReleaseInfo for BackendReleaseInfos {
-    fn release_path(&self) -> &NormalisedPaths {
-        match self {
-            Self::Github(github) => github.release_path(),
-        }
-    }
-}
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;

@@ -183,6 +183,69 @@ mod tests {
         }
     }
 
+    fn parse_urls(urls: &[&str]) -> Vec<Url> {
+        urls.iter().map(|u| Url::parse(u).unwrap()).collect()
+    }
+
+    fn expect_invalid_url(
+        result: Result<ChecksumsReleaseSource, ReleaseHandlingError>,
+        expected_substring: &str,
+    ) {
+        match result {
+            Err(ReleaseHandlingError::InvalidUrl(msg)) => assert!(
+                msg.contains(expected_substring),
+                "unexpected message: {msg}"
+            ),
+            other => panic!("expected an InvalidUrl error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn source_accepts_urls_with_the_same_origin_and_parent() {
+        let urls = parse_urls(&[
+            "https://example.com/releases/v1.0/SHA256SUMS",
+            "https://example.com/releases/v1.0/SHA512SUMS",
+        ]);
+
+        let source = ChecksumsReleaseSource::new(urls.clone()).unwrap();
+
+        assert_eq!(source.urls(), urls.as_slice());
+    }
+
+    #[test]
+    fn source_rejects_urls_from_different_origins() {
+        let urls = parse_urls(&[
+            "https://example.com/releases/v1.0/SHA256SUMS",
+            "https://other.com/releases/v1.0/SHA512SUMS",
+        ]);
+
+        expect_invalid_url(
+            ChecksumsReleaseSource::new(urls),
+            "All URLs must have the same origin",
+        );
+    }
+
+    #[test]
+    fn source_rejects_urls_in_different_directories() {
+        let urls = parse_urls(&[
+            "https://example.com/releases/v1.0/SHA256SUMS",
+            "https://example.com/releases/v2.0/SHA512SUMS",
+        ]);
+
+        expect_invalid_url(
+            ChecksumsReleaseSource::new(urls),
+            "All URLs must be in the same directory",
+        );
+    }
+
+    #[test]
+    fn source_rejects_an_empty_list_of_urls() {
+        expect_invalid_url(
+            ChecksumsReleaseSource::new(Vec::new()),
+            "At least one URL must be provided",
+        );
+    }
+
     #[tokio::test]
     async fn download_returns_the_file_content() -> Result<(), ReleaseHandlingError> {
         let mut server = mockito::Server::new_async().await;

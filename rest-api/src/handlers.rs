@@ -1822,6 +1822,25 @@ mod client_provided_data_tests {
         );
     }
 
+    // Checksum file urls from different origins are an invalid body: the
+    // server cannot build one index from files served by different hosts.
+    #[test]
+    fn checksums_payload_rejects_different_origins() {
+        let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files: vec![
+                "https://example.org/SHA512SUMS".to_string(),
+                "https://example.net/SHA512SUMS".to_string(),
+            ],
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Not all urls have the same origin",
+        );
+    }
+
     // A github release url that does not parse is an invalid body.
     #[test]
     fn github_release_payload_rejects_unparsable_release_url() {

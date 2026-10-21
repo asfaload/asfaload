@@ -1137,12 +1137,15 @@ fn client_provided_data_for(
             })
         }
         RegisterAssetsPayload::ChecksumFiles(info) => Ok(ClientProvidedData {
-            sources: ClientIndexSources::Checksums(ChecksumsReleaseSource::new(
-                info.csum_files
-                    .iter()
-                    .map(|s| Url::parse(s))
-                    .collect::<Result<Vec<Url>, _>>()?,
-            )),
+            sources: ClientIndexSources::Checksums(
+                ChecksumsReleaseSource::new(
+                    info.csum_files
+                        .iter()
+                        .map(|s| Url::parse(s))
+                        .collect::<Result<Vec<Url>, _>>()?,
+                )
+                .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?,
+            ),
             client_pub_key: client_pub_key.to_string(),
             client_sent_index: info.index.clone(),
             client_sent_signature: info.signature.clone(),
@@ -1783,7 +1786,7 @@ mod client_provided_data_tests {
         let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
             csum_files: vec![
                 "https://example.org/SHA512SUMS".to_string(),
-                "https://example.net/SHA512SUMS".to_string(),
+                "https://example.org/SHA256SUMS".to_string(),
             ],
             index: "index-value".to_string(),
             signature: "signature-value".to_string(),
@@ -1793,7 +1796,7 @@ mod client_provided_data_tests {
 
         let expected_urls = vec![
             url::Url::parse("https://example.org/SHA512SUMS").unwrap(),
-            url::Url::parse("https://example.net/SHA512SUMS").unwrap(),
+            url::Url::parse("https://example.org/SHA256SUMS").unwrap(),
         ];
         assert_eq!(data.sources.to_urls(), expected_urls.as_slice());
         assert_eq!(data.client_pub_key, "pub-key-value");

@@ -836,6 +836,72 @@ mod tests {
         Ok(())
     }
 
+    // CommonBasePath accessors tests
+    // ------------------------------
+
+    #[test]
+    fn test_common_base_path_accessors() -> anyhow::Result<()> {
+        // Each case holds the url, the expected prefix and the expected parent path.
+        let cases = [
+            (
+                "https://example.com/releases/v1.0/SHA256SUMS",
+                "https/example.com/443",
+                "/releases/v1.0/",
+            ),
+            (
+                "https://gitlab.company.com:8443/team/app/app.zip",
+                "https/gitlab.company.com/8443",
+                "/team/app/",
+            ),
+            // A file at the origin root has "/" as parent path.
+            (
+                "http://files.example.com/SHA256SUMS",
+                "http/files.example.com/80",
+                "/",
+            ),
+        ];
+        for (url_str, expected_prefix, expected_parent) in cases {
+            let urls = vec![Url::parse(url_str)?];
+            let base = validate_common_parent(&urls)?;
+            assert_eq!(base.prefix(), expected_prefix, "prefix for {url_str}");
+            assert_eq!(
+                base.parent_path(),
+                expected_parent,
+                "parent path for {url_str}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_base_path_to_path() -> anyhow::Result<()> {
+        let urls = vec![Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?];
+        let base = validate_common_parent(&urls)?;
+        assert_eq!(base.to_path(), "https/example.com/443/releases/v1.0/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_base_path_to_path_root_parent() -> anyhow::Result<()> {
+        // A file at the origin root has "/" as parent path, so to_path ends
+        // with a single trailing slash.
+        let urls = vec![Url::parse("http://files.example.com/SHA256SUMS")?];
+        let base = validate_common_parent(&urls)?;
+        assert_eq!(base.to_path(), "http/files.example.com/80/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_base_path_clone() -> anyhow::Result<()> {
+        let urls = vec![Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?];
+        let base = validate_common_parent(&urls)?;
+        let clone = base.clone();
+        assert_eq!(clone.prefix(), base.prefix());
+        assert_eq!(clone.parent_path(), base.parent_path());
+        assert_eq!(clone.to_path(), base.to_path());
+        Ok(())
+    }
+
     // PingResponse serialization tests
     // --------------------------------
 

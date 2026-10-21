@@ -53,6 +53,44 @@ fn create_github_fetcher() -> MockGithubReleaseFetcher {
     MockGithubReleaseFetcher::new()
 }
 
+/// Build the payload for registering assets, for the given registration mode.
+///
+/// Downloads and indexes the release content (a GitHub release or shasums
+/// files), signs the index with the secret key, and encodes both index and
+/// signature in base64, with the same conventions the server expects when
+/// handling the payload.
+async fn build_register_assets_payload(
+    mode: &RegistrationMode,
+    secret_key: &AsfaloadSecretKeys,
+) -> AdminLibResult<RegisterAssetsPayload> {
+    match mode {
+        RegistrationMode::GithubRelease { url } => {
+            let fetcher = create_github_fetcher();
+            let release = fetcher.fetch(&[url.as_str()]).await?;
+            let index = release.generate_index_json()?;
+            let hash = sha512_for_content(index.as_bytes())?;
+            let signature = secret_key.sign(&hash)?;
+            Ok(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+                github_release_url: url.clone(),
+                index: base64_for_string(index),
+                signature: signature.to_base64(),
+            }))
+        }
+        RegistrationMode::ChecksumFiles { urls } => {
+            let client = reqwest::Client::new();
+            let index = index_from_shasums_urls(&client, urls).await?;
+            let json = index.to_json()?;
+            let hash = sha512_for_content(json.as_bytes())?;
+            let signature = secret_key.sign(&hash)?.to_base64();
+            Ok(RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+                csum_files: urls.clone(),
+                index: base64_for_string(json),
+                signature,
+            }))
+        }
+    }
+}
+
 impl Client {
     /// Create a new REST client.
     pub fn new(base_url: impl Into<String>) -> Self {
@@ -250,32 +288,7 @@ impl Client {
     ) -> AdminLibResult<rest_api_types::RegisterAssetsResponse> {
         let url = format!("{}/v1/assets", self.base_url);
 
-        let payload = match mode {
-            RegistrationMode::GithubRelease { url } => {
-                let fetcher = create_github_fetcher();
-                let release = fetcher.fetch(&[url.as_str()]).await?;
-                let index = release.generate_index_json()?;
-                let hash = sha512_for_content(index.as_bytes())?;
-                let signature = secret_key.sign(&hash)?;
-                RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
-                    github_release_url: url.clone(),
-                    index: base64_for_string(index),
-                    signature: signature.to_base64(),
-                })
-            }
-            RegistrationMode::ChecksumFiles { urls } => {
-                let client = reqwest::Client::new();
-                let index = index_from_shasums_urls(&client, urls).await?;
-                let json = index.to_json()?;
-                let hash = sha512_for_content(json.as_bytes())?;
-                let signature = secret_key.sign(&hash)?.to_base64();
-                RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
-                    csum_files: urls.clone(),
-                    index: base64_for_string(json),
-                    signature,
-                })
-            }
-        };
+        let payload = build_register_assets_payload(mode, secret_key).await?;
 
         // Serialize once: same bytes for auth and body
         let payload_string = serde_json::to_string(&payload)?;
@@ -617,5 +630,64 @@ mod tests {
                 public_key: "base64pk".to_string()
             }
         );
+    }
+
+    /// A checksums registration payload must survive the round trip the
+    /// server applies in `VerifiedClientData::new`: it base64-decodes the
+    /// index it received, recomputes the sha512 of the decoded bytes, and
+    /// verifies the signature against that digest.
+    #[tokio::test]
+    async fn checksum_files_payload_round_trips_and_verifies_server_side() {
+        use common::string_from_base64;
+        use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
+
+        let key_pair = AsfaloadKeyPairs::new("test_password").unwrap();
+        let secret_key = key_pair.secret_key("test_password").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/SHA256SUMS")
+            .with_status(200)
+            .with_body(
+                "1111111111111111111111111111111111111111111111111111111111111111  app.tar.gz\n",
+            )
+            .create_async()
+            .await;
+
+        let urls = vec![format!("{}/SHA256SUMS", server.url())];
+        let payload = build_register_assets_payload(
+            &RegistrationMode::ChecksumFiles { urls: urls.clone() },
+            &secret_key,
+        )
+        .await
+        .unwrap();
+
+        mock.assert_async().await;
+
+        let RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files,
+            index,
+            signature,
+        }) = payload
+        else {
+            panic!("expected a ChecksumFiles payload, got: {payload:?}");
+        };
+        assert_eq!(csum_files, urls, "the shasums urls must be sent as sent");
+
+        // Decode the index the way the server does (`string_from_base64`).
+        // An unencoded JSON body fails here, as it starts with '{'.
+        let decoded_index = string_from_base64(&index)
+            .unwrap_or_else(|e| panic!("server could not decode the index: {e}"));
+        let hash = sha512_for_content(decoded_index.as_bytes()).expect("index is not empty");
+
+        // Parse the key and the signature the way the server does.
+        let pub_key = AsfaloadPublicKeys::from_base64(&key_pair.public_key().to_base64())
+            .expect("public key should parse");
+        let signature =
+            AsfaloadSignatures::from_base64(&signature).expect("signature should parse");
+
+        pub_key
+            .verify(&signature, &hash)
+            .expect("signature must verify against the decoded index bytes");
     }
 }

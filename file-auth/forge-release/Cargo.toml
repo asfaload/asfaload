@@ -8,6 +8,7 @@ test-utils = []
 
 [dependencies]
 features_lib = { path = "../../core/features_lib/" }
+rest_api_types = { path = "../../rest_api_types/" }
 forge-url = { path = "../forge-url/" }
 common = { path = "../../core/common/" }
 serde = { version = "1.0", features = ["derive"] }

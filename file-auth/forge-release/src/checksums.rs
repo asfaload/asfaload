@@ -1,6 +1,7 @@
 use common::into_url::IntoUrl;
 use features_lib::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, parse_checksums};
 use futures_util::{StreamExt, stream};
+use rest_api_types::validate_common_parent;
 use url::Url;
 
 use crate::common::ReleaseHandlingError;
@@ -14,8 +15,11 @@ pub struct ChecksumsReleaseSource {
 }
 
 impl ChecksumsReleaseSource {
-    pub fn new(urls: Vec<Url>) -> Self {
-        Self { urls }
+    pub fn new(urls: Vec<Url>) -> Result<Self, ReleaseHandlingError> {
+        let _base = validate_common_parent(&urls).map_err(|e| {
+            ReleaseHandlingError::InvalidUrl(format!("Not all urls have the same origin: {}", e))
+        })?;
+        Ok(Self { urls })
     }
 
     /// The release page url the client built its index from.

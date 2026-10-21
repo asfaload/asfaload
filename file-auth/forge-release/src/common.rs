@@ -32,7 +32,9 @@ pub enum ReleaseHandlingError {
 }
 
 pub trait ReleaseFetcher<T> {
-    /// Fetchers currently use only the first url of the slice.
+    /// Each fetcher decides how to use the urls of the client index source:
+    /// the github fetcher uses only the first one, while the file server
+    /// fetcher downloads them all.
     fn fetch<U: IntoUrl + Clone + Sync>(
         &self,
         url: &[U],

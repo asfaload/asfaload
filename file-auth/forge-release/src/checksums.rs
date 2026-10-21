@@ -4,7 +4,7 @@ use futures_util::{StreamExt, stream};
 use rest_api_types::{CommonBasePath, validate_common_parent};
 use url::Url;
 
-use crate::common::ReleaseHandlingError;
+use crate::common::{ReleaseFetcher, ReleaseHandlingError, ReleaseResponseTrait};
 
 pub const MAX_CHECKSUM_FILE_SIZE: u64 = 512 * 1024; // 512KB
 pub const MAX_PARALLEL_CSUMS: usize = 8;
@@ -94,20 +94,83 @@ async fn download_checksum_file(
         ReleaseHandlingError::InvalidData(format!("Checksums file is not valid UTF-8: {}", e))
     })
 }
-pub async fn index_from_shasums_urls<U: IntoUrl + Clone>(
+pub async fn index_from_shasums_urls<U: IntoUrl + Clone + Sync>(
     reqwest_client: &reqwest::Client,
     urls_in: &[U],
 ) -> Result<AsfaloadIndex, ReleaseHandlingError> {
-    let urls = urls_in
-        .iter()
-        .cloned()
-        .map(|u| u.into_url())
-        .collect::<Result<Vec<Url>, _>>()?;
-    // Download and parse checksums files in parallel
-    let results: Vec<Result<Vec<FileChecksum>, ReleaseHandlingError>> =
-        stream::iter(urls.iter().cloned())
+    let fetcher = FileServerReleaseFetcher {
+        client: reqwest_client.clone(),
+    };
+    fetcher.fetch(urls_in).await?.generate_index().await
+}
+
+/// The data retrieved by the `FileServerReleaseFetcher`: the checksums
+/// entries found in the release checksums files.
+#[derive(Debug)]
+pub struct FileServerReleaseResponse {
+    entries: Vec<FileChecksum>,
+}
+
+impl FileServerReleaseResponse {
+    /// The checksums entries parsed from the release checksums files.
+    pub fn entries(&self) -> &[FileChecksum] {
+        &self.entries
+    }
+}
+
+impl ReleaseResponseTrait for FileServerReleaseResponse {
+    /// Checksums files carry no publication date, so the index timestamps
+    /// are stamped when the index is generated.
+    async fn generate_index(&self) -> Result<AsfaloadIndex, ReleaseHandlingError> {
+        let now = chrono::Utc::now();
+        Ok(AsfaloadIndex {
+            mirrored_on: now,
+            published_on: now,
+            version: 1,
+            published_files: self.entries.clone(),
+        })
+    }
+}
+
+/// The counterpart of `GithubReleaseFetcher` for a release published on a
+/// plain file server: instead of querying a rest api, it downloads every
+/// checksums file announced by the client and parses their entries.
+#[derive(Debug)]
+pub struct FileServerReleaseFetcher {
+    client: reqwest::Client,
+}
+
+impl FileServerReleaseFetcher {
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+        }
+    }
+}
+
+impl Default for FileServerReleaseFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ReleaseFetcher<FileServerReleaseResponse> for FileServerReleaseFetcher {
+    /// Downloads and parses all checksums files of the release in parallel.
+    /// Unlike the github rest api, a file server serves static files, so no
+    /// retry nor rate-limit handling is needed.
+    async fn fetch<U: IntoUrl + Clone + Sync>(
+        &self,
+        urls_in: &[U],
+    ) -> Result<FileServerReleaseResponse, ReleaseHandlingError> {
+        let urls = urls_in
+            .iter()
+            .cloned()
+            .map(|u| u.into_url())
+            .collect::<Result<Vec<Url>, _>>()?;
+        // Download and parse checksums files in parallel
+        let results: Vec<Result<Vec<FileChecksum>, ReleaseHandlingError>> = stream::iter(urls)
             .map(|url| {
-                let client = reqwest_client.clone();
+                let client = self.client.clone();
                 async move {
                     let content = download_checksum_file(&client, url.as_str()).await?;
                     let checksums = parse_checksums(&content).map_err(|e| {
@@ -132,20 +195,15 @@ pub async fn index_from_shasums_urls<U: IntoUrl + Clone>(
             .collect()
             .await;
 
-    let published_files: Vec<FileChecksum> = results
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect();
+        let entries: Vec<FileChecksum> = results
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-    let now = chrono::Utc::now();
-    Ok(AsfaloadIndex {
-        mirrored_on: now,
-        published_on: now,
-        version: 1,
-        published_files,
-    })
+        Ok(FileServerReleaseResponse { entries })
+    }
 }
 
 #[cfg(test)]
@@ -375,6 +433,36 @@ mod tests {
             ),
             other => panic!("expected a Generic error, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn fetcher_builds_response_and_index() -> Result<(), ReleaseHandlingError> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/sha256sums.txt")
+            .with_status(200)
+            .with_body(format!("{SHA256_HEX}  app.tar.gz\n"))
+            .create_async()
+            .await;
+        let urls = urls_for(&server, &["/sha256sums.txt"]);
+
+        let response = FileServerReleaseFetcher::new().fetch(&urls).await?;
+
+        let expected = vec![FileChecksum {
+            file_name: "app.tar.gz".to_string(),
+            algo: HashAlgorithm::Sha256,
+            source: urls[0].to_string(),
+            source_format: ChecksumSourceFormat::ShaSum,
+            hash: SHA256_HEX.to_string(),
+        }];
+        assert_eq!(*response.entries(), expected);
+
+        let index = response.generate_index().await?;
+        assert_eq!(index.version, 1);
+        assert_eq!(index.published_files, *response.entries());
+
+        mock.assert_async().await;
+        Ok(())
     }
 
     #[tokio::test]

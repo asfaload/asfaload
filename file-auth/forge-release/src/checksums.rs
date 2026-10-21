@@ -1,7 +1,7 @@
 use common::into_url::IntoUrl;
 use features_lib::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, parse_checksums};
 use futures_util::{StreamExt, stream};
-use rest_api_types::validate_common_parent;
+use rest_api_types::{CommonBasePath, validate_common_parent};
 use url::Url;
 
 use crate::common::ReleaseHandlingError;
@@ -11,20 +11,25 @@ pub const MAX_PARALLEL_CSUMS: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct ChecksumsReleaseSource {
+    base: CommonBasePath,
     urls: Vec<Url>,
 }
 
 impl ChecksumsReleaseSource {
     pub fn new(urls: Vec<Url>) -> Result<Self, ReleaseHandlingError> {
-        let _base = validate_common_parent(&urls).map_err(|e| {
+        let base = validate_common_parent(&urls).map_err(|e| {
             ReleaseHandlingError::InvalidUrl(format!("Not all urls have the same origin: {}", e))
         })?;
-        Ok(Self { urls })
+        Ok(Self { base, urls })
     }
 
     /// The release page url the client built its index from.
     pub fn urls(&self) -> &[Url] {
         &self.urls
+    }
+
+    pub fn base(&self) -> &CommonBasePath {
+        &self.base
     }
 }
 

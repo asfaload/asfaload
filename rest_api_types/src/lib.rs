@@ -621,9 +621,26 @@ pub use models::{
 // Assets registration
 // ********************
 /// Represents a validated common base path shared by a set of URLs.
+#[derive(Clone)]
 pub struct CommonBasePath {
-    pub prefix: String,
-    pub parent_path: String,
+    /// scheme/host/port/
+    prefix: String,
+    /// Common parent path
+    parent_path: String,
+}
+
+impl CommonBasePath {
+    pub fn to_path(&self) -> String {
+        // parent_path always starts with "/", so no separator is needed.
+        format!("{}{}", self.prefix, self.parent_path)
+    }
+
+    pub fn prefix(&self) -> &str {
+        &self.prefix
+    }
+    pub fn parent_path(&self) -> &str {
+        &self.parent_path
+    }
 }
 
 /// Errors that can occur during URL validation.

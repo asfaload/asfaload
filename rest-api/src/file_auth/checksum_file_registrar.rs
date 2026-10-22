@@ -21,7 +21,7 @@ impl ChecksumFileRegistrar {
         let base = validate_common_parent(&urls)
             .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?;
 
-        let dir_path = format!("{}{}", base.prefix, base.parent_path);
+        let dir_path = format!("{}{}", base.prefix(), base.parent_path());
         let directory_path = NormalisedPaths::new(git_repo_path, PathBuf::from(&dir_path)).await?;
 
         Ok(Self {

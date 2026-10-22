@@ -56,7 +56,7 @@ pub trait ReleaseResponseTrait {
 #[derive(Debug, Clone)]
 pub enum ClientIndexSources {
     Github(GithubReleaseSource),
-    Checksums(ChecksumsReleaseSource),
+    FileServer(ChecksumsReleaseSource),
 }
 
 impl ClientIndexSources {
@@ -64,7 +64,7 @@ impl ClientIndexSources {
     pub fn to_urls(&self) -> &[Url] {
         match self {
             Self::Github(s) => std::slice::from_ref(s.url()),
-            Self::Checksums(s) => s.urls(),
+            Self::FileServer(s) => s.urls(),
         }
     }
 }
@@ -73,7 +73,7 @@ impl std::fmt::Display for ClientIndexSources {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Github(s) => write!(f, "{s}"),
-            Self::Checksums(s) => write!(f, "{s}"),
+            Self::FileServer(s) => write!(f, "{s}"),
         }
     }
 }
@@ -92,14 +92,22 @@ pub struct VerifiedClientData {
     signature: AsfaloadSignatures,
 }
 
+/// Indicates with date need to be included in indexes comparison. For forges without publication
+/// date, like a self hosted file server, use None, for github releases, use PublicationDate
+pub enum IndexDateChecks {
+    PublicationDate,
+    None,
+}
 impl VerifiedClientData {
     /// Helper to get explicit message about indexes differences. Returns None if no difference.
     /// We keep it simple and don't try to report detailed differences in the published files found
     /// in each index. Differences are expected to be very rare as client and servers build their
     /// respective indexes from the same source and in a short timespan.
+    ///
     pub(crate) fn report_indexes_differences(
         client_provided_index: &AsfaloadIndex,
         server_built_index: &AsfaloadIndex,
+        dates_check: IndexDateChecks,
     ) -> Option<String> {
         let mut lines = Vec::new();
         if client_provided_index.published_files.len() != server_built_index.published_files.len() {
@@ -120,7 +128,9 @@ impl VerifiedClientData {
                 lines.push("Files published differ.".to_string());
             }
         }
-        if server_built_index.published_on != client_provided_index.published_on {
+        if matches!(dates_check, IndexDateChecks::PublicationDate)
+            && server_built_index.published_on != client_provided_index.published_on
+        {
             lines.push(format!(
                 "Provided published_on ({}) differs from the one retrieved ({})",
                 client_provided_index.published_on, server_built_index.published_on
@@ -214,7 +224,18 @@ impl VerifiedClientData {
 
         let index = release.generate_index().await?;
 
-        if let Some(msg) = Self::report_indexes_differences(&client_provided_index, &index) {
+        // Checksums files carry no upstream publication date: both the client
+        // and the server stamp their index generation time, so the dates can
+        // never match. See `report_indexes_differences` for the details.
+        let dates_check = if matches!(data.sources, ClientIndexSources::FileServer(_)) {
+            IndexDateChecks::None
+        } else {
+            IndexDateChecks::PublicationDate
+        };
+
+        if let Some(msg) =
+            Self::report_indexes_differences(&client_provided_index, &index, dates_check)
+        {
             return Err(ReleaseHandlingError::InvalidData(format!(
                 "Index provided by client is not identical to index generated server side for release at {}: {}",
                 data.sources, msg
@@ -258,5 +279,74 @@ mod tests {
 
         assert_eq!(sources.to_urls(), std::slice::from_ref(&url));
         assert_eq!(sources.to_string(), url.to_string());
+    }
+
+    fn index_with_dates(
+        published_on: chrono::DateTime<chrono::Utc>,
+        published_files: Vec<FileChecksum>,
+    ) -> AsfaloadIndex {
+        AsfaloadIndex {
+            mirrored_on: published_on,
+            published_on,
+            version: 1,
+            published_files,
+        }
+    }
+
+    fn checksum_file_checksum() -> FileChecksum {
+        FileChecksum {
+            file_name: "artifact.bin".to_string(),
+            algo: features_lib::HashAlgorithm::Sha256,
+            source: "http://files.example.com/owner/repo/releases/v1.0/SHA256SUMS".to_string(),
+            source_format: features_lib::ChecksumSourceFormat::ShaSum,
+            hash: "a".repeat(64),
+        }
+    }
+
+    // Checksums files carry no publication date: the client and the server
+    // stamp their own generation time, and the two values can never match.
+    // The dates check requested must not report that difference.
+    #[test]
+    fn skipped_dates_check_ignores_publication_dates() {
+        let client_date: chrono::DateTime<chrono::Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+        let server_date: chrono::DateTime<chrono::Utc> = "2026-01-02T00:00:00Z".parse().unwrap();
+        let client_provided_index = index_with_dates(client_date, vec![checksum_file_checksum()]);
+        let server_built_index = index_with_dates(server_date, vec![checksum_file_checksum()]);
+
+        let differences = VerifiedClientData::report_indexes_differences(
+            &client_provided_index,
+            &server_built_index,
+            IndexDateChecks::None,
+        );
+
+        assert!(
+            differences.is_none(),
+            "Expected no difference report, got: {:?}",
+            differences
+        );
+    }
+
+    // When the publication date check is requested, differing publication
+    // dates must produce a difference report.
+    #[test]
+    fn dates_check_reports_publication_date_difference() {
+        let client_date: chrono::DateTime<chrono::Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+        let server_date: chrono::DateTime<chrono::Utc> = "2026-01-02T00:00:00Z".parse().unwrap();
+        let client_provided_index = index_with_dates(client_date, vec![checksum_file_checksum()]);
+        let server_built_index = index_with_dates(server_date, vec![checksum_file_checksum()]);
+
+        let differences = VerifiedClientData::report_indexes_differences(
+            &client_provided_index,
+            &server_built_index,
+            IndexDateChecks::PublicationDate,
+        );
+
+        assert!(
+            differences
+                .as_ref()
+                .is_some_and(|d| d.contains("Provided published_on")),
+            "Expected a publication date difference report, got: {:?}",
+            differences
+        );
     }
 }

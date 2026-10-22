@@ -304,7 +304,7 @@ mod tests {
 #[cfg(all(test, feature = "test-utils"))]
 mod verified_client_data_tests {
     use super::*;
-    use crate::common::{ClientProvidedData, VerifiedClientData};
+    use crate::common::{ClientProvidedData, IndexDateChecks, VerifiedClientData};
     use crate::github::test_utils::{
         MockGithubReleaseFetcher, client_provided_data_for_index,
         create_mocked_client_provided_data, mocked_client_provided_data_with_keys,
@@ -471,6 +471,7 @@ mod verified_client_data_tests {
         let message = VerifiedClientData::report_indexes_differences(
             &client_provided_index,
             &server_built_index,
+            IndexDateChecks::PublicationDate,
         )
         .expect("the indexes differ");
 
@@ -503,6 +504,7 @@ mod verified_client_data_tests {
         let message = VerifiedClientData::report_indexes_differences(
             &client_provided_index,
             &server_built_index,
+            IndexDateChecks::PublicationDate,
         )
         .expect("the indexes differ");
 

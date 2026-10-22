@@ -1,5 +1,6 @@
 pub mod actors;
 pub mod checksum_file_registrar;
+pub mod fileserver_release;
 pub mod forges;
 pub mod github;
 pub mod github_release;

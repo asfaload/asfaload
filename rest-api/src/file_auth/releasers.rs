@@ -1,3 +1,4 @@
+use crate::file_auth::fileserver_release::FileServerReleaseAdder;
 use crate::file_auth::github_release::GithubReleaseAdder;
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseIndexWriter};
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
@@ -11,14 +12,14 @@ use tokio::fs::File;
 #[derive(Debug)]
 pub enum ReleaseAdders {
     Github(Box<GithubReleaseAdder>),
-    Checksums,
+    Checksums(Box<FileServerReleaseAdder>),
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {
     async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
         match self {
             Self::Github(github) => github.as_ref().write_index(f, content).await,
-            Self::Checksums => todo!(),
+            Self::Checksums(fs) => fs.as_ref().write_index(f, content).await,
         }
     }
 }
@@ -44,7 +45,12 @@ impl ReleaseAdders {
                     GithubReleaseAdder::new(client_provided_data, git_repo_path, config).await?;
                 Ok(Self::Github(Box::new(github_adder)))
             }
-            ClientIndexSources::Checksums(_) => todo!(),
+            ClientIndexSources::FileServer(_) => {
+                let adder =
+                    FileServerReleaseAdder::new(client_provided_data, git_repo_path, config)
+                        .await?;
+                Ok(Self::Checksums(Box::new(adder)))
+            }
         }
     }
 }
@@ -53,27 +59,27 @@ impl ReleaseAdder for ReleaseAdders {
     async fn index_content(&self) -> Result<String, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_content().await,
-            Self::Checksums => todo!(),
+            Self::Checksums(adder) => adder.as_ref().index_content().await,
         }
     }
 
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_path().await,
-            Self::Checksums => todo!(),
+            Self::Checksums(adder) => adder.as_ref().index_path().await,
         }
     }
 
     fn pub_key(&self) -> &features_lib::AsfaloadPublicKeys {
         match self {
             Self::Github(github) => github.pub_key(),
-            Self::Checksums => todo!(),
+            Self::Checksums(adder) => adder.pub_key(),
         }
     }
     fn signature(&self) -> &features_lib::AsfaloadSignatures {
         match self {
             Self::Github(github) => github.signature(),
-            Self::Checksums => todo!(),
+            Self::Checksums(adder) => adder.signature(),
         }
     }
 }

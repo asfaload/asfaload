@@ -621,7 +621,7 @@ pub use models::{
 // Assets registration
 // ********************
 /// Represents a validated common base path shared by a set of URLs.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CommonBasePath {
     /// scheme/host/port/
     prefix: String,

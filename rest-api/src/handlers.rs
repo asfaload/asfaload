@@ -1102,14 +1102,7 @@ pub async fn register_assets_handler(
         .to_str()?;
 
     let client_provided_data = client_provided_data_for(signing_key, &request)?;
-    match &request {
-        RegisterAssetsPayload::GithubRelease(_) => {
-            register_github_release(&state, request_id, client_provided_data).await
-        }
-        RegisterAssetsPayload::ChecksumFiles(f) => {
-            register_checksums(&state, request_id, &f.csum_files).await
-        }
-    }
+    register_release(&state, request_id, client_provided_data).await
 }
 
 /// Build the client-provided data from the public key header and the
@@ -1137,7 +1130,7 @@ fn client_provided_data_for(
             })
         }
         RegisterAssetsPayload::ChecksumFiles(info) => Ok(ClientProvidedData {
-            sources: ClientIndexSources::Checksums(
+            sources: ClientIndexSources::FileServer(
                 ChecksumsReleaseSource::new(
                     info.csum_files
                         .iter()
@@ -1153,7 +1146,7 @@ fn client_provided_data_for(
     }
 }
 
-async fn register_github_release(
+async fn register_release(
     state: &AppState,
     request_id: &str,
     client_provided_data: ClientProvidedData,
@@ -1178,49 +1171,6 @@ async fn register_github_release(
     Ok(Json(rest_api_types::RegisterAssetsResponse {
         success: true,
         message: "Release registered successfully".to_string(),
-        index_file_path: Some(
-            result
-                .index_file_path
-                .relative_path()
-                .to_string_lossy()
-                .to_string(),
-        ),
-    }))
-}
-
-async fn register_checksums(
-    state: &AppState,
-    request_id: &str,
-    csum_urls: &[String],
-) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
-    tracing::info!(
-        request_id = %request_id,
-        url_count = %csum_urls.len(),
-        "Received register-assets request (checksums mode)"
-    );
-
-    let urls: Vec<url::Url> = csum_urls
-        .iter()
-        .map(|s| {
-            url::Url::parse(s)
-                .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid URL '{}': {}", s, e)))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let result = state
-        .checksums_actor
-        .ask(
-            crate::file_auth::actors::checksums_actor::ProcessChecksums {
-                request_id: request_id.to_string(),
-                urls,
-            },
-        )
-        .await
-        .map_err(|e| map_to_user_error(e, "Checksums registration failed"))?;
-
-    Ok(Json(rest_api_types::RegisterAssetsResponse {
-        success: true,
-        message: "Assets registered successfully".to_string(),
         index_file_path: Some(
             result
                 .index_file_path

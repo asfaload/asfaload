@@ -1659,13 +1659,14 @@ pub mod test_utils_tests {
         // Index timestamps are set while the server processes the request.
         let registration_started_at = chrono::Utc::now();
 
-        let assets_body = rest_api_types::RegisterAssetsPayload::ChecksumFiles(
-            rest_api_types::models::ChecksumFilesPayload {
-                csum_files: vec![checksums_url.clone()],
-                index: "index-content".to_string(),
-                signature: "signature-content".to_string(),
-            },
-        );
+        // The client (as the real one does) downloads the checksums files,
+        // builds its index, signs it and base64 encodes both in the payload.
+        let assets_body = build_signed_checksums_assets_payload(
+            &client,
+            std::slice::from_ref(&checksums_url),
+            secret_key,
+        )
+        .await?;
         let assets_payload_string = serde_json::to_string(&assets_body)?;
 
         let TestAuthHeaders {
@@ -1734,9 +1735,40 @@ pub mod test_utils_tests {
             }]
         );
 
-        checksums_mock.assert();
+        // The checksums file is fetched twice: once by the test helper that
+        // builds the index it signs, once by the server to verify the
+        // client-provided index against the release content.
+        checksums_mock.assert_calls(2);
         server_handle.abort();
 
         Ok(())
+    }
+
+    /// Build the checksums-file assets registration payload the way a real
+    /// client does: download the checksums files, build the index, sign it
+    /// with the submitting key, and base64 encode both in the payload.
+    ///
+    /// See `admin_lib`'s `build_register_assets_payload` for the reference
+    /// implementation.
+    async fn build_signed_checksums_assets_payload(
+        client: &reqwest::Client,
+        checksums_urls: &[String],
+        secret_key: &features_lib::AsfaloadSecretKeys,
+    ) -> Result<rest_api_types::RegisterAssetsPayload, anyhow::Error> {
+        use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+
+        let index =
+            forge_release::checksums::index_from_shasums_urls(client, checksums_urls).await?;
+        let index_json = index.to_json()?;
+        let index_hash = common::sha512_for_content(index_json.as_bytes())?;
+        let signature = secret_key.sign(&index_hash)?.to_base64();
+
+        Ok(rest_api_types::RegisterAssetsPayload::ChecksumFiles(
+            rest_api_types::models::ChecksumFilesPayload {
+                csum_files: checksums_urls.to_vec(),
+                index: common::base64_for_string(&index_json),
+                signature,
+            },
+        ))
     }
 }

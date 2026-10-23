@@ -8,6 +8,7 @@ test-utils = []
 
 [dependencies]
 features_lib = { path = "../../core/features_lib/" }
+rest_api_types = { path = "../../rest_api_types/" }
 forge-url = { path = "../forge-url/" }
 common = { path = "../../core/common/" }
 serde = { version = "1.0", features = ["derive"] }
@@ -16,9 +17,20 @@ chrono = "0.4"
 reqwest = { version = "0.13", features = ["json", "stream"] }
 url = "2.5"
 thiserror = "2.0"
+futures-util = "0.3.34"
+tokio = { version = "1.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "fs",
+  "io-util",
+  "time",
+  "signal",
+] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+mockito = "1.7"

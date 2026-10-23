@@ -1,14 +1,12 @@
 use super::git_actor::{CommitFile, GitActor};
 use super::signature_collector::map_aggregate_signature_error;
-use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseUrlError,
-};
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseAdders;
 use aggregate_signature::get_authorized_signers_for_file;
 use common::errors::AggregateSignatureError;
 use common::{SignedFileLoader, errors::SignedFileError};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
-use forge_release::common::{ClientProvidedData, ReleaseHandlingError, ReleaseInfo};
+use forge_release::common::{ClientProvidedData, ReleaseHandlingError};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -138,6 +136,7 @@ impl ReleaseActor {
                     | ReleaseHandlingError::Generic(_) => {
                         ApiError::InvalidRequestBody(e.to_string())
                     }
+                    other => ApiError::Generic(format!("An error occured: {}", other)),
                 },
                 ReleaseError::SerdeError(e) => ApiError::InternalServerError(e.to_string()),
             }
@@ -177,15 +176,10 @@ impl ReleaseActor {
             ));
         }
 
-        let release_info = adder.release_info();
-
         info!(
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
-            owner = %release_info.owner(),
-            repo = %release_info.repo(),
-            tag = %release_info.tag(),
-            release_path = %release_info.release_path().relative_path().display(),
+            release_path = %index_path.relative_path().display(),
             "Extracted release info"
         );
 
@@ -194,7 +188,7 @@ impl ReleaseActor {
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
             error = %e,
-            index_path = %release_info.release_path(),
+            index_path = %index_path,
             "Failed to create index file"
 
             );
@@ -228,13 +222,8 @@ impl ReleaseActor {
         );
 
         let commit_msg = CommitFile {
-            file_paths: vec![release_info.release_path().clone()],
-            commit_message: format!(
-                "Add index and signature for {}/{}/{}",
-                release_info.owner(),
-                release_info.repo(),
-                release_info.tag()
-            ),
+            file_paths: vec![index_path.parent().clone()],
+            commit_message: format!("Add index and signature for {}", index_path),
             request_id: Uuid::new_v4().to_string(),
         };
 

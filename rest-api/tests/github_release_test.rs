@@ -331,8 +331,14 @@ pub mod tests {
             String::from_utf8_lossy(&log_output.stderr)
         );
         let commits = String::from_utf8(log_output.stdout)?;
+        // The registration message names the index file it registers, as an
+        // absolute path: build the expected message from the on-disk index.
+        let expected_commit_message = format!(
+            "Add index and signature for {}\n",
+            index_path.canonicalize()?.display()
+        );
         assert_eq!(
-            commits, "Add index and signature for testowner/testrepo/v1.0.0\n",
+            commits, expected_commit_message,
             "Exactly one commit must touch the release directory, with the registration message"
         );
 

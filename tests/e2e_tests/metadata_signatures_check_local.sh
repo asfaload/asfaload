@@ -215,13 +215,11 @@ run_step_json "Register release v0.1" \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.1)
 
 RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
-run_step_json "Sign release v0.1 with key0" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
-
-run_step_json "Sign release v0.1 with key1 (completes, threshold=2)" \
+# key2 recorded its signature at registration, so key0's signature meets
+# the threshold.
+run_step_json "Sign release v0.1 with key0 (completes, threshold=2)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 assert_release_index_active "0.1"
 
@@ -272,17 +270,15 @@ run_step_json "Register release v0.2" \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.2)
 
 RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
-run_step_json "Sign release v0.2 with key0" \
+# key2 recorded its signature at registration, so key1's signature meets
+# the threshold of 3.
+run_step_json "Sign release v0.2 with key0 (2 of 3 signatures)" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
-run_step_json "Sign release v0.2 with key1" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
-
-run_step_json "Sign release v0.2 with key3 (completes, threshold=3)" \
+run_step_json "Sign release v0.2 with key1 (completes, threshold=3)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 assert_release_index_active "0.2"
 

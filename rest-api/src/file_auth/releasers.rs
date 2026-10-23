@@ -1,8 +1,6 @@
-use crate::file_auth::github_release::{BackendGithubReleaseInfo, GithubReleaseAdder};
-use crate::file_auth::release_types::{
-    BackendReleaseInfo, ReleaseAdder, ReleaseError, ReleaseIndexWriter,
-};
-use forge_release::common::ReleaseInfo;
+use crate::file_auth::fileserver_release::FileServerReleaseAdder;
+use crate::file_auth::github_release::GithubReleaseAdder;
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseIndexWriter};
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
@@ -14,12 +12,14 @@ use tokio::fs::File;
 #[derive(Debug)]
 pub enum ReleaseAdders {
     Github(Box<GithubReleaseAdder>),
+    Checksums(Box<FileServerReleaseAdder>),
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {
     async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
         match self {
             Self::Github(github) => github.as_ref().write_index(f, content).await,
+            Self::Checksums(fs) => fs.as_ref().write_index(f, content).await,
         }
     }
 }
@@ -45,6 +45,12 @@ impl ReleaseAdders {
                     GithubReleaseAdder::new(client_provided_data, git_repo_path, config).await?;
                 Ok(Self::Github(Box::new(github_adder)))
             }
+            ClientIndexSources::FileServer(_) => {
+                let adder =
+                    FileServerReleaseAdder::new(client_provided_data, git_repo_path, config)
+                        .await?;
+                Ok(Self::Checksums(Box::new(adder)))
+            }
         }
     }
 }
@@ -53,71 +59,31 @@ impl ReleaseAdder for ReleaseAdders {
     async fn index_content(&self) -> Result<String, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_content().await,
+            Self::Checksums(adder) => adder.as_ref().index_content().await,
         }
     }
 
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_path().await,
-        }
-    }
-
-    fn release_info(&self) -> BackendReleaseInfos {
-        match self {
-            Self::Github(github) => github.release_info(),
+            Self::Checksums(adder) => adder.as_ref().index_path().await,
         }
     }
 
     fn pub_key(&self) -> &features_lib::AsfaloadPublicKeys {
         match self {
             Self::Github(github) => github.pub_key(),
+            Self::Checksums(adder) => adder.pub_key(),
         }
     }
     fn signature(&self) -> &features_lib::AsfaloadSignatures {
         match self {
             Self::Github(github) => github.signature(),
+            Self::Checksums(adder) => adder.signature(),
         }
     }
 }
 
-#[derive(Debug)]
-pub enum BackendReleaseInfos {
-    Github(BackendGithubReleaseInfo),
-}
-
-impl ReleaseInfo for BackendReleaseInfos {
-    fn origin_prefix(&self) -> &str {
-        match self {
-            Self::Github(github) => github.origin_prefix(),
-        }
-    }
-
-    fn owner(&self) -> &str {
-        match self {
-            Self::Github(github) => github.owner(),
-        }
-    }
-
-    fn repo(&self) -> &str {
-        match self {
-            Self::Github(github) => github.repo(),
-        }
-    }
-
-    fn tag(&self) -> &str {
-        match self {
-            Self::Github(github) => github.tag(),
-        }
-    }
-}
-
-impl BackendReleaseInfo for BackendReleaseInfos {
-    fn release_path(&self) -> &NormalisedPaths {
-        match self {
-            Self::Github(github) => github.release_path(),
-        }
-    }
-}
 #[cfg(all(test, feature = "test-utils"))]
 mod test_utils_tests {
     use super::*;
@@ -227,7 +193,9 @@ mod test_utils_tests {
             .await
             .unwrap();
 
-        let ReleaseAdders::Github(github) = &adder;
+        let ReleaseAdders::Github(github) = &adder else {
+            panic!("We should have a github relese adder here")
+        };
         // The data accepted by the adder must be kept unchanged, no re-serialization
         // must happen by the verification process, as the registration process
         // should only use verified client data.

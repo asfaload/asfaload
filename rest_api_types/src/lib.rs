@@ -147,6 +147,9 @@ pub mod errors {
         #[error("Nonce cache error: {0}")]
         NonceCacheError(String),
 
+        #[error("Url parse error: {0}")]
+        UrlParseError(#[from] url::ParseError),
+
         #[error("An error occurred: {0}")]
         Generic(String),
     }
@@ -252,6 +255,7 @@ pub mod errors {
                 ApiError::SignersConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NonceCacheError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::Generic(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::UrlParseError(_) => StatusCode::BAD_REQUEST,
             }
         }
     }
@@ -505,6 +509,10 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ChecksumFilesPayload {
         pub csum_files: Vec<String>,
+        /// Index JSON computed by the client, base64-encoded
+        pub index: String,
+        /// Base64-encoded signature of the sha512 of the decoded index content
+        pub signature: String,
     }
 
     /// Typed payload for register-assets requests.
@@ -613,9 +621,26 @@ pub use models::{
 // Assets registration
 // ********************
 /// Represents a validated common base path shared by a set of URLs.
+#[derive(Clone, Debug)]
 pub struct CommonBasePath {
-    pub prefix: String,
-    pub parent_path: String,
+    /// scheme/host/port/
+    prefix: String,
+    /// Common parent path
+    parent_path: String,
+}
+
+impl CommonBasePath {
+    pub fn to_path(&self) -> String {
+        // parent_path always starts with "/", so no separator is needed.
+        format!("{}{}", self.prefix, self.parent_path)
+    }
+
+    pub fn prefix(&self) -> &str {
+        &self.prefix
+    }
+    pub fn parent_path(&self) -> &str {
+        &self.parent_path
+    }
 }
 
 /// Errors that can occur during URL validation.
@@ -808,6 +833,72 @@ mod tests {
             Err(e) => panic!("Expected InvalidOrigin error, got: {e}"),
             Ok(_) => panic!("Expected InvalidOrigin error, got Ok"),
         }
+        Ok(())
+    }
+
+    // CommonBasePath accessors tests
+    // ------------------------------
+
+    #[test]
+    fn test_common_base_path_accessors() -> anyhow::Result<()> {
+        // Each case holds the url, the expected prefix and the expected parent path.
+        let cases = [
+            (
+                "https://example.com/releases/v1.0/SHA256SUMS",
+                "https/example.com/443",
+                "/releases/v1.0/",
+            ),
+            (
+                "https://gitlab.company.com:8443/team/app/app.zip",
+                "https/gitlab.company.com/8443",
+                "/team/app/",
+            ),
+            // A file at the origin root has "/" as parent path.
+            (
+                "http://files.example.com/SHA256SUMS",
+                "http/files.example.com/80",
+                "/",
+            ),
+        ];
+        for (url_str, expected_prefix, expected_parent) in cases {
+            let urls = vec![Url::parse(url_str)?];
+            let base = validate_common_parent(&urls)?;
+            assert_eq!(base.prefix(), expected_prefix, "prefix for {url_str}");
+            assert_eq!(
+                base.parent_path(),
+                expected_parent,
+                "parent path for {url_str}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_base_path_to_path() -> anyhow::Result<()> {
+        let urls = vec![Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?];
+        let base = validate_common_parent(&urls)?;
+        assert_eq!(base.to_path(), "https/example.com/443/releases/v1.0/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_base_path_to_path_root_parent() -> anyhow::Result<()> {
+        // A file at the origin root has "/" as parent path, so to_path ends
+        // with a single trailing slash.
+        let urls = vec![Url::parse("http://files.example.com/SHA256SUMS")?];
+        let base = validate_common_parent(&urls)?;
+        assert_eq!(base.to_path(), "http/files.example.com/80/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_base_path_clone() -> anyhow::Result<()> {
+        let urls = vec![Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?];
+        let base = validate_common_parent(&urls)?;
+        let clone = base.clone();
+        assert_eq!(clone.prefix(), base.prefix());
+        assert_eq!(clone.parent_path(), base.parent_path());
+        assert_eq!(clone.to_path(), base.to_path());
         Ok(())
     }
 

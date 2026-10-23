@@ -5,8 +5,10 @@ use common::fs::names::{
 use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
+use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
-use forge_release::github::{GithubReleaseInfo, GithubReleaseSource};
+use forge_release::github::GithubReleaseSource;
+use forge_url::github::validate_github_release_url;
 use rest_api_types::models::{
     GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
@@ -16,6 +18,7 @@ use rest_api_types::{
     RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
 use crate::file_auth::forges::ForgeInfo;
@@ -1098,15 +1101,8 @@ pub async fn register_assets_handler(
         .ok_or(ApiError::MissingAuthenticationHeaders)?
         .to_str()?;
 
-    match &request {
-        RegisterAssetsPayload::GithubRelease(r) => {
-            let client_provided_data = client_provided_data_for(signing_key, r)?;
-            register_github_release(&state, request_id, client_provided_data).await
-        }
-        RegisterAssetsPayload::ChecksumFiles(f) => {
-            register_checksums(&state, request_id, &f.csum_files).await
-        }
-    }
+    let client_provided_data = client_provided_data_for(signing_key, &request)?;
+    register_release(&state, request_id, client_provided_data).await
 }
 
 /// Build the client-provided data from the public key header and the
@@ -1117,21 +1113,40 @@ pub async fn register_assets_handler(
 /// to the client before the release actor is invoked.
 fn client_provided_data_for(
     client_pub_key: &str,
-    payload: &rest_api_types::models::GithubReleasePayload,
+    payload: &RegisterAssetsPayload,
 ) -> Result<ClientProvidedData, ApiError> {
-    let release_url = url::Url::parse(&payload.github_release_url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
-    GithubReleaseInfo::from_url(&release_url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release information: {}", e)))?;
-    Ok(ClientProvidedData {
-        sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
-        client_pub_key: client_pub_key.to_string(),
-        client_sent_index: payload.index.clone(),
-        client_sent_signature: payload.signature.clone(),
-    })
+    match payload {
+        RegisterAssetsPayload::GithubRelease(info) => {
+            let release_url = url::Url::parse(&info.github_release_url)
+                .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
+            validate_github_release_url(&release_url).map_err(|e| {
+                ApiError::InvalidRequestBody(format!("Invalid release information: {}", e))
+            })?;
+            Ok(ClientProvidedData {
+                sources: ClientIndexSources::Github(GithubReleaseSource::new(release_url)),
+                client_pub_key: client_pub_key.to_string(),
+                client_sent_index: info.index.clone(),
+                client_sent_signature: info.signature.clone(),
+            })
+        }
+        RegisterAssetsPayload::ChecksumFiles(info) => Ok(ClientProvidedData {
+            sources: ClientIndexSources::FileServer(
+                ChecksumsReleaseSource::new(
+                    info.csum_files
+                        .iter()
+                        .map(|s| Url::parse(s))
+                        .collect::<Result<Vec<Url>, _>>()?,
+                )
+                .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?,
+            ),
+            client_pub_key: client_pub_key.to_string(),
+            client_sent_index: info.index.clone(),
+            client_sent_signature: info.signature.clone(),
+        }),
+    }
 }
 
-async fn register_github_release(
+async fn register_release(
     state: &AppState,
     request_id: &str,
     client_provided_data: ClientProvidedData,
@@ -1156,49 +1171,6 @@ async fn register_github_release(
     Ok(Json(rest_api_types::RegisterAssetsResponse {
         success: true,
         message: "Release registered successfully".to_string(),
-        index_file_path: Some(
-            result
-                .index_file_path
-                .relative_path()
-                .to_string_lossy()
-                .to_string(),
-        ),
-    }))
-}
-
-async fn register_checksums(
-    state: &AppState,
-    request_id: &str,
-    csum_urls: &[String],
-) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
-    tracing::info!(
-        request_id = %request_id,
-        url_count = %csum_urls.len(),
-        "Received register-assets request (checksums mode)"
-    );
-
-    let urls: Vec<url::Url> = csum_urls
-        .iter()
-        .map(|s| {
-            url::Url::parse(s)
-                .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid URL '{}': {}", s, e)))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let result = state
-        .checksums_actor
-        .ask(
-            crate::file_auth::actors::checksums_actor::ProcessChecksums {
-                request_id: request_id.to_string(),
-                urls,
-            },
-        )
-        .await
-        .map_err(|e| map_to_user_error(e, "Checksums registration failed"))?;
-
-    Ok(Json(rest_api_types::RegisterAssetsResponse {
-        success: true,
-        message: "Assets registered successfully".to_string(),
         index_file_path: Some(
             result
                 .index_file_path
@@ -1735,7 +1707,7 @@ pub async fn ping_handler(State(state): State<AppState>, headers: HeaderMap) -> 
 #[cfg(test)]
 mod client_provided_data_tests {
     use super::*;
-    use rest_api_types::models::GithubReleasePayload;
+    use rest_api_types::models::{ChecksumFilesPayload, GithubReleasePayload};
 
     // Pins the payload-to-struct mapping: a swap of index and signature, or
     // of the public key, must fail this test.
@@ -1746,13 +1718,117 @@ mod client_provided_data_tests {
             index: "index-value".to_string(),
             signature: "signature-value".to_string(),
         };
+        let release_payload = RegisterAssetsPayload::GithubRelease(payload.clone());
 
-        let data = client_provided_data_for("pub-key-value", &payload).unwrap();
+        let data = client_provided_data_for("pub-key-value", &release_payload).unwrap();
 
         let expected_url = url::Url::parse(&payload.github_release_url).unwrap();
         assert_eq!(data.sources.to_urls(), std::slice::from_ref(&expected_url));
         assert_eq!(data.client_pub_key, "pub-key-value");
         assert_eq!(data.client_sent_index, "index-value");
         assert_eq!(data.client_sent_signature, "signature-value");
+    }
+
+    // Pins the checksums-payload mapping, including the order of the
+    // checksum file urls given by the client.
+    #[test]
+    fn maps_checksums_payload_fields_to_client_provided_data() {
+        let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files: vec![
+                "https://example.org/SHA512SUMS".to_string(),
+                "https://example.org/SHA256SUMS".to_string(),
+            ],
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        let data = client_provided_data_for("pub-key-value", &payload).unwrap();
+
+        let expected_urls = vec![
+            url::Url::parse("https://example.org/SHA512SUMS").unwrap(),
+            url::Url::parse("https://example.org/SHA256SUMS").unwrap(),
+        ];
+        assert_eq!(data.sources.to_urls(), expected_urls.as_slice());
+        assert_eq!(data.client_pub_key, "pub-key-value");
+        assert_eq!(data.client_sent_index, "index-value");
+        assert_eq!(data.client_sent_signature, "signature-value");
+    }
+
+    // A checksum file url that does not parse is an invalid body.
+    #[test]
+    fn checksums_payload_rejects_invalid_checksum_file_url() {
+        let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files: vec![
+                "https://example.org/SHA512SUMS".to_string(),
+                "not a url".to_string(),
+            ],
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Url parse error",
+        );
+    }
+
+    // Checksum file urls from different origins are an invalid body: the
+    // server cannot build one index from files served by different hosts.
+    #[test]
+    fn checksums_payload_rejects_different_origins() {
+        let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            csum_files: vec![
+                "https://example.org/SHA512SUMS".to_string(),
+                "https://example.net/SHA512SUMS".to_string(),
+            ],
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Not all urls have the same origin",
+        );
+    }
+
+    // A github release url that does not parse is an invalid body.
+    #[test]
+    fn github_release_payload_rejects_unparsable_release_url() {
+        let payload = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            github_release_url: "not a url".to_string(),
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Invalid release URL",
+        );
+    }
+
+    // A valid url rejected by the forge validation is an invalid body, and
+    // is reported before any release actor is invoked.
+    #[test]
+    fn github_release_payload_rejects_non_github_release_url() {
+        let payload = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            github_release_url: "https://gitlab.com/owner/repo/releases/tag/v1".to_string(),
+            index: "index-value".to_string(),
+            signature: "signature-value".to_string(),
+        });
+
+        assert_invalid_body(
+            client_provided_data_for("pub-key-value", &payload),
+            "Invalid release information",
+        );
+    }
+
+    fn assert_invalid_body(result: Result<ClientProvidedData, ApiError>, message_part: &str) {
+        match result {
+            Ok(_) => panic!("Expected an error, got Ok"),
+            Err(e) => {
+                assert_eq!(e.to_http_status(), axum::http::StatusCode::BAD_REQUEST);
+                assert!(e.to_string().contains(message_part), "got: {e}");
+            }
+        }
     }
 }

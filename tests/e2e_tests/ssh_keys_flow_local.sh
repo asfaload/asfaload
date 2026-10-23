@@ -296,23 +296,14 @@ assert_release_index_exists "$RELEASE_VERSION"
 assert_release_index_pending "$RELEASE_VERSION"
 assert_last_commit_contains "$INDEX_FILE"
 
-RELEASE_SIGN_ARGS=$(pending_sign_args "$INDEX_FILE" "$SSH_KEY_1" "$backend" "$key_password")
+# Registration records the submitter's signature, so SSH key 1 has already
+# signed the index: only SSH key 2 still has to sign, and its signature
+# meets the threshold.
+RELEASE_SIGN_ARGS=$(pending_sign_args "$INDEX_FILE" "$SSH_KEY_2" "$backend" "$key_password")
 
 ################################################################################
 section "Sign release index with both SSH keys"
 ################################################################################
-
-run_step_json "Sign release index with SSH key 1" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending \
-        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
-        $RELEASE_SIGN_ARGS
-
-assert_release_index_signature_count "$RELEASE_VERSION" 1
-
-RELEASE_PENDING_SIG_PATH="$(_release_dir "$RELEASE_VERSION")/$INDEX_FILE.$PENDING_SIGNATURES_SUFFIX"
-run_step "Release index pending signatures include SSH key 1" \
-    bash -c "jq -e '.entries | has(\"$SSH_PK_1\")' '$RELEASE_PENDING_SIG_PATH' > /dev/null"
 
 run_step_json "Sign release index with SSH key 2 (threshold met, activates)" \
     '.is_complete == true' \

@@ -7,7 +7,7 @@ edition = "2024"
 test-utils = ["forge-release/test-utils"]
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 thiserror = "2.0"
 reqwest = { version = "0.13", features = ["json"] }
 common = { path = "../core/common/" }

@@ -20,7 +20,7 @@ tokio = { version = "1.0", features = [
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-kameo = "0.21.0"
+kameo = "0.22.0"
 futures-util = "0.3"
 thiserror = "2.0.17"
 tracing = "0.1"
@@ -51,11 +51,11 @@ forge-url = { path = "../file-auth/forge-url" }
 forge-release = { path = "../file-auth/forge-release/" }
 walkdir = "2.5"
 rustls = { version = "0.23.36", features = ["ring"] }
-base64 = "0.22.1"
+base64 = "0.23.0"
 
 [dev-dependencies]
 tempfile = "3"
-httpmock = "0.8"
+httpmock = "0.9"
 tokio = { version = "1.0", features = [
   "macros",
   "rt-multi-thread",

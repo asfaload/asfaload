@@ -14,8 +14,8 @@ use crate::{
     config::GitBackendConfig,
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
     file_auth::actors::{
-        checksums_actor::ChecksumsActor, git_actor::GitActor, release_actor::ReleaseActor,
-        signature_collector::SignatureCollector, signers_initialiser::SignersInitialiser,
+        git_actor::GitActor, release_actor::ReleaseActor, signature_collector::SignatureCollector,
+        signers_initialiser::SignersInitialiser,
     },
 };
 
@@ -30,7 +30,6 @@ pub struct AppState {
     pub signers_initialiser: ActorRef<SignersInitialiser>,
     pub signature_collector: ActorRef<SignatureCollector>,
     pub release_actor: ActorRef<ReleaseActor>,
-    pub checksums_actor: ActorRef<ChecksumsActor>,
 }
 
 pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError> {
@@ -78,7 +77,6 @@ pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
     let release_actor = ReleaseActor::spawn((git_actor.clone(), config.clone()));
-    let checksums_actor = ChecksumsActor::spawn((git_actor.clone(), config));
 
     Ok(AppState {
         git_repo_path,
@@ -90,6 +88,5 @@ pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError
         signers_initialiser,
         signature_collector,
         release_actor,
-        checksums_actor,
     })
 }

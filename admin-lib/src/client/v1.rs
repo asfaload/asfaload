@@ -690,4 +690,57 @@ mod tests {
             .verify(&signature, &hash)
             .expect("signature must verify against the decoded index bytes");
     }
+
+    /// A GitHub release registration payload must survive the same round
+    /// trip the server applies in `VerifiedClientData::new`. Under the
+    /// `test-utils` feature, the fetcher returns a fixed release response,
+    /// so no network access to github is needed.
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn github_release_payload_round_trips_and_verifies_server_side() {
+        use common::string_from_base64;
+        use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
+        use forge_release::github::test_utils::MOCK_RELEASE_PAGE_URL;
+
+        let key_pair = AsfaloadKeyPairs::new("test_password").unwrap();
+        let secret_key = key_pair.secret_key("test_password").unwrap();
+
+        let payload = build_register_assets_payload(
+            &RegistrationMode::GithubRelease {
+                url: MOCK_RELEASE_PAGE_URL.to_string(),
+            },
+            &secret_key,
+        )
+        .await
+        .unwrap();
+
+        let RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            github_release_url,
+            index,
+            signature,
+        }) = payload
+        else {
+            panic!("expected a GithubRelease payload, got: {payload:?}");
+        };
+        assert_eq!(
+            github_release_url, MOCK_RELEASE_PAGE_URL,
+            "the release page url must be sent as sent"
+        );
+
+        // Decode the index the way the server does (`string_from_base64`).
+        // An unencoded JSON body fails here, as it starts with '{'.
+        let decoded_index = string_from_base64(&index)
+            .unwrap_or_else(|e| panic!("server could not decode the index: {e}"));
+        let hash = sha512_for_content(decoded_index.as_bytes()).expect("index is not empty");
+
+        // Parse the key and the signature the way the server does.
+        let pub_key = AsfaloadPublicKeys::from_base64(&key_pair.public_key().to_base64())
+            .expect("public key should parse");
+        let signature =
+            AsfaloadSignatures::from_base64(&signature).expect("signature should parse");
+
+        pub_key
+            .verify(&signature, &hash)
+            .expect("signature must verify against the decoded index bytes");
+    }
 }

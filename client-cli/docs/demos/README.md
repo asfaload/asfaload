@@ -64,7 +64,7 @@ The driver copies `core/test_helpers/fixtures/keys/key_0..key_6` (and matching `
 |-----|------------------|
 | `key_0` | Submitter (registers the repo and the release; first artifact signer) |
 | `key_1` | Second artifact signer |
-| `key_2` | Third artifact signer (completes the threshold-2 release signature) |
+| `key_2` | Third artifact signer (not needed for the threshold-2 release signature, but signs the signers file at activation) |
 | `key_3` | Fourth artifact signer, added in the v2 signers update |
 | `key_4` | Revocation key — initiates revocation |
 | `key_5` | Revocation key — co-signs revocation (threshold 2) |
@@ -81,7 +81,7 @@ The driver renders tapes in this order, mirroring the howto index:
 3. `register-repo` — submits the signers file to the backend with `key_0`.
 4. `activate-signers-file` — `key_0`, `key_1`, `key_2` each `sign-pending`; signers file becomes active.
 5. `register-release` — registers `v1.0` against the backend via `--csum-file`.
-6. `sign-release` — `key_0` and `key_1` sign the release index (threshold 2).
+6. `sign-release` — `key_1` signs the release index and completes the threshold of 2. `key_0` signed the index at registration.
 7. `download-with-verification` — fetches the signed `v1.0` artifact with full verification.
 8. `update-signers-file` — proposes a new signers file (4 artifact + 3 revocation keys).
 9. `revoke-release-initiate` — `key_4` initiates the revocation of `v1.0` (leaves a pending revocation on the backend).

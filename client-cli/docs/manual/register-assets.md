@@ -5,19 +5,19 @@
 
 Register assets for signing. Tell the backend about a new set of files — either a GitHub release or one or more checksum files — so that the signature collection process can begin.
 
-After registration you still need to sign the assets yourself with [`sign-pending`](sign-pending.md).
+The registrant's signature is recorded at registration. The other artifact signers add their signatures with [`sign-pending`](sign-pending.md).
 
-Registration is authenticated with your secret key. In GitHub release mode, that key must also be an authorized artifact signer for the release path; otherwise the backend answers `403 Forbidden`. In checksums mode, the backend currently checks only that a signers config exists for the target directory.
+Registration is authenticated with your secret key. The CLI signs the release index with that key before it sends the request.
 
 ## Options
 
 ### `--github-release-url <URL>`
 
-URL of a GitHub release page. The backend fetches the release assets automatically. The host must be a known GitHub host (e.g. `github.com`); anything else is rejected. Mutually exclusive with `--csum-file`.
+URL of a GitHub release page. The CLI uses it to compute the release index. The host must be a known GitHub host (e.g. `github.com`); anything else is rejected. Mutually exclusive with `--csum-file`.
 
 ### `--csum-file <URL>`
 
-URL of a checksums file. Repeatable — pass once per file. All URLs must share the same origin (scheme, host, and port) and a common parent path. Mutually exclusive with `--github-release-url`.
+URL of a checksums file. Repeatable — pass once per file. All URLs must share the same origin (scheme, host, and port) and a common parent path. The CLI downloads these files and computes the release index from them. Mutually exclusive with `--github-release-url`.
 
 ### `-K --secret-key <PATH>`
 
@@ -58,12 +58,12 @@ These variables provide fallbacks for the matching options. Password sources are
 
 Human-readable (default):
 
-    Assets registered successfully! Remember you still need to sign it yourself!
+    Assets registered successfully! You have also signed it!
     Index file path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 
 JSON (with `--json`):
 
-    {"success":true,"message":"","index_file_path":"https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json"}
+    {"success":true,"message":"Release registered successfully","index_file_path":"https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json"}
 
 ## Examples
 
@@ -80,3 +80,10 @@ JSON (with `--json`):
 
 - `0` — assets registered.
 - non-zero — error (authentication failure, invalid URL, mutually exclusive flags, network error).
+
+## Errors
+
+You register the assets with your own signature key. If your key is not in the
+project signers file, the server refuses the request. The CLI then shows
+`403 Forbidden` and a message from the server. Use a key that signs the current
+signers file.

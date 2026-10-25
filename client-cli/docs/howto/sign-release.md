@@ -1,6 +1,6 @@
 # Sign a release
 
-After a release is [registered](register-release.md), artifact signers must provide enough signatures to meet the threshold defined in the signers file. This is the same `list-pending` / `sign-pending` flow used for [activating a signers file](activate-signers-file.md), but applied to a release index.
+The person who registers a release signs its index at registration. If the signers file threshold is higher, the other artifact signers use this flow to meet it. This is the same `list-pending` / `sign-pending` flow used for [activating a signers file](activate-signers-file.md), but applied to a release index.
 
 ## Prerequisites
 
@@ -82,11 +82,11 @@ https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json: complete
 
 ## Example: two-of-three threshold
 
-With three artifact signers and a threshold of 2, only two need to sign:
+With three artifact signers and a threshold of 2, only two need to sign. Alice registers the release and her signature is recorded at registration. Bob's signature meets the threshold:
 
 ```
-alice: asfaload-cli sign-pending --secret-key alice.key ...  → "not yet complete"
-bob:   asfaload-cli sign-pending --secret-key bob.key ...    → "now complete"
+alice: asfaload-cli register-assets ...                     → signature recorded
+bob:   asfaload-cli sign-pending --secret-key bob.key ...   → "now complete"
 # carol doesn't need to sign — threshold already met
 ```
 

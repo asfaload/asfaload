@@ -1,6 +1,6 @@
 # Register a release
 
-Once your project's signers file is active, you can register releases for signing. The backend will index the release assets and start a signature collection round.
+Once your project's signers file is active, you can register releases for signing. The CLI computes the release index and signs it with your secret key. It sends the index and the signature to the backend. The backend starts a signature collection round.
 
 ## Prerequisites
 
@@ -21,17 +21,17 @@ asfaload-cli register-assets \
 On success:
 
 ```
-Assets registered successfully! Remember you still need to sign it yourself!
+Assets registered successfully! You have also signed it!
 Index file path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 
-The backend fetches the release, creates an index of the assets, and waits for signatures.
+The CLI derives the index from the release metadata and signs it. The backend verifies the signature and the index, then waits for signatures.
 
 ![Demo: register a release](demos/register-release.gif)
 
-## Register a release from other hoster [EXPERIMENTAL]
+## Register a release from other hoster
 
-Github is currently the only forge publishing digests of the releases' artifacts. If you publish releases on other forges or an http file server, your release needs to
+GitHub is currently the only forge publishing digests of the releases' artifacts. If you publish releases on other forges or an http file server, your release needs to
 publish a checksums file (using `sha256sum` or `sha512sum`). It is that checksums file that you will register with Asfaload.
 
 ```sh
@@ -41,7 +41,7 @@ asfaload-cli register-assets \
     --csum-file https://example.com/releases/v1.0/SHA512SUMS
 ```
 
-All checksum file URLs must share a common parent path. `--csum-file` is repeatable; `--github-release-url` and `--csum-file` are mutually exclusive.
+All checksum file URLs must share the same origin (scheme, host, and port) and a common parent path. `--csum-file` is repeatable; `--github-release-url` and `--csum-file` are mutually exclusive.
 
 ## Re-registration
 
@@ -49,7 +49,7 @@ Registering the same release twice fails — the backend rejects duplicates. Exi
 
 ## What happens next
 
-You registered the release, but you haven't signed it yet. The backend is now waiting for enough signatures to meet the threshold. See [Sign a release](sign-release.md).
+Your signature is recorded at registration. If the threshold is not yet met, the backend waits for more signatures from the other artifact signers. See [Sign a release](sign-release.md).
 
 ## Reference
 

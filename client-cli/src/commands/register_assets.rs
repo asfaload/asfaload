@@ -19,7 +19,7 @@ pub async fn handle_register_assets_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.success {
-        println!("Assets registered successfully! Remember you still need to sign it yourself!");
+        println!("Assets registered successfully! You have also signed it!");
         if let Some(index_path) = response.index_file_path {
             println!("Index file path: {}", index_path);
         }

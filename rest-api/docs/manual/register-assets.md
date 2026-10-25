@@ -5,15 +5,15 @@
 
 Register assets for signing. Accepts either a GitHub release URL or a list of checksums file URLs — exactly one must be provided.
 
-In GitHub mode, the server fetches the release metadata, downloads all assets, builds an index file, and commits everything to the repository. In checksums mode, it downloads the referenced checksums files, builds the index, and commits.
+In both modes, the server verifies the signature of the client index. Then it re-derives the index from the source and compares the two indexes. In GitHub mode, the source is the release metadata and the assets. In checksums mode, the source is the referenced checksums files.
+
+The client signature is the registrant's signature and the first signature of the release. The server adds the signature to the signature file and commits the index and the signature to the repository. The other artifact signers add their signatures with [Submit a signature](submit-signature.md) until the threshold is met.
 
 ## Authorization
 
 All requests must be authenticated (see [Request headers](#request-headers)).
 
-In GitHub release mode, the caller's public key (`X-asfld-pk`) must also be an authorized artifact signer for the release path. The server reads the `artifact_signers` group of the project's active signers config and refuses a key that is not a member with `403 Forbidden`.
-
-In checksums mode, the server currently requires only that a signers config exists for the target directory; it does not check the caller's key against it.
+In GitHub release mode and in checksums mode, the caller's public key (`X-asfld-pk`) must be an authorized artifact signer for the release path. The server reads the `artifact_signers` group of the project's active signers config and refuses a key that is not a member with `403 Forbidden`.
 
 ## Request headers
 
@@ -27,8 +27,9 @@ Standard Asfaload authentication headers, signed by the caller's secret key:
 ## Request body
 
 JSON object carrying the payload under one variant tag. The tag selects the
-registration mode. An unknown tag, both tags at once, or a payload with
-missing fields is refused.
+registration mode. In both modes, the client computes the release index and
+signs it with the same secret key that signs the authentication headers. An
+unknown tag, both tags at once, or a payload with missing fields are refused.
 
 ### GitHub release mode
 
@@ -47,16 +48,18 @@ missing fields is refused.
         "csum_files": [
           "https://example.com/releases/v1.0/SHA256SUMS",
           "https://example.com/releases/v1.0/SHA512SUMS"
-        ]
+        ],
+        "index": "<base64 index json>",
+        "signature": "<base64 index signature>"
       }
     }
 
 Fields:
 
-- `github_release_url` — full URL to a GitHub release page. Must point to a known GitHub host.
-- `index` — the release index JSON, base64 encoded.
-- `signature` — signature over the index JSON, base64 encoded.
-- `csum_files` — list of URLs to checksums files. All URLs must share the same origin and parent directory.
+- `github_release_url` — full URL to a GitHub release page. Must point to a known GitHub host. Required in GitHub release mode.
+- `index` — the release index JSON, base64 encoded. Required in both modes.
+- `signature` — signature over the index JSON, base64 encoded. Required in both modes.
+- `csum_files` — list of URLs to checksums files. All URLs must share the same origin and parent directory. Required in checksums mode.
 
 ## Response
 
@@ -71,15 +74,15 @@ Fields:
 Fields:
 
 - `success` — always `true` on success.
-- `message` — human-readable status. Either "Release registered successfully" (GitHub mode) or "Assets registered successfully" (checksums mode).
+- `message` — human-readable status. Always "Release registered successfully".
 - `index_file_path` — mirror-relative path to the generated index file.
 
 ## Errors
 
-- `400 Bad Request` — invalid URL format, non-GitHub host for `github_release_url`, invalid checksums URLs, or no active signers file for the target directory.
+- `400 Bad Request` — invalid URL format, non-GitHub host for `github_release_url`, invalid checksums URLs, an index that cannot be decoded, an index signature that is invalid or does not verify, a client index that does not match the index re-derived from the source, or no active signers file for the target directory.
 - `422 Unprocessable Entity` — the body does not carry a valid payload: unknown tag, both tags at once, or missing fields in a payload.
 - `401 Unauthorized` — missing or invalid authentication headers.
-- `403 Forbidden` — in GitHub release mode, the caller's public key is not an authorized artifact signer for the release path.
+- `403 Forbidden` — the caller's public key is not an authorized artifact signer for the release path. Applies in GitHub release mode and in checksums mode.
 - `409 Conflict` — release already registered.
 - `500 Internal Server Error` — release processing, checksums download, or Git commit failed.
 
@@ -111,9 +114,13 @@ Fields:
       -H 'X-asfld-nonce: <random-uuid-v4>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \
-      -d '{"ChecksumFiles":{"csum_files":["https://example.com/releases/v1.0/SHA256SUMS"]}}'
+      -d '{"ChecksumFiles":{"csum_files":["https://example.com/releases/v1.0/SHA256SUMS"],"index":"<base64 index json>","signature":"<base64 index signature>"}}'
 
-    {"success":true,"message":"Assets registered successfully","index_file_path":"https/example.com/443/releases/v1.0/asfaload.index.json"}
+    {"success":true,"message":"Release registered successfully","index_file_path":"https/example.com/443/releases/v1.0/asfaload.index.json"}
+
+The `index` and `signature` values for both payload types are base64 encoded
+strings for the index JSON, and its signature. A real client, such as
+asfaload-cli with the `register-assets` command, makes these values for you.
 
 ### Unknown payload type
 

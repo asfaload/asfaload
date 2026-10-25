@@ -256,7 +256,7 @@ hidden_step_before() {
             PENDING_SIGNERS_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_0")"
             ;;
         sign-release.tape)
-            RELEASE_INDEX_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_0")"
+            RELEASE_INDEX_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_1")"
             ;;
         revoke-release-cosign.tape)
             PENDING_REVOCATION_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_5")"

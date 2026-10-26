@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
-use common::{base64_for_string, sha512_for_content};
+use common::{base64_for_string, sha512_for_content, sha512_for_url};
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
@@ -14,6 +14,7 @@ use forge_release::common::ReleaseFetcher;
 use forge_release::github::GithubReleaseFetcher;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
+use forge_url::{ForgeInfo, ForgeTrait};
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{
     ChecksumFilesPayload, ClientPendingFile, GithubReleasePayload, UpdateRepoSignersRequest,
@@ -307,6 +308,20 @@ impl Client {
         Self::parse_json_response(response).await
     }
 
+    /// Parse a signers file url and return the url used to fetch the raw
+    /// file content, normalized by the forge.
+    ///
+    /// The backend fetches the signers file from this same url, so a signature
+    /// computed over the content retrieved from it verifies server-side.
+    fn signers_raw_url(url_str: &str) -> AdminLibResult<url::Url> {
+        let url = url::Url::parse(url_str).map_err(|e| {
+            AdminLibError::InvalidInput(format!("Could not parse url {}: {}", url_str, e))
+        })?;
+        let info = ForgeInfo::new(&url)
+            .map_err(|e| AdminLibError::InvalidInput(format!("Url not recognised: {}", e)))?;
+        Ok(info.url_info().raw_url().clone())
+    }
+
     /// Register a repository with the backend.
     ///
     /// Makes an authenticated POST request to `/v1/register_repo`.
@@ -320,9 +335,13 @@ impl Client {
     ) -> AdminLibResult<RegisterRepoResponse> {
         let url = format!("{}/v1/register_repo", self.base_url);
 
+        let digest = sha512_for_url(Self::signers_raw_url(signers_file_url)?).await?;
+        let signature = secret_key.sign(&digest)?;
+
         let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
+            signature: signature.to_base64(),
         };
 
         // Serialize once: same bytes for auth and body
@@ -352,10 +371,13 @@ impl Client {
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<UpdateRepoSignersResponse> {
         let url = format!("{}/v1/update_signers", self.base_url);
+        let digest = sha512_for_url(Self::signers_raw_url(signers_file_url)?).await?;
+        let signature = secret_key.sign(&digest)?;
 
         let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
+            signature: signature.to_base64(),
         };
 
         // Serialize once: same bytes for auth and body

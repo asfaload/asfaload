@@ -304,6 +304,9 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RegisterRepoRequest {
         pub signers_file_url: String,
+        /// Base64-encoded signature of the sha512 digest of the signers file
+        /// content, made with the secret key of `public_key`.
+        pub signature: String,
         /// Base64-encoded public key of the submitter
         pub public_key: String,
     }

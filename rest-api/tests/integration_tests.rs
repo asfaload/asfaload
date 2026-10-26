@@ -1,6 +1,24 @@
+use anyhow::Result;
+use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+
+/// Signature over the sha512 of `content`, made with `secret_key`.
+///
+/// The registration endpoints carry a signature over the signers file
+/// content the backend fetches from the forge. When the mocked forge
+/// serves the same content to the test and to the backend, a signature
+/// built on those exact bytes is the one the backend verifies.
+pub fn signature_for_sha(
+    content: &[u8],
+    secret_key: &features_lib::AsfaloadSecretKeys,
+) -> Result<String> {
+    let digest = common::sha512_for_content(content)?;
+    Ok(secret_key.sign(&digest)?.to_base64())
+}
+
 #[cfg(all(test, not(feature = "test-utils")))]
 pub mod tests {
 
+    use crate::signature_for_sha;
     use anyhow::Result;
     use axum::http::StatusCode;
     use constants::SIGNERS_FILE;
@@ -482,10 +500,13 @@ pub mod tests {
         let public_key = test_keys.pub_key(0).unwrap();
         let secret_key = test_keys.sec_key(0).unwrap();
 
+        // The backend cannot fetch this signers file, and fails before it
+        // checks the signature: any well-formed signature value works here.
         let request_body = RegisterRepoRequest {
             signers_file_url: "https://github.com/owner/repo/blob/main/nonexistent.json"
                 .to_string(),
             public_key: public_key.to_base64(),
+            signature: signature_for_sha(b"not fetched", &secret_key)?,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -663,6 +684,7 @@ pub mod tests {
 #[cfg(all(test, feature = "test-utils"))]
 pub mod test_utils_tests {
 
+    use crate::signature_for_sha;
     use axum::http::StatusCode;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
@@ -672,6 +694,7 @@ pub mod test_utils_tests {
         file_exists_in_latest_commit, file_is_tracked_in_git, get_latest_commit, get_random_port,
         init_git_repo, url_for, wait_for_commit, wait_for_server,
     };
+    use rest_api_types::RegisterRepoRequest;
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -733,6 +756,7 @@ pub mod test_utils_tests {
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -820,6 +844,7 @@ pub mod test_utils_tests {
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -908,6 +933,7 @@ pub mod test_utils_tests {
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -934,6 +960,153 @@ pub mod test_utils_tests {
 
         // project existence is detected before sending out request
         mock.assert_calls(0);
+
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    // A request whose signature does not verify with the declared public key
+    // is rejected: the submitter must prove possession of the secret key of
+    // the public key sent in the request.
+    #[tokio::test]
+    async fn test_register_repo_fails_with_signature_by_another_key() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let other_secret_key = test_keys.sec_key(1).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &other_secret_key)?,
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(test_keys.sec_key(0).unwrap(), &payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        mock.assert_calls(1);
+
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    // A signature that does not decode as a valid signature is an invalid
+    // request body.
+    #[tokio::test]
+    async fn test_register_repo_fails_with_invalid_signature_format() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            public_key: public_key.to_base64(),
+            signature: "not-a-signature".to_string(),
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        mock.assert_calls(1);
 
         server_handle.abort();
 
@@ -1531,6 +1704,7 @@ pub mod test_utils_tests {
         let register_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
         };
         let payload_string = serde_json::to_string(&register_body)?;
         let TestAuthHeaders {

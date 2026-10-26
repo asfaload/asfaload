@@ -12,6 +12,9 @@ const PENDING_CONTENT: &[u8] = br#"{"version":2}"#;
 
 const SOURCE_PATH: &str = "/acme/tool/asfaload.signers/index.json";
 
+// Forge url recorded in the test metadata.
+const FORGE_URL: &str = "https://github.com/acme/tool/raw/main/asfaload.signers/index.json";
+
 // Build backend path, which include scheme, host and port as prefix.
 fn signers_path(file_server: &mockito::Server) -> String {
     let parsed = url::Url::parse(&file_server.url()).unwrap();
@@ -19,12 +22,6 @@ fn signers_path(file_server: &mockito::Server) -> String {
         "{}/{}",
         forge_url::path_prefix_from_url(&parsed).unwrap(),
         SIGNERS_REL_PATH
-    )
-}
-
-fn signers_metadata_json(source_url: &str) -> String {
-    format!(
-        r#"{{"data":{{"kind":"Github","url":"https://github.com/acme/tool/raw/main/asfaload.signers/index.json","verified_content":{{"retrieval_url":"{source_url}","content_hash":"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}},"retrieved_at":"2024-01-01T00:00:00Z"}}}}"#
     )
 }
 
@@ -53,7 +50,11 @@ fn mock_backend_files(
     let metadata = backend
         .mock("GET", format!("/v1/files/{metadata_path}").as_str())
         .with_status(200)
-        .with_body(signers_metadata_json(source_url))
+        .with_body(test_helpers::signers_metadata_json(
+            FORGE_URL,
+            source_url,
+            SOURCE_CONTENT,
+        ))
         .create();
     (signers, metadata)
 }

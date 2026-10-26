@@ -1123,6 +1123,38 @@ mod sha512_for_url_tests {
     }
 
     #[tokio::test]
+    async fn sha512_for_url_accepts_url_and_string_args() {
+        let content = b"hello from url";
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/file")
+            .with_status(200)
+            .with_body(content.as_ref())
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/file", server.url())).unwrap();
+        let url_str = url.as_str().to_string();
+
+        let hash_from_url = sha512_for_url(url.clone()).await.unwrap();
+        let hash_from_str = sha512_for_url(url.as_str()).await.unwrap();
+        let hash_from_string = sha512_for_url(url_str.clone()).await.unwrap();
+
+        let expected = sha512_for_content(content.as_ref()).unwrap();
+        assert_eq!(hash_from_url, expected);
+        assert_eq!(hash_from_str, expected);
+        assert_eq!(hash_from_string, expected);
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_errors_on_invalid_string_url() {
+        let result = sha512_for_url("not an url").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[tokio::test]
     async fn sha512_for_url_errors_on_http_failure() {
         let mut server = mockito::Server::new_async().await;
         let _m = server

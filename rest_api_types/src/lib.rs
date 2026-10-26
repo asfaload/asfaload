@@ -355,6 +355,10 @@ pub mod models {
         pub signature: String,
         /// Base64-encoded public key of the submitter
         pub public_key: String,
+        /// base64 of the json serialisation of the metadata
+        pub metadata: String,
+        /// signature of the metadata json serialisation
+        pub metadata_signature: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

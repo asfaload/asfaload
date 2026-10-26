@@ -93,6 +93,43 @@ async fn build_register_assets_payload(
         }
     }
 }
+async fn get_metadata_and_signature_for(
+    signers_file_url: &str,
+    secret_key: &AsfaloadSecretKeys,
+) -> Result<(String, String), AdminLibError> {
+    let parsed_url = Url::parse(signers_file_url).map_err(|e| {
+        AdminLibError::InvalidInput(format!("Could not parse url {}: {}", signers_file_url, e))
+    })?;
+    let info = ForgeInfo::new(&parsed_url).map_err(|e| {
+        AdminLibError::InvalidInput(format!("Could not initialise ForgeInfo: {}", e))
+    })?;
+    let raw_url = info.url_info().raw_url().to_string();
+
+    let verified_content = VerifiedForgeContent::new(raw_url).await.map_err(|e| {
+        AdminLibError::IOError(io::Error::other(format!(
+            "Could not initialise VerifiedForgeContent: {}",
+            e
+        )))
+    })?;
+
+    let forge = match info {
+        ForgeInfo::Github(_) => Forge::Github,
+        ForgeInfo::Gitlab(_) => Forge::Gitlab,
+        ForgeInfo::FileServer(_) => Forge::FileServer,
+    };
+    let metadata = SignersConfigMetadata::new(
+        forge,
+        signers_file_url.to_string(),
+        verified_content,
+        chrono::Utc::now(),
+    );
+
+    let serialised_metadata = serde_json::to_string(&metadata)?;
+    let metadata_hash = sha512_for_content(serialised_metadata.as_bytes())?;
+    let metadata_signature = secret_key.sign(&metadata_hash)?.to_base64();
+    let serialised_metadata_b64 = base64_for_string(serialised_metadata);
+    Ok((serialised_metadata_b64, metadata_signature))
+}
 
 impl Client {
     /// Create a new REST client.
@@ -340,41 +377,14 @@ impl Client {
         let digest = sha512_for_url(Self::signers_raw_url(signers_file_url)?).await?;
         let signature = secret_key.sign(&digest)?;
 
-        let verified_content = VerifiedForgeContent::new(signers_file_url.into())
-            .await
-            .map_err(|e| {
-                AdminLibError::IOError(io::Error::other(format!(
-                    "Could not initialise VerifiedForgeContent: {}",
-                    e
-                )))
-            })?;
-        let parsed_url = Url::parse(signers_file_url).map_err(|e| {
-            AdminLibError::InvalidInput(format!("Could not parse url {}: {}", signers_file_url, e))
-        })?;
-        let info = ForgeInfo::new(&parsed_url).map_err(|e| {
-            AdminLibError::InvalidInput(format!("Could not initialise ForgeInfo: {}", e))
-        })?;
-        let forge = match info {
-            ForgeInfo::Github(_) => Forge::Github,
-            ForgeInfo::Gitlab(_) => Forge::Gitlab,
-            ForgeInfo::FileServer(_) => Forge::Gitlab,
-        };
-        let metadata = SignersConfigMetadata::new(
-            forge,
-            signers_file_url.to_string(),
-            verified_content,
-            chrono::Utc::now(),
-        );
-
-        let serialised_metadata = serde_json::to_string(&metadata)?;
-        let metadata_hash = sha512_for_content(serialised_metadata.as_bytes())?;
-        let _metadata_signature = secret_key.sign(&metadata_hash);
-        let _serialised_metadata_b64 = base64_for_string(serialised_metadata);
-
+        let (metadata, metadata_signature) =
+            get_metadata_and_signature_for(signers_file_url, secret_key).await?;
         let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
             signature: signature.to_base64(),
+            metadata,
+            metadata_signature,
         };
 
         // Serialize once: same bytes for auth and body
@@ -407,10 +417,14 @@ impl Client {
         let digest = sha512_for_url(Self::signers_raw_url(signers_file_url)?).await?;
         let signature = secret_key.sign(&digest)?;
 
+        let (metadata, metadata_signature) =
+            get_metadata_and_signature_for(signers_file_url, secret_key).await?;
         let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
             signature: signature.to_base64(),
+            metadata,
+            metadata_signature,
         };
 
         // Serialize once: same bytes for auth and body

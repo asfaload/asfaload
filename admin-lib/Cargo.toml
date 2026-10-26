@@ -19,6 +19,7 @@ rest_api_auth = { path = "../rest_api_auth/" }
 forge-release = { path = "../file-auth/forge-release/" }
 forge-url = { path = "../file-auth/forge-url/" }
 url = "2.5.8"
+chrono = "0.4.45"
 
 [dev-dependencies]
 http = "1.0"

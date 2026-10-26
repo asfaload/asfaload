@@ -1,13 +1,14 @@
 use std::collections::HashMap;
+use std::io;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
 use common::{base64_for_string, sha512_for_content, sha512_for_url};
-use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
-    AsfaloadSignatures,
+    AsfaloadSignatures, Forge, SignersConfigMetadata,
 };
+use features_lib::{AsfaloadSecretKeyTrait, VerifiedForgeContent};
 use forge_release::checksums::index_from_shasums_urls;
 use forge_release::common::ReleaseFetcher;
 #[cfg(not(feature = "test-utils"))]
@@ -26,6 +27,7 @@ use rest_api_types::{
     RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
+use url::Url;
 
 /// A client for interacting with the v1 REST API.
 ///
@@ -337,6 +339,37 @@ impl Client {
 
         let digest = sha512_for_url(Self::signers_raw_url(signers_file_url)?).await?;
         let signature = secret_key.sign(&digest)?;
+
+        let verified_content = VerifiedForgeContent::new(signers_file_url.into())
+            .await
+            .map_err(|e| {
+                AdminLibError::IOError(io::Error::other(format!(
+                    "Could not initialise VerifiedForgeContent: {}",
+                    e
+                )))
+            })?;
+        let parsed_url = Url::parse(signers_file_url).map_err(|e| {
+            AdminLibError::InvalidInput(format!("Could not parse url {}: {}", signers_file_url, e))
+        })?;
+        let info = ForgeInfo::new(&parsed_url).map_err(|e| {
+            AdminLibError::InvalidInput(format!("Could not initialise ForgeInfo: {}", e))
+        })?;
+        let forge = match info {
+            ForgeInfo::Github(_) => Forge::Github,
+            ForgeInfo::Gitlab(_) => Forge::Gitlab,
+            ForgeInfo::FileServer(_) => Forge::Gitlab,
+        };
+        let metadata = SignersConfigMetadata::new(
+            forge,
+            signers_file_url.to_string(),
+            verified_content,
+            chrono::Utc::now(),
+        );
+
+        let serialised_metadata = serde_json::to_string(&metadata)?;
+        let metadata_hash = sha512_for_content(serialised_metadata.as_bytes())?;
+        let _metadata_signature = secret_key.sign(&metadata_hash);
+        let _serialised_metadata_b64 = base64_for_string(serialised_metadata);
 
         let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),

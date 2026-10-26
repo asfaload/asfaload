@@ -131,20 +131,25 @@ pub fn sha512_for_file<P: AsRef<Path>>(path_in: P) -> Result<AsfaloadHashes, std
         Ok(AsfaloadHashes::Sha512(result))
     }
 }
-pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io::Error> {
+pub async fn sha512_for_url<U: into_url::IntoUrl>(
+    url_in: U,
+) -> Result<AsfaloadHashes, std::io::Error> {
+    let url = url_in
+        .into_url()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
     let io_err = |e: reqwest::Error| std::io::Error::other(e.to_string());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(io_err)?;
 
-    let mut response = client.get(url_in.as_str()).send().await.map_err(io_err)?;
+    let mut response = client.get(url.as_str()).send().await.map_err(io_err)?;
 
     if !response.status().is_success() {
         return Err(std::io::Error::other(format!(
             "HTTP {}: {}",
             response.status(),
-            url_in
+            url
         )));
     }
 

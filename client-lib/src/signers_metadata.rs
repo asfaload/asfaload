@@ -1,5 +1,5 @@
 use crate::{AsfaloadLibResult, ClientLibError};
-use features_lib::{SignersConfigMetadata, SignersConfigOrigin, sha512_for_content};
+use features_lib::{SignersConfigMetadata, sha512_for_content};
 use forge_url::{UrlInfoTrait, url_info::UrlInfo};
 
 /// Verify that a file's bytes are identical to the source content served by the
@@ -12,8 +12,7 @@ pub async fn verify_signers_file_matches_metadata_source(
     backend_path: &str,
     metadata: &SignersConfigMetadata,
 ) -> AsfaloadLibResult<()> {
-    let SignersConfigOrigin::Forge(origin) = metadata.origin();
-    let source_url = origin.retrieval_url();
+    let source_url = metadata.origin().retrieval_url();
 
     // Before fetching, validate the remote url against path on disk.
     // This protects against a compromised backend where an attacker put valid data but coming from

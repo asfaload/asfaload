@@ -454,25 +454,17 @@ impl ForgeOrigin {
     }
 }
 
-// Enum listing possible origins of a signers file
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SignersConfigOrigin {
-    Forge(ForgeOrigin),
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignersConfigMetadata {
-    data: SignersConfigOrigin,
+    data: ForgeOrigin,
 }
 
 impl SignersConfigMetadata {
     pub fn from_forge(origin: ForgeOrigin) -> Self {
-        Self {
-            data: SignersConfigOrigin::Forge(origin),
-        }
+        Self { data: origin }
     }
 
-    pub fn origin(&self) -> &SignersConfigOrigin {
+    pub fn origin(&self) -> &ForgeOrigin {
         &self.data
     }
 }
@@ -1444,11 +1436,7 @@ mod accessor_tests {
             Utc::now(),
         );
         let metadata = SignersConfigMetadata::from_forge(forge.clone());
-        match metadata.origin() {
-            SignersConfigOrigin::Forge(f) => {
-                assert_eq!(f.url(), forge.url());
-            }
-        }
+        assert_eq!(metadata.origin().url, forge.url())
     }
 
     #[test]

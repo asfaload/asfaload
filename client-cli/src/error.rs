@@ -105,11 +105,7 @@ pub(crate) fn signers_metadata_verification_error(
 ) -> ClientCliError {
     match error {
         client_lib::ClientLibError::HashMismatch { .. } => {
-            let retrieval_url = match metadata.origin() {
-                features_lib::SignersConfigOrigin::Forge(origin) => {
-                    origin.verified_content().retrieval_url()
-                }
-            };
+            let retrieval_url = metadata.origin().verified_content().retrieval_url();
             ClientCliError::BackendDataError(format!(
                 "The pending signers file on the backend does not match the file on the publishing platform at url {}: {}",
                 retrieval_url, error

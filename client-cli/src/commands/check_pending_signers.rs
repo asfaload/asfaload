@@ -1,5 +1,5 @@
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
-use features_lib::{SignersConfigMetadata, SignersConfigOrigin, sha512_for_content};
+use features_lib::{SignersConfigMetadata, sha512_for_content};
 
 use crate::error::{
     ClientCliError, Result, signers_metadata_parse_error, signers_metadata_verification_error,
@@ -51,9 +51,7 @@ pub async fn handle_check_pending_signers_command(
     .await
     .map_err(|e| signers_metadata_verification_error(&metadata, e))?;
 
-    let retrieval_url = match metadata.origin() {
-        SignersConfigOrigin::Forge(origin) => origin.verified_content().retrieval_url(),
-    };
+    let retrieval_url = metadata.origin().verified_content().retrieval_url();
     let hash = sha512_for_content(signers_content.as_slice())?;
 
     if json {

@@ -1,6 +1,6 @@
 use crate::error::Result;
 
-use super::prepare_signers_submission;
+use super::prepare_signed_submission;
 
 pub async fn handle_update_signers_command(
     backend_url: &str,
@@ -9,7 +9,7 @@ pub async fn handle_update_signers_command(
     password: &str,
     json: bool,
 ) -> Result<()> {
-    let sub = prepare_signers_submission(backend_url, secret_key_path, password).await?;
+    let sub = prepare_signed_submission(backend_url, secret_key_path, password).await?;
 
     let response = sub
         .client

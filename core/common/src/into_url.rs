@@ -13,6 +13,12 @@ impl IntoUrl for Url {
     }
 }
 
+impl IntoUrl for &Url {
+    fn into_url(self) -> Result<Url, url::ParseError> {
+        Ok(self.clone())
+    }
+}
+
 impl IntoUrl for &str {
     fn into_url(self) -> Result<Url, url::ParseError> {
         Url::parse(self)

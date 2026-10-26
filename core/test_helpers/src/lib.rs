@@ -13,7 +13,6 @@ use signatures::types::AsfaloadKeyPairs;
 use signatures::types::AsfaloadPublicKeys;
 use signatures::types::AsfaloadSecretKeys;
 use signers_file_types::Forge;
-use signers_file_types::ForgeOrigin;
 use signers_file_types::SignersConfigMetadata;
 use signers_file_types::VerifiedForgeContent;
 use std::path::PathBuf;
@@ -269,7 +268,7 @@ pub fn pause() {
 }
 
 pub fn test_metadata() -> SignersConfigMetadata {
-    SignersConfigMetadata::from_forge(ForgeOrigin::new(
+    SignersConfigMetadata::new(
         Forge::Github,
         "https://example.com/test".to_string(),
         VerifiedForgeContent::new_for_test(
@@ -277,7 +276,7 @@ pub fn test_metadata() -> SignersConfigMetadata {
             "test_hash_placeholder".to_string(),
         ),
         chrono::Utc::now(),
-    ))
+    )
 }
 
 /// Metadata for a signers file published on a forge.
@@ -288,12 +287,12 @@ pub fn test_metadata() -> SignersConfigMetadata {
 /// metadata serialization format changes.
 pub fn forge_metadata(forge_url: &str, source_url: &str, content: &[u8]) -> SignersConfigMetadata {
     let source_content = String::from_utf8_lossy(content);
-    SignersConfigMetadata::from_forge(ForgeOrigin::new(
+    SignersConfigMetadata::new(
         Forge::Github,
         forge_url.to_string(),
         VerifiedForgeContent::new_for_test(source_url.to_string(), source_content.to_string()),
         chrono::Utc::now(),
-    ))
+    )
 }
 
 /// Serialize forge metadata as the backend serves it: pretty posix JSON with a
@@ -432,10 +431,10 @@ mod tests {
         let parsed: SignersConfigMetadata =
             serde_json::from_str(&json).expect("helper JSON should deserialize");
         assert_eq!(
-            parsed.origin().retrieval_url(),
+            parsed.retrieval_url(),
             "https://source.example.com/index.json"
         );
-        assert!(matches!(parsed.origin().kind(), Forge::Github));
+        assert!(matches!(parsed.kind(), Forge::Github));
     }
 
     #[test]

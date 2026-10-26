@@ -5192,7 +5192,7 @@ mod validate_history_tests {
     fn first_entry_scenarios() -> Vec<FirstEntryScenario> {
         use signatures::keys::AsfaloadPublicKeyTrait;
         use signatures::signatures_file::{SignaturesFile, TaggedSignature};
-        use signers_file_types::{Forge, ForgeOrigin, SignersConfigMetadata, VerifiedForgeContent};
+        use signers_file_types::{Forge, SignersConfigMetadata, VerifiedForgeContent};
 
         let keys_1 = TestKeys::new(1);
         let keys_2 = TestKeys::new(2);
@@ -5207,12 +5207,12 @@ mod validate_history_tests {
         };
 
         let make_metadata = |url: &str| -> SignersConfigMetadata {
-            SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            SignersConfigMetadata::new(
                 Forge::Github,
                 url.to_string(),
                 VerifiedForgeContent::new_for_test(url.to_string(), "test_hash".to_string()),
                 Utc::now(),
-            ))
+            )
         };
 
         let default_metadata = test_metadata();

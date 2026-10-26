@@ -432,7 +432,7 @@ mod tests {
     use common::fs::names::metadata_path_for;
     use features_lib::SignersConfig;
     use kameo::actor::Spawn;
-    use signers_file_types::{Forge, ForgeOrigin, VerifiedForgeContent};
+    use signers_file_types::{Forge, VerifiedForgeContent};
 
     /// Helper to create test InitialiseSignersRequest.
     fn build_test_init_request(
@@ -444,7 +444,7 @@ mod tests {
     ) -> InitialiseSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
         let signers_info = SignersInfo::from_string(&signers_json).unwrap();
-        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
             VerifiedForgeContent::new_for_test(
@@ -452,7 +452,7 @@ mod tests {
                 "test_hash_placeholder".to_string(),
             ),
             chrono::Utc::now(),
-        ));
+        );
         InitialiseSignersRequest {
             project_path,
             signers_info,
@@ -635,7 +635,7 @@ mod tests {
     ) -> ProposeSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
         let signers_info = SignersInfo::from_string(&signers_json).unwrap();
-        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
             VerifiedForgeContent::new_for_test(
@@ -643,7 +643,7 @@ mod tests {
                 "test_hash_placeholder".to_string(),
             ),
             chrono::Utc::now(),
-        ));
+        );
         ProposeSignersRequest {
             project_path,
             signers_info,

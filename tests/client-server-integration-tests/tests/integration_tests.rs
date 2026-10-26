@@ -58,16 +58,15 @@ mod tests {
             .create_async()
             .await;
 
-        let metadata =
-            features_lib::SignersConfigMetadata::from_forge(features_lib::ForgeOrigin::new(
-                features_lib::Forge::Github,
-                "https://example.com/test".to_string(),
-                features_lib::VerifiedForgeContent::new_for_test(
-                    format!("{}{}", source_server.url(), route),
-                    signers_content.to_string(),
-                ),
-                chrono::Utc::now(),
-            ));
+        let metadata = features_lib::SignersConfigMetadata::new(
+            features_lib::Forge::Github,
+            "https://example.com/test".to_string(),
+            features_lib::VerifiedForgeContent::new_for_test(
+                format!("{}{}", source_server.url(), route),
+                signers_content.to_string(),
+            ),
+            chrono::Utc::now(),
+        );
 
         let project_dir = git_repo_path.join(&origin).join(&project_path);
         fs::create_dir_all(&project_dir).expect("Failed to create project dir");

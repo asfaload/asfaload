@@ -12,7 +12,7 @@ pub async fn verify_signers_file_matches_metadata_source(
     backend_path: &str,
     metadata: &SignersConfigMetadata,
 ) -> AsfaloadLibResult<()> {
-    let source_url = metadata.origin().retrieval_url();
+    let source_url = metadata.retrieval_url();
 
     // Before fetching, validate the remote url against path on disk.
     // This protects against a compromised backend where an attacker put valid data but coming from
@@ -75,21 +75,21 @@ pub fn verify_remote_url_in_path_realm(path: &str, url: &str) -> AsfaloadLibResu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use features_lib::{Forge, ForgeOrigin, SignersConfigMetadata, VerifiedForgeContent};
+    use features_lib::{Forge, SignersConfigMetadata, VerifiedForgeContent};
 
     const SOURCE_CONTENT: &str = r#"{"version":1}"#;
 
     const SOURCE_ROUTE: &str = "/acme/tool/asfaload.signers/index.json";
 
     fn metadata_with_source_url(source_url: &str, source_content: &str) -> SignersConfigMetadata {
-        SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        SignersConfigMetadata::new(
             Forge::Github,
             // Thi sis the url passed in by the user, by we use the actual retrieval url, which
             // might be different.
             "https://github.com/acme/tool/raw/main/asfaload.signers/index.json".to_string(),
             VerifiedForgeContent::new_for_test(source_url.to_string(), source_content.to_string()),
             chrono::Utc::now(),
-        ))
+        )
     }
 
     // The backend path of the signers file, derived from the forge origin: the

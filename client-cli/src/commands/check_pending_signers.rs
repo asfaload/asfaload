@@ -51,7 +51,7 @@ pub async fn handle_check_pending_signers_command(
     .await
     .map_err(|e| signers_metadata_verification_error(&metadata, e))?;
 
-    let retrieval_url = metadata.origin().verified_content().retrieval_url();
+    let retrieval_url = metadata.verified_content().retrieval_url();
     let hash = sha512_for_content(signers_content.as_slice())?;
 
     if json {

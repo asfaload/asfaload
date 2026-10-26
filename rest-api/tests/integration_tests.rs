@@ -358,7 +358,7 @@ pub mod tests {
         use rest_api::file_auth::actors::signers_initialiser::{
             CleanupSignersRequest, InitialiseSignersRequest, SignersInitialiser,
         };
-        use signers_file_types::{Forge, ForgeOrigin, SignersConfigMetadata, VerifiedForgeContent};
+        use signers_file_types::{Forge, SignersConfigMetadata, VerifiedForgeContent};
         use std::fs;
 
         let temp_dir = TempDir::new()?;
@@ -384,7 +384,7 @@ pub mod tests {
         // that is signed intact.
         let signers_info = SignersInfo::from_string(&signers_json)?;
 
-        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
             VerifiedForgeContent::new_for_test(
@@ -392,7 +392,7 @@ pub mod tests {
                 "test_hash_placeholder".to_string(),
             ),
             chrono::Utc::now(),
-        ));
+        );
 
         let project_id = "github.com/test/repo";
         let project_dir = git_repo_path.join(project_id);

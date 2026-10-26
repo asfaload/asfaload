@@ -412,14 +412,14 @@ pub enum Forge {
 }
 // Metadata about the signers file retrieved from a forge
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ForgeOrigin {
+pub struct SignersConfigMetadata {
     kind: Forge,
     url: String,
     verified_content: VerifiedForgeContent,
     retrieved_at: DateTime<Utc>,
 }
 
-impl ForgeOrigin {
+impl SignersConfigMetadata {
     pub fn new(
         kind: Forge,
         url: String,
@@ -451,21 +451,6 @@ impl ForgeOrigin {
 
     pub fn kind(&self) -> &Forge {
         &self.kind
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SignersConfigMetadata {
-    data: ForgeOrigin,
-}
-
-impl SignersConfigMetadata {
-    pub fn from_forge(origin: ForgeOrigin) -> Self {
-        Self { data: origin }
-    }
-
-    pub fn origin(&self) -> &ForgeOrigin {
-        &self.data
     }
 }
 
@@ -1351,12 +1336,12 @@ mod accessor_tests {
     }
 
     #[test]
-    fn forge_origin_retrieval_url_delegates_to_verified_content() {
+    fn metadata_retrieval_url_delegates_to_verified_content() {
         let verified = VerifiedForgeContent::new_for_test(
             "https://raw.githubusercontent.com/org/repo/main/signers.json".to_string(),
             "content".to_string(),
         );
-        let origin = ForgeOrigin::new(
+        let origin = SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/org/repo/blob/main/signers.json".to_string(),
             verified,
@@ -1373,18 +1358,18 @@ mod accessor_tests {
     }
 
     #[test]
-    fn forge_origin_url_returns_url() {
+    fn metadata_origin_url_returns_url() {
         let verified = VerifiedForgeContent::new_for_test(
             "https://raw.example.com/signers.json".to_string(),
             "deadbeef".to_string(),
         );
-        let origin = ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://example.com/signers.json".to_string(),
             verified,
             Utc::now(),
         );
-        assert_eq!(origin.url(), "https://example.com/signers.json");
+        assert_eq!(metadata.url(), "https://example.com/signers.json");
     }
 
     #[test]
@@ -1393,13 +1378,13 @@ mod accessor_tests {
             "https://raw.gitlab.com/signers.json".to_string(),
             "deadbeef".to_string(),
         );
-        let origin = ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Gitlab,
             "https://gitlab.com/signers.json".to_string(),
             verified,
             Utc::now(),
         );
-        assert!(matches!(origin.kind(), Forge::Gitlab));
+        assert!(matches!(metadata.kind(), Forge::Gitlab));
     }
 
     #[test]
@@ -1408,35 +1393,19 @@ mod accessor_tests {
             "https://raw.example.com/file.json".to_string(),
             "deadbeef".to_string(),
         );
-        let origin = ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://example.com/file.json".to_string(),
             verified,
             chrono::Utc::now(),
         );
-        let json = serde_json::to_string(&origin).unwrap();
-        let deserialized: ForgeOrigin = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.retrieval_url(), origin.retrieval_url());
+        let json = serde_json::to_string(&metadata).unwrap();
+        let deserialized: SignersConfigMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.retrieval_url(), metadata.retrieval_url());
         assert_eq!(
             deserialized.verified_content().content_hash(),
-            origin.verified_content().content_hash()
+            metadata.verified_content().content_hash()
         );
-    }
-
-    #[test]
-    fn signers_config_metadata_origin_returns_origin() {
-        let verified = VerifiedForgeContent::new_for_test(
-            "https://raw.example.com/s.json".to_string(),
-            "hash".to_string(),
-        );
-        let forge = ForgeOrigin::new(
-            Forge::Github,
-            "https://example.com".to_string(),
-            verified,
-            Utc::now(),
-        );
-        let metadata = SignersConfigMetadata::from_forge(forge.clone());
-        assert_eq!(metadata.origin().url, forge.url())
     }
 
     #[test]

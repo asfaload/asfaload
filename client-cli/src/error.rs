@@ -105,7 +105,7 @@ pub(crate) fn signers_metadata_verification_error(
 ) -> ClientCliError {
     match error {
         client_lib::ClientLibError::HashMismatch { .. } => {
-            let retrieval_url = metadata.origin().verified_content().retrieval_url();
+            let retrieval_url = metadata.verified_content().retrieval_url();
             ClientCliError::BackendDataError(format!(
                 "The pending signers file on the backend does not match the file on the publishing platform at url {}: {}",
                 retrieval_url, error
@@ -139,17 +139,17 @@ pub type Result<T> = std::result::Result<T, ClientCliError>;
 mod tests {
     use super::*;
     use client_lib::ClientLibError;
-    use features_lib::{Forge, ForgeOrigin, SignersConfigMetadata, VerifiedForgeContent};
+    use features_lib::{Forge, SignersConfigMetadata, VerifiedForgeContent};
 
     const SOURCE_URL: &str = "https://files.example.com/acme/tool/asfaload.signers/index.json";
 
     fn metadata(source_url: &str) -> SignersConfigMetadata {
-        SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/acme/tool/raw/main/asfaload.signers/index.json".to_string(),
             VerifiedForgeContent::new_for_test(source_url.to_string(), "{}".to_string()),
             chrono::Utc::now(),
-        ))
+        )
     }
 
     #[test]

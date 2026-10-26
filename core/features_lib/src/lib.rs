@@ -42,8 +42,8 @@ pub use signers_file::validate_signers_chain_on_disk;
 pub use signers_file::{validate_chain, validate_history_transitions};
 pub use signers_file_types::revocation::RevocationInfo;
 pub use signers_file_types::{
-    CurrentSignersInfo, Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersChain,
-    SignersChainEntry, SignersConfigMetadata, SignersInfoTrait, VerifiedForgeContent,
+    CurrentSignersInfo, Forge, HistoryEntry, HistoryFile, SignersChain, SignersChainEntry,
+    SignersConfigMetadata, SignersInfoTrait, VerifiedForgeContent,
 };
 pub use signers_file_types::{SignersConfig, parse_signers_config};
 

@@ -15,6 +15,18 @@ pub fn signature_for_sha(
     Ok(secret_key.sign(&digest)?.to_base64())
 }
 
+/// Filler metadata and metadata signature for `RegisterRepoRequest` literals.
+///
+/// The backend does not verify the metadata payload yet, so the fixture only
+/// needs well-formed base64 values. The metadata is the base64 of the JSON
+/// `{"data":{"Forge":{"kind":"Github"}}}`.
+pub fn metadata_fixture() -> (String, String) {
+    (
+        "eyJkYXRhIjp7IkZvcmdlIjp7ImtpbmQiOiJHaXRodWIifX19".to_string(),
+        "dGVzdC1tZXRhZGF0YS1zaWduYXR1cmU=".to_string(),
+    )
+}
+
 #[cfg(all(test, not(feature = "test-utils")))]
 pub mod tests {
 
@@ -507,6 +519,8 @@ pub mod tests {
                 .to_string(),
             public_key: public_key.to_base64(),
             signature: signature_for_sha(b"not fetched", &secret_key)?,
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -757,6 +771,8 @@ pub mod test_utils_tests {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -845,6 +861,8 @@ pub mod test_utils_tests {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -934,6 +952,8 @@ pub mod test_utils_tests {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -1013,6 +1033,8 @@ pub mod test_utils_tests {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &other_secret_key)?,
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -1086,6 +1108,8 @@ pub mod test_utils_tests {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: "not-a-signature".to_string(),
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -1705,6 +1729,8 @@ pub mod test_utils_tests {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata: crate::metadata_fixture().0,
+            metadata_signature: crate::metadata_fixture().1,
         };
         let payload_string = serde_json::to_string(&register_body)?;
         let TestAuthHeaders {

@@ -1,15 +1,14 @@
 use super::git_actor::{CommitFile, GitActor};
-use super::signature_collector::map_aggregate_signature_error;
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseAdders;
 use aggregate_signature::get_authorized_signers_for_file;
+use common::SignedFileLoader;
 use common::errors::AggregateSignatureError;
-use common::{SignedFileLoader, errors::SignedFileError};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
 use forge_release::common::{ClientProvidedData, ReleaseHandlingError};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
-use rest_api_types::errors::ApiError;
+use rest_api_types::errors::{ApiError, map_signature_error_to_api_error};
 use rest_api_types::path_validation::NormalisedPaths;
 use tracing::info;
 use uuid::Uuid;
@@ -33,28 +32,6 @@ pub struct ProcessRelease {
 
 pub struct RegisterResult {
     pub index_file_path: NormalisedPaths,
-}
-
-/// Map an error from `SignedFileTrait::add_signature` during release
-/// registration to a user-facing `ApiError`.
-///
-/// Errors the client caused (duplicate signature, signature file already
-/// complete, or a signature failing verification) map to a 4xx status; only
-/// genuinely unexpected errors map to the internal server error status.
-fn map_release_signature_error(e: SignedFileError) -> ApiError {
-    match e {
-        SignedFileError::AggregateSignatureError(agg_err) => match agg_err {
-            // A complete release signature file accepts no additional
-            // signature.
-            AggregateSignatureError::SignatureAlreadyComplete => {
-                ApiError::SignatureAlreadyComplete(
-                    "Cannot accept additional signatures".to_string(),
-                )
-            }
-            other => map_aggregate_signature_error(other),
-        },
-        other => ApiError::InternalServerError(other.to_string()),
-    }
 }
 
 impl Actor for ReleaseActor {
@@ -211,7 +188,7 @@ impl ReleaseActor {
                     error = %e,
                     "Could not add the client signature to the release signature file"
                 );
-                map_release_signature_error(e)
+                map_signature_error_to_api_error(e)
             })?;
         info!(
             request_id = %msg.request_id,
@@ -239,13 +216,14 @@ impl ReleaseActor {
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
+    use features_lib::SignedFileError;
 
     use super::*;
 
     /// Status code and user-facing message the mapper produces for an
     /// `add_signature` error.
     fn mapped(e: SignedFileError) -> (StatusCode, String) {
-        let api_error = map_release_signature_error(e);
+        let api_error = map_signature_error_to_api_error(e);
         (api_error.to_http_status(), api_error.to_string())
     }
 

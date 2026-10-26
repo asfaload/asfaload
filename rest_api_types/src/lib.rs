@@ -5,7 +5,7 @@ pub mod path_validation;
 pub mod errors {
 
     use axum::{Json, http::StatusCode, response::IntoResponse};
-    use common::errors::SignersConfigError;
+    use common::errors::{AggregateSignatureError, SignedFileError, SignersConfigError};
     use thiserror::Error;
 
     use super::models::ErrorResponse;
@@ -152,6 +152,52 @@ pub mod errors {
 
         #[error("An error occurred: {0}")]
         Generic(String),
+    }
+
+    /// Map an `AggregateSignatureError` to the appropriate `ApiError`.
+    pub fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
+        match e {
+            AggregateSignatureError::DuplicateSignature => ApiError::SignatureAlreadyCollected(
+                "Signature already collected for this key".to_string(),
+            ),
+            AggregateSignatureError::Signature(msg) => {
+                if msg.contains("signature verification failed") {
+                    ApiError::SignatureVerificationFailed
+                } else {
+                    ApiError::InternalServerError(msg)
+                }
+            }
+            AggregateSignatureError::Io(io) => {
+                if io.kind() == std::io::ErrorKind::AlreadyExists {
+                    ApiError::SignatureAlreadyCollected("Signature already added".to_string())
+                } else {
+                    ApiError::InternalServerError(format!("IO error: {}", io))
+                }
+            }
+            _ => ApiError::InternalServerError(e.to_string()),
+        }
+    }
+
+    /// Map an error from `SignedFileTrait::add_signature` during release
+    /// registration to a user-facing `ApiError`.
+    ///
+    /// Errors the client caused (duplicate signature, signature file already
+    /// complete, or a signature failing verification) map to a 4xx status; only
+    /// genuinely unexpected errors map to the internal server error status.
+    pub fn map_signature_error_to_api_error(e: SignedFileError) -> ApiError {
+        match e {
+            SignedFileError::AggregateSignatureError(agg_err) => match agg_err {
+                // A complete release signature file accepts no additional
+                // signature.
+                AggregateSignatureError::SignatureAlreadyComplete => {
+                    ApiError::SignatureAlreadyComplete(
+                        "Cannot accept additional signatures".to_string(),
+                    )
+                }
+                other => map_aggregate_signature_error(other),
+            },
+            other => ApiError::InternalServerError(other.to_string()),
+        }
     }
 
     #[derive(Error, Debug)]

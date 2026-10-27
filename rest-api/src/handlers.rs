@@ -24,6 +24,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
+use crate::file_auth::actors::forge_signers_validator::ProjectSignersProposal;
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
@@ -106,73 +107,18 @@ pub async fn register_repo_handler(
             project_id
         )));
     }
-    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
-        signers_file_url: parsed_url,
-        request_id: request_id.to_string(),
-    };
-
-    let signers_proposal = state
-        .forge_project_validator
-        .ask(auth_request)
-        .await
-        .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
-
-    // Verify the signature supplied by the client is for the content we retrieved from the forge
-    let signers_content = signers_proposal
-        .verified_content
-        .content()
-        .await
-        .map_err(|e| {
-            ApiError::ActorOperationFailed(format!("Signers file content retrieval failed: {}", e))
-        })?;
-
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
 
-    verify_client_signature(&pub_key, &request.signature, &signers_content)?;
-
-    // Verify the signature of the client is valid for the metadata is provides
-    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
-        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
-    })?;
-    verify_client_signature(&pub_key, &request.metadata_signature, &client_metadata_json)?;
-
-    // Construct metadata from forge information
-    let client_metadata: SignersConfigMetadata = serde_json::from_str(&client_metadata_json)?;
-
-    // Reject if the client provided timestamp is too far in the past
-    if chrono::Utc::now() - client_metadata.retrieved_at().clone()
-        > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS)
-    {
-        return Err(ApiError::InvalidRequestBody(format!(
-            "Metadata retrieved_at provided by client too far in the past"
-        )));
-    }
-
-    let forge_kind = match &repo_info {
-        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
-        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
-        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
-    };
-    let metadata = signers_file_types::SignersConfigMetadata::new(
-        forge_kind,
-        request.signers_file_url.clone(),
-        signers_proposal.verified_content,
-        client_metadata.retrieved_at().clone(),
-    );
-    let metadata_json = serde_json::to_string(&metadata)?;
-
-    if metadata != client_metadata {
-        tracing::info!(
-            request_id = %request_id,
-            client_metadata = %client_metadata_json,
-            backend_metadata = %metadata_json,
-            "Mismatch between client-provided metadata and server-generated metadata"
-        );
-        return Err(ApiError::InvalidRequestBody(format!(
-            "The metadata build by the backend is different from the client-provided one"
-        )));
-    }
+    let (signers_proposal, metadata) = validate_client_provided_data(
+        request_id,
+        &state,
+        &request,
+        &parsed_url,
+        &pub_key,
+        &repo_info,
+    )
+    .await?;
 
     // Initialise signers - create directory structure and files
     let init_request = crate::file_auth::actors::signers_initialiser::InitialiseSignersRequest {
@@ -1180,6 +1126,91 @@ fn verify_client_signature(
     Ok(())
 }
 
+async fn validate_client_provided_data(
+    // For logging
+    request_id: &str,
+    // To access actors
+    state: &AppState,
+    // The complete client request
+    request: &RegisterRepoRequest,
+    // The parsed signers_file_url found in request, but passed here to avoid double parsing as it
+    // is also needed in the caller
+    parsed_url: &Url,
+    // The signing key
+    pub_key: &AsfaloadPublicKeys,
+    // Also used by caller to build NormalisedPaths
+    repo_info: &ForgeInfo,
+) -> Result<(ProjectSignersProposal, SignersConfigMetadata), ApiError> {
+    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
+        signers_file_url: parsed_url.clone(),
+        request_id: request_id.to_string(),
+    };
+
+    let signers_proposal = state
+        .forge_project_validator
+        .ask(auth_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
+
+    // Verify the signature supplied by the client is for the content we retrieved from the forge
+    let signers_content = signers_proposal
+        .verified_content
+        .content()
+        .await
+        .map_err(|e| {
+            ApiError::ActorOperationFailed(format!("Signers file content retrieval failed: {}", e))
+        })?;
+
+    verify_client_signature(pub_key, &request.signature, &signers_content)?;
+
+    // Verify the signature of the client is valid for the metadata is provides
+    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
+    })?;
+    verify_client_signature(pub_key, &request.metadata_signature, &client_metadata_json)?;
+
+    // Construct metadata from forge information
+    let client_metadata: SignersConfigMetadata = serde_json::from_str(&client_metadata_json)
+        .map_err(|e| {
+            ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
+        })?;
+
+    // Reject if the client provided timestamp is too far in the past
+    if chrono::Utc::now() - client_metadata.retrieved_at().clone()
+        > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS)
+    {
+        return Err(ApiError::InvalidRequestBody(
+            "Metadata retrieved_at provided by client too far in the past".to_string(),
+        ));
+    }
+
+    let forge_kind = match &repo_info {
+        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
+        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
+    };
+    let metadata = signers_file_types::SignersConfigMetadata::new(
+        forge_kind,
+        request.signers_file_url.clone(),
+        signers_proposal.verified_content.clone(),
+        client_metadata.retrieved_at(),
+    );
+    let metadata_json = serde_json::to_string(&metadata)?;
+
+    if metadata != client_metadata {
+        tracing::info!(
+            request_id = %request_id,
+            client_metadata = %client_metadata_json,
+            backend_metadata = %metadata_json,
+            "Mismatch between client-provided metadata and server-generated metadata"
+        );
+        return Err(ApiError::InvalidRequestBody(
+            "The metadata build by the backend is different from the client-provided one"
+                .to_string(),
+        ));
+    }
+    Ok((signers_proposal, metadata))
+}
 /// Build the client-provided data from the public key header and the
 /// GitHub release payload.
 ///
@@ -1911,7 +1942,7 @@ mod client_provided_data_tests {
 #[cfg(test)]
 mod verify_client_signature_tests {
     use super::*;
-    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+    use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
     use test_helpers::TestKeys;
 
     // The signature of the declared key over the exact content verifies, and

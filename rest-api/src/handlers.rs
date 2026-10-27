@@ -1124,7 +1124,7 @@ async fn validate_client_provided_data(
         .forge_project_validator
         .ask(auth_request)
         .await
-        .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
+        .map_err(|e| map_to_user_error(e, "Project validation failed"))?;
 
     // Verify the signature supplied by the client is for the content we retrieved from the forge
     let signers_content = signers_proposal

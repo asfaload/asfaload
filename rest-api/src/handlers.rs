@@ -268,43 +268,17 @@ pub async fn update_signers_handler(
         )));
     }
 
-    // Validate the signers file from the forge
-    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
-        signers_file_url: parsed_url,
-        request_id: request_id.to_string(),
-    };
-
-    let signers_proposal = state
-        .forge_project_validator
-        .ask(auth_request)
-        .await
-        .map_err(|e| map_to_user_error(e, "Project validation failed"))?;
-
-    // The submitter must sign the exact signers file content retrieved from
-    // the forge, with the public key it declares.
-    let signers_content = signers_proposal
-        .verified_content
-        .content()
-        .await
-        .map_err(|e| {
-            ApiError::ActorOperationFailed(format!("Signers file content retrieval failed: {}", e))
-        })?;
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
-    verify_client_signature(&pub_key, &request.signature, &signers_content)?;
-
-    // Construct metadata from forge information
-    let forge_kind = match &repo_info {
-        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
-        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
-        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
-    };
-    let metadata = signers_file_types::SignersConfigMetadata::new(
-        forge_kind,
-        request.signers_file_url.clone(),
-        signers_proposal.verified_content,
-        chrono::Utc::now(),
-    );
+    let (signers_proposal, metadata) = validate_client_provided_data(
+        request_id,
+        &state,
+        &request,
+        &parsed_url,
+        &pub_key,
+        &repo_info,
+    )
+    .await?;
 
     // Propose signers file update
     let propose_request = crate::file_auth::actors::signers_initialiser::ProposeSignersRequest {

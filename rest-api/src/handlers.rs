@@ -124,7 +124,15 @@ pub async fn register_repo_handler(
 
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+
     verify_client_signature(&pub_key, &request.signature, &signers_content)?;
+
+    // Verify the signature of the client is valid for the metadata is provides
+    verify_client_signature(
+        &pub_key,
+        &request.metadata_signature,
+        &request.metadata_signature,
+    )?;
 
     // Construct metadata from forge information
     let forge_kind = match &repo_info {
@@ -1143,7 +1151,6 @@ fn verify_client_signature(
         .map_err(|_| ApiError::SignatureVerificationFailed)?;
 
     Ok(())
-
 }
 
 /// Build the client-provided data from the public key header and the

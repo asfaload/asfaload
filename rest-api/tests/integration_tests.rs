@@ -17,14 +17,54 @@ pub fn signature_for_sha(
 
 /// Filler metadata and metadata signature for `RegisterRepoRequest` literals.
 ///
-/// The backend does not verify the metadata payload yet, so the fixture only
-/// needs well-formed base64 values. The metadata is the base64 of the JSON
-/// `{"data":{"Forge":{"kind":"Github"}}}`.
+/// Only for tests whose registration flow fails before the backend validates
+/// the metadata (e.g. the forge fetch fails first). Tests that reach the
+/// metadata validation must use `metadata_and_signature_for` instead.
 pub fn metadata_fixture() -> (String, String) {
     (
         "eyJkYXRhIjp7IkZvcmdlIjp7ImtpbmQiOiJHaXRodWIifX19".to_string(),
         "dGVzdC1tZXRhZGF0YS1zaWduYXR1cmU=".to_string(),
     )
+}
+
+/// Build the base64-encoded metadata and its base64-encoded signature the
+/// same way the admin client does, so the backend validation accepts them.
+///
+/// `signers_content` must be the exact content the mocked forge serves for
+/// `signers_file_url`: the backend computes the metadata content hash from
+/// the bytes it fetches, so signing metadata built on the same bytes is the
+/// only way to pass the backend validation.
+pub fn metadata_and_signature_for(
+    signers_file_url: &str,
+    signers_content: &str,
+    secret_key: &features_lib::AsfaloadSecretKeys,
+) -> Result<(String, String)> {
+    use rest_api::file_auth::forges::{ForgeInfo, ForgeTrait};
+    use signers_file_types::VerifiedForgeContent;
+
+    let parsed_url = url::Url::parse(signers_file_url)?;
+    let info = ForgeInfo::new(&parsed_url)?;
+    let raw_url = info.url_info().raw_url().to_string();
+
+    let verified_content = VerifiedForgeContent::new_for_test(raw_url, signers_content.to_string());
+
+    let forge = match info {
+        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
+        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
+    };
+    let metadata = signers_file_types::SignersConfigMetadata::new(
+        forge,
+        signers_file_url.to_string(),
+        verified_content,
+        chrono::Utc::now(),
+    );
+
+    let serialised_metadata = serde_json::to_string(&metadata)?;
+    let metadata_hash = common::sha512_for_content(serialised_metadata.as_bytes())?;
+    let metadata_signature = secret_key.sign(&metadata_hash)?.to_base64();
+    let serialised_metadata_b64 = common::base64_for_string(serialised_metadata);
+    Ok((serialised_metadata_b64, metadata_signature))
 }
 
 #[cfg(all(test, not(feature = "test-utils")))]
@@ -767,12 +807,14 @@ pub mod test_utils_tests {
 
         let client = reqwest::Client::new();
 
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -857,12 +899,14 @@ pub mod test_utils_tests {
 
         let client = reqwest::Client::new();
 
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -948,12 +992,14 @@ pub mod test_utils_tests {
 
         let client = reqwest::Client::new();
 
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -1002,6 +1048,7 @@ pub mod test_utils_tests {
 
         let test_keys = test_helpers::TestKeys::new(2);
         let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
         let other_secret_key = test_keys.sec_key(1).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
@@ -1029,12 +1076,14 @@ pub mod test_utils_tests {
 
         let client = reqwest::Client::new();
 
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &other_secret_key)?,
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -1104,12 +1153,14 @@ pub mod test_utils_tests {
 
         let client = reqwest::Client::new();
 
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: "not-a-signature".to_string(),
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -1725,12 +1776,14 @@ pub mod test_utils_tests {
         let client = reqwest::Client::new();
 
         // Register the repo (creates signers at http/127.0.0.1/<mock_port>/owner/repo/)
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
         let register_body = RegisterRepoRequest {
             signers_file_url: signers_url,
             public_key: public_key.to_base64(),
             signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&register_body)?;
         let TestAuthHeaders {

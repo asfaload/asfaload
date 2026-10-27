@@ -452,6 +452,11 @@ impl SignersConfigMetadata {
     pub fn kind(&self) -> &Forge {
         &self.kind
     }
+
+    // DateTime<Utc> is Copy; so we can return it
+    pub fn retrieved_at(&self) -> chrono::DateTime<Utc> {
+        self.retrieved_at
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

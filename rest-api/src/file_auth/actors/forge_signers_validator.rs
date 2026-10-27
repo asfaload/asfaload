@@ -390,11 +390,7 @@ mod test_utils_tests {
 
         // Start the validation in the background
         let handle = tokio::spawn({
-            async move {
-                validator
-                    .validate_project(&url, "test-rate-limit")
-                    .await
-            }
+            async move { validator.validate_project(&url, "test-rate-limit").await }
         });
 
         let start = std::time::Instant::now();
@@ -598,9 +594,8 @@ mod test_utils_tests {
         let server_url = url::Url::parse(&server.url("/")).unwrap();
 
         // Start fetch loop
-        let handle = tokio::spawn({
-            async move { validator.fetch_with_retry(&server_url, "req-5").await }
-        });
+        let handle =
+            tokio::spawn(async move { validator.fetch_with_retry(&server_url, "req-5").await });
 
         let start = std::time::Instant::now();
         // The mock returning 429 gets a hit, it is replaced by a success responder

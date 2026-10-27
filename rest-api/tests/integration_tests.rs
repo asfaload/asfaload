@@ -1148,6 +1148,407 @@ pub mod test_utils_tests {
         Ok(())
     }
 
+    /// Starts the REST server on a random port for the given git repo.
+    /// Returns the server port and the server task handle.
+    async fn start_test_server(
+        git_repo_path: &std::path::Path,
+    ) -> anyhow::Result<(
+        u16,
+        tokio::task::JoinHandle<Result<(), rest_api_types::errors::ApiError>>,
+    )> {
+        let port = get_random_port().await?;
+        let config = build_test_config(git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+        Ok((port, server_handle))
+    }
+
+    /// Seeds an active signers file (with its metadata and signature files)
+    /// directly in the project directory of `project_id`, the way
+    /// `TestSetupBuilder` does, and commits it. The submitter must be an
+    /// admin key of `signers_config` to be allowed to propose updates.
+    async fn seed_active_project(
+        git_repo_path: &std::path::Path,
+        project_id: &str,
+        signers_config: &signers_file_types::SignersConfig,
+        public_key: &features_lib::AsfaloadPublicKeys,
+        secret_key: &features_lib::AsfaloadSecretKeys,
+    ) -> anyhow::Result<()> {
+        use common::fs::names::{
+            metadata_path_for, metadata_signatures_path_for, signatures_path_for,
+        };
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, SignaturesFile,
+            TaggedSignature,
+        };
+
+        let project_paths =
+            rest_api::file_auth::github::get_project_normalised_paths(git_repo_path, project_id)
+                .await?;
+        let project_dir = project_paths.absolute_path();
+
+        let signers_dir = project_dir.join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        let signers_json = signers_config.to_json()?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
+
+        // Metadata file. Its content is replaced by the update proposal, so
+        // the test metadata is good enough here.
+        let metadata = test_helpers::test_metadata();
+        let metadata_path = metadata_path_for(signers_dir.join(SIGNERS_FILE))?;
+        tokio::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?).await?;
+
+        // Signatures file for the signers config, signed by the submitter.
+        let signers_hash = common::sha512_for_content(signers_json.as_bytes())?;
+        let mut signers_signatures = SignaturesFile::new();
+        signers_signatures.entries.insert(
+            public_key.to_base64(),
+            TaggedSignature {
+                format: public_key.key_format(),
+                signature: secret_key.sign(&signers_hash)?.to_base64(),
+            },
+        );
+        tokio::fs::write(
+            signatures_path_for(&signers_dir.join(SIGNERS_FILE))?,
+            serde_json::to_string(&signers_signatures)?,
+        )
+        .await?;
+
+        // Signatures file for the metadata, signed by the submitter.
+        let metadata_content = tokio::fs::read(&metadata_path).await?;
+        let metadata_hash = common::sha512_for_content(metadata_content.as_slice())?;
+        let mut metadata_signatures = SignaturesFile::new();
+        metadata_signatures.entries.insert(
+            public_key.to_base64(),
+            TaggedSignature {
+                format: public_key.key_format(),
+                signature: secret_key.sign(&metadata_hash)?.to_base64(),
+            },
+        );
+        tokio::fs::write(
+            metadata_signatures_path_for(&signers_dir.join(SIGNERS_FILE))?,
+            serde_json::to_string(&metadata_signatures)?,
+        )
+        .await?;
+
+        let signers_rel_path = format!(
+            "{}/{}",
+            project_paths.relative_path().display(),
+            SIGNERS_DIR
+        );
+        rest_api_test_helpers::git_commit(
+            git_repo_path,
+            &[signers_rel_path.as_str()],
+            "initial signers config",
+        )?;
+
+        Ok(())
+    }
+
+    /// Submit a signers file update for the project served on `port`, with
+    /// metadata carrying the given `retrieved_at` timestamp.
+    async fn post_update_signers(
+        port: u16,
+        signers_url: &str,
+        signers_json: &str,
+        retrieved_at: chrono::DateTime<chrono::Utc>,
+        public_key: &features_lib::AsfaloadPublicKeys,
+        secret_key: &features_lib::AsfaloadSecretKeys,
+    ) -> anyhow::Result<reqwest::Response> {
+        use features_lib::AsfaloadPublicKeyTrait;
+
+        let (metadata, metadata_signature) = crate::metadata_and_signature_for_at(
+            signers_url,
+            signers_json,
+            retrieved_at,
+            secret_key,
+        )?;
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url.to_string(),
+            public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), secret_key)?,
+            metadata,
+            metadata_signature,
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let client = reqwest::Client::new();
+        Ok(client
+            .post(format!("http://localhost:{}/v1/update_signers", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?)
+    }
+
+    #[tokio::test]
+    async fn test_update_signers_success() -> Result<(), anyhow::Error> {
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let added_public_key = test_keys.pub_key(1).unwrap();
+
+        // The submitter must be an admin key of the active signers file to
+        // be allowed to propose an update.
+        let initial_config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        seed_active_project(
+            &git_repo_path,
+            &project_id,
+            &initial_config,
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        // The updated signers file adds an artifact signer. Its timestamp is
+        // set at creation time, so it is always newer than the active file's.
+        let updated_config = signers_file_types::SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone(), added_public_key.clone()], 2),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let updated_signers_json = updated_config.to_json()?;
+
+        let updated_json_clone = updated_signers_json.clone();
+        let update_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(updated_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let response = post_update_signers(
+            port,
+            &signers_url,
+            &updated_signers_json,
+            chrono::Utc::now(),
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response_body = response.json::<RegisterRepoResponse>().await?;
+        assert!(response_body.success);
+        assert_eq!(response_body.project_id, project_id);
+        assert_eq!(
+            response_body.message,
+            "Signers update proposed successfully. Collect signatures to activate."
+        );
+        // The proposal is not signed yet: both artifact signers of the
+        // updated file must sign to activate it.
+        assert_eq!(response_body.required_signers.len(), 2);
+
+        update_mock.assert_calls(1);
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_update_signers_rejects_stale_metadata() -> Result<(), anyhow::Error> {
+        use httpmock::Method;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let added_public_key = test_keys.pub_key(1).unwrap();
+
+        let initial_config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        seed_active_project(
+            &git_repo_path,
+            &project_id,
+            &initial_config,
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        let updated_config = signers_file_types::SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone(), added_public_key.clone()], 2),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let updated_signers_json = updated_config.to_json()?;
+
+        let updated_json_clone = updated_signers_json.clone();
+        let update_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(updated_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        // A retrieved_at older than the accepted metadata age must be
+        // rejected, even though the metadata is otherwise perfectly valid.
+        let response = post_update_signers(
+            port,
+            &signers_url,
+            &updated_signers_json,
+            chrono::Utc::now() - chrono::Duration::seconds(120),
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response_body: serde_json::Value = response.json().await?;
+        let error_msg = response_body
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("");
+        assert!(
+            error_msg.contains("too far in the past"),
+            "Unexpected error message: {}",
+            error_msg
+        );
+        // The forge was fetched: the request reached the client data
+        // validation, which rejected it before any write.
+        update_mock.assert_calls(1);
+
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_update_signers_rejects_metadata_from_the_future() -> Result<(), anyhow::Error> {
+        use httpmock::Method;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let added_public_key = test_keys.pub_key(1).unwrap();
+
+        let initial_config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        seed_active_project(
+            &git_repo_path,
+            &project_id,
+            &initial_config,
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        let updated_config = signers_file_types::SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone(), added_public_key.clone()], 2),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let updated_signers_json = updated_config.to_json()?;
+
+        let updated_json_clone = updated_signers_json.clone();
+        let update_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(updated_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        // A retrieved_at beyond the accepted clock skew must be rejected,
+        // even though the metadata is otherwise perfectly valid.
+        let response = post_update_signers(
+            port,
+            &signers_url,
+            &updated_signers_json,
+            chrono::Utc::now() + chrono::Duration::seconds(60),
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response_body: serde_json::Value = response.json().await?;
+        let error_msg = response_body
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("");
+        assert!(
+            error_msg.contains("too far in the future"),
+            "Unexpected error message: {}",
+            error_msg
+        );
+        update_mock.assert_calls(1);
+
+        server_handle.abort();
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadPublicKeyTrait;

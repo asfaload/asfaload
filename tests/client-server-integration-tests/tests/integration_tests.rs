@@ -621,4 +621,178 @@ mod tests {
         .await;
         assert!(r5.is_err(), "Signing after completion should fail");
     }
+
+    // ========================================
+    // ADMIN-LIB REPO REGISTRATION TESTS
+    // ========================================
+
+    /// Serve the given signers content at the GitHub-like path the backend
+    /// classifies as a forge project on 127.0.0.1.
+    async fn serve_signers(forge: &mut mockito::ServerGuard, content: &str) -> mockito::Mock {
+        forge
+            .mock("GET", "/owner/repo/main/signers.json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(content)
+            .create_async()
+            .await
+    }
+
+    fn forge_port(forge: &mockito::ServerGuard) -> u16 {
+        url::Url::parse(&forge.url())
+            .expect("mock forge url should parse")
+            .port()
+            .expect("mock forge url should carry a port")
+    }
+
+    #[tokio::test]
+    async fn test_admin_client_register_repo() {
+        let state = test_harness::initialize().await;
+        let guard = state.lock().await;
+        let backend_url = guard.server.base_url();
+        let public_key = guard
+            .test_keys
+            .pub_key(0)
+            .expect("key 0 should exist")
+            .clone();
+        let secret_key = guard
+            .test_keys
+            .sec_key(0)
+            .expect("key 0 should exist")
+            .clone();
+        drop(guard);
+
+        let mut forge = mockito::Server::new_async().await;
+
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))
+                .expect("Failed to build signers config");
+        let signers_content = signers_config
+            .to_json()
+            .expect("Failed to serialize signers config");
+        let _forge_mock = serve_signers(&mut forge, &signers_content).await;
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", forge.url());
+        let client = admin_lib::v1::Client::new(backend_url);
+        let response = client
+            .register_repo(&signers_url, &public_key, &secret_key)
+            .await
+            .expect("admin client register_repo should succeed");
+
+        assert!(response.success);
+        let expected_project_id = format!("http/127.0.0.1/{}/owner/repo", forge_port(&forge));
+        assert_eq!(response.project_id, expected_project_id);
+    }
+
+    /// Register through the real admin client, activate the signers file
+    /// through the real CLI signing flow, then propose an update through the
+    /// real admin client. Any drift between the client metadata and the
+    /// server validation fails this test.
+    #[tokio::test]
+    async fn test_admin_client_update_signers() {
+        let state = test_harness::initialize().await;
+        let guard = state.lock().await;
+        let backend_url = guard.server.base_url();
+        let public_key = guard
+            .test_keys
+            .pub_key(0)
+            .expect("key 0 should exist")
+            .clone();
+        let added_public_key = guard
+            .test_keys
+            .pub_key(1)
+            .expect("key 1 should exist")
+            .clone();
+        let secret_key = guard
+            .test_keys
+            .sec_key(0)
+            .expect("key 0 should exist")
+            .clone();
+        let secret_key_path = guard.secret_key_paths[0].clone();
+        drop(guard);
+
+        let mut forge = mockito::Server::new_async().await;
+
+        // The submitter is an admin key of the initial signers file, so the
+        // backend accepts the later update proposal.
+        let initial_config = SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )
+        .expect("Failed to build initial signers config");
+        let initial_content = initial_config
+            .to_json()
+            .expect("Failed to serialize initial signers config");
+        let initial_mock = serve_signers(&mut forge, &initial_content).await;
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", forge.url());
+        let client = admin_lib::v1::Client::new(backend_url.clone());
+        let registration = client
+            .register_repo(&signers_url, &public_key, &secret_key)
+            .await
+            .expect("admin client register_repo should succeed");
+        assert!(registration.success);
+
+        // Activate the registered signers file with the regular CLI flow.
+        let pending_files = client_cli::commands::list_pending::handle_list_pending_command(
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            None,
+            false,
+        )
+        .await
+        .expect("list-pending should succeed");
+        let pending_signers = pending_files
+            .iter()
+            .find(|pending| {
+                pending
+                    .path()
+                    .starts_with(&format!("{}/", registration.project_id))
+                    && pending.path().contains(PENDING_SIGNERS_DIR)
+            })
+            .expect("the registered signers file should be pending")
+            .clone()
+            .unseal();
+        let signed = client_cli::commands::sign_pending::handle_sign_pending_command(
+            pending_signers,
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("sign-pending for the signers file should succeed");
+        assert!(
+            signed.is_complete,
+            "the single signer should activate the file"
+        );
+
+        // The forge now serves the updated signers file. Its timestamp is
+        // created after the initial one, so it is newer than the active file's.
+        initial_mock.remove_async().await;
+        let updated_config = SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone(), added_public_key], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )
+        .expect("Failed to build updated signers config");
+        let updated_content = updated_config
+            .to_json()
+            .expect("Failed to serialize updated signers config");
+        let _updated_mock = serve_signers(&mut forge, &updated_content).await;
+
+        let response = client
+            .update_signers(&signers_url, &public_key, &secret_key)
+            .await
+            .expect("admin client update_signers should succeed");
+
+        assert!(response.success);
+        assert_eq!(response.project_id, registration.project_id);
+    }
 }

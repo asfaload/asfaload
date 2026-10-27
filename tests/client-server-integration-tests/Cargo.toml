@@ -15,6 +15,7 @@ rest-api = { path = "../../rest-api" }
 rest_api_test_helpers = { path = "../../rest_api_test_helpers" }
 rest_api_types = { path = "../../rest_api_types" }
 rest_api_auth = { path = "../../rest_api_auth" }
+admin-lib = { path = "../../admin-lib" }
 features_lib = { path = "../../core/features_lib" }
 signers_file_types = { path = "../../core/signers_file_types" }
 signers_file = { path = "../../core/signers_file" }

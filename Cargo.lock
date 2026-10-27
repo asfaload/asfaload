@@ -664,6 +664,7 @@ dependencies = [
 name = "client-server-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "admin-lib",
  "anyhow",
  "chrono",
  "client-cli",

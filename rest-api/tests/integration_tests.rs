@@ -39,6 +39,22 @@ pub fn metadata_and_signature_for(
     signers_content: &str,
     secret_key: &features_lib::AsfaloadSecretKeys,
 ) -> Result<(String, String)> {
+    metadata_and_signature_for_at(
+        signers_file_url,
+        signers_content,
+        chrono::Utc::now(),
+        secret_key,
+    )
+}
+
+/// Same as `metadata_and_signature_for`, but with a caller-chosen
+/// `retrieved_at` timestamp, to exercise the backend timestamp checks.
+pub fn metadata_and_signature_for_at(
+    signers_file_url: &str,
+    signers_content: &str,
+    retrieved_at: chrono::DateTime<chrono::Utc>,
+    secret_key: &features_lib::AsfaloadSecretKeys,
+) -> Result<(String, String)> {
     use rest_api::file_auth::forges::{ForgeInfo, ForgeTrait};
     use signers_file_types::VerifiedForgeContent;
 
@@ -57,7 +73,7 @@ pub fn metadata_and_signature_for(
         forge,
         signers_file_url.to_string(),
         verified_content,
-        chrono::Utc::now(),
+        retrieved_at,
     );
 
     let serialised_metadata = serde_json::to_string(&metadata)?;
@@ -941,6 +957,192 @@ pub mod test_utils_tests {
         assert_eq!(response_body.signature_submission_url, "/v1/signatures");
 
         mock.assert();
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_register_repo_rejects_metadata_from_the_future() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        // A retrieved_at beyond the accepted clock skew must be rejected,
+        // even though the metadata is otherwise perfectly valid.
+        let retrieved_at = chrono::Utc::now() + chrono::Duration::seconds(60);
+        let (metadata, metadata_signature) = crate::metadata_and_signature_for_at(
+            &signers_url,
+            &signers_json,
+            retrieved_at,
+            &secret_key,
+        )?;
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata,
+            metadata_signature,
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response_body: serde_json::Value = response.json().await?;
+        let error_msg = response_body
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("");
+        assert!(
+            error_msg.contains("too far in the future"),
+            "Unexpected error message: {}",
+            error_msg
+        );
+        mock.assert_calls(1);
+
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_register_repo_rejects_stale_metadata() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        // A retrieved_at older than the accepted metadata age must be
+        // rejected, even though the metadata is otherwise perfectly valid.
+        let retrieved_at = chrono::Utc::now() - chrono::Duration::seconds(120);
+        let (metadata, metadata_signature) = crate::metadata_and_signature_for_at(
+            &signers_url,
+            &signers_json,
+            retrieved_at,
+            &secret_key,
+        )?;
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata,
+            metadata_signature,
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response_body: serde_json::Value = response.json().await?;
+        let error_msg = response_body
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("");
+        assert!(
+            error_msg.contains("too far in the past"),
+            "Unexpected error message: {}",
+            error_msg
+        );
+        mock.assert_calls(1);
+
         server_handle.abort();
 
         Ok(())

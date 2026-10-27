@@ -33,7 +33,7 @@ use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
 use forge_url::ForgesPathMethods;
 use forge_url::forges::{Forges, get_forge};
-use rest_api_auth::HEADER_PUBLIC_KEY;
+use rest_api_auth::{CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS, HEADER_PUBLIC_KEY};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 
@@ -1176,14 +1176,19 @@ async fn validate_client_provided_data(
         })?;
 
     // Reject if the client provided timestamp is too far in the past
-    if chrono::Utc::now() - client_metadata.retrieved_at().clone()
-        > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS)
-    {
+    let retrieved_at = client_metadata.retrieved_at();
+    let now = chrono::Utc::now();
+    if now - retrieved_at > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS) {
         return Err(ApiError::InvalidRequestBody(
             "Metadata retrieved_at provided by client too far in the past".to_string(),
         ));
     }
 
+    if retrieved_at - now > chrono::Duration::seconds(CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS) {
+        return Err(ApiError::InvalidRequestBody(
+            "Metadata retrieved_at provided by client too far in the future".to_string(),
+        ));
+    }
     let forge_kind = match &repo_info {
         ForgeInfo::Github(_) => signers_file_types::Forge::Github,
         ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,

@@ -4,7 +4,9 @@ use common::fs::names::{
 };
 use common::sha512_for_file;
 use constants::SIGNERS_DIR;
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait, SignersConfig,
+};
 use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
 use forge_release::github::GithubReleaseSource;
@@ -119,8 +121,10 @@ pub async fn register_repo_handler(
         .map_err(|e| {
             ApiError::ActorOperationFailed(format!("Signers file content retrieval failed: {}", e))
         })?;
-    let pubkey =
-        verify_client_signature(&request.public_key, &request.signature, &signers_content)?;
+
+    let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+    verify_client_signature(&pub_key, &request.signature, &signers_content)?;
 
     // Construct metadata from forge information
     let forge_kind = match &repo_info {
@@ -142,7 +146,7 @@ pub async fn register_repo_handler(
         metadata,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
-        pubkey,
+        pubkey: pub_key,
     };
 
     let init_result = state
@@ -304,8 +308,9 @@ pub async fn update_signers_handler(
         .map_err(|e| {
             ApiError::ActorOperationFailed(format!("Signers file content retrieval failed: {}", e))
         })?;
-    let pubkey =
-        verify_client_signature(&request.public_key, &request.signature, &signers_content)?;
+    let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+    verify_client_signature(&pub_key, &request.signature, &signers_content)?;
 
     // Construct metadata from forge information
     let forge_kind = match &repo_info {
@@ -326,7 +331,7 @@ pub async fn update_signers_handler(
         signers_info: signers_proposal.signers_info,
         metadata,
         request_id: request_id.to_string(),
-        pubkey,
+        pubkey: pub_key,
     };
 
     let propose_result = state
@@ -1116,22 +1121,16 @@ pub async fn register_assets_handler(
     register_release(&state, request_id, client_provided_data).await
 }
 
-/// Parse the submitter's public key and verify the signature it sent.
-///
 /// The signature must verify over the signers file content the server
 /// retrieved from the forge, with the public key sent in the request.
 /// A valid signature proves the submitter controls the secret key of
 /// the declared public key, and approved the exact signers file content.
 ///
-/// Returns the parsed public key for downstream use.
 fn verify_client_signature(
-    pub_key_b64: &str,
+    pub_key: &AsfaloadPublicKeys,
     signature_b64: &str,
     content: &str,
-) -> Result<features_lib::AsfaloadPublicKeys, ApiError> {
-    let pub_key = features_lib::AsfaloadPublicKeys::from_base64(pub_key_b64)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
-
+) -> Result<(), ApiError> {
     let signature = features_lib::AsfaloadSignatures::from_base64(signature_b64)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid signature: {}", e)))?;
 
@@ -1143,7 +1142,8 @@ fn verify_client_signature(
         .verify(&signature, &digest)
         .map_err(|_| ApiError::SignatureVerificationFailed)?;
 
-    Ok(pub_key)
+    Ok(())
+
 }
 
 /// Build the client-provided data from the public key header and the
@@ -1892,11 +1892,7 @@ mod verify_client_signature_tests {
         let digest = common::sha512_for_content(content.as_bytes()).unwrap();
         let signature = sec_key.sign(&digest).unwrap();
 
-        let verified =
-            verify_client_signature(&pub_key.to_base64(), &signature.to_base64(), &content)
-                .unwrap();
-
-        assert_eq!(verified.to_base64(), pub_key.to_base64());
+        verify_client_signature(pub_key, &signature.to_base64(), &content).unwrap();
     }
 
     // A signature made with another key than the declared public key fails
@@ -1911,8 +1907,7 @@ mod verify_client_signature_tests {
         let digest = common::sha512_for_content(content.as_bytes()).unwrap();
         let signature = other_sec_key.sign(&digest).unwrap();
 
-        let result =
-            verify_client_signature(&pub_key.to_base64(), &signature.to_base64(), &content);
+        let result = verify_client_signature(pub_key, &signature.to_base64(), &content);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.to_http_status(), axum::http::StatusCode::UNAUTHORIZED);
@@ -1931,7 +1926,7 @@ mod verify_client_signature_tests {
         let signature = sec_key.sign(&digest).unwrap();
 
         let result = verify_client_signature(
-            &pub_key.to_base64(),
+            pub_key,
             &signature.to_base64(),
             "content retrieved by the server",
         );
@@ -1949,26 +1944,10 @@ mod verify_client_signature_tests {
         let test_keys = TestKeys::new_generated(1);
         let pub_key = test_keys.pub_key(0).unwrap();
 
-        let result = verify_client_signature(&pub_key.to_base64(), "not-a-signature", "content");
+        let result = verify_client_signature(pub_key, "not-a-signature", "content");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.to_http_status(), axum::http::StatusCode::BAD_REQUEST);
         assert!(err.to_string().contains("Invalid signature"));
-    }
-
-    // A public key that does not decode is an invalid request body.
-    #[test]
-    fn reports_malformed_public_key_as_invalid_body() {
-        let test_keys = TestKeys::new_generated(1);
-        let sec_key = test_keys.sec_key(0).unwrap();
-
-        let digest = common::sha512_for_content(&b"content"[..]).unwrap();
-        let signature = sec_key.sign(&digest).unwrap();
-
-        let result = verify_client_signature("not-a-pub-key", &signature.to_base64(), "content");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.to_http_status(), axum::http::StatusCode::BAD_REQUEST);
-        assert!(err.to_string().contains("Invalid public key"));
     }
 }

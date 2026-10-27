@@ -55,6 +55,24 @@ pub fn metadata_and_signature_for_at(
     retrieved_at: chrono::DateTime<chrono::Utc>,
     secret_key: &features_lib::AsfaloadSecretKeys,
 ) -> Result<(String, String)> {
+    let serialised_metadata =
+        metadata_json_for_at(signers_file_url, signers_content, retrieved_at)?;
+    let metadata_hash = common::sha512_for_content(serialised_metadata.as_bytes())?;
+    let metadata_signature = secret_key.sign(&metadata_hash)?.to_base64();
+    let serialised_metadata_b64 = common::base64_for_string(serialised_metadata);
+    Ok((serialised_metadata_b64, metadata_signature))
+}
+
+/// The serialised metadata the admin client sends, without its signature.
+///
+/// Tests that supply a wrongly signed or modified metadata need the raw
+/// JSON bytes: the backend verifies the signature over these exact bytes
+/// before it parses them.
+pub fn metadata_json_for_at(
+    signers_file_url: &str,
+    signers_content: &str,
+    retrieved_at: chrono::DateTime<chrono::Utc>,
+) -> Result<String> {
     use rest_api::file_auth::forges::{ForgeInfo, ForgeTrait};
     use signers_file_types::VerifiedForgeContent;
 
@@ -76,11 +94,7 @@ pub fn metadata_and_signature_for_at(
         retrieved_at,
     );
 
-    let serialised_metadata = serde_json::to_string(&metadata)?;
-    let metadata_hash = common::sha512_for_content(serialised_metadata.as_bytes())?;
-    let metadata_signature = secret_key.sign(&metadata_hash)?.to_base64();
-    let serialised_metadata_b64 = common::base64_for_string(serialised_metadata);
-    Ok((serialised_metadata_b64, metadata_signature))
+    Ok(serde_json::to_string(&metadata)?)
 }
 
 #[cfg(all(test, not(feature = "test-utils")))]
@@ -1142,6 +1156,147 @@ pub mod test_utils_tests {
             error_msg
         );
         mock.assert_calls(1);
+
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    /// Every client-provided metadata failure must be reported as a client
+    /// error. A 5xx here would blame the server for input it rejected on
+    /// purpose, and would leak parsing details.
+    #[tokio::test]
+    async fn test_register_repo_rejects_invalid_client_metadata() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let other_secret_key = test_keys.sec_key(1).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let now = chrono::Utc::now();
+        let valid_metadata_json = crate::metadata_json_for_at(&signers_url, &signers_json, now)?;
+        // Valid metadata structure, but its content hash is that of another
+        // signers file, so the backend metadata comparison must fail.
+        let metadata_for_other_content =
+            crate::metadata_json_for_at(&signers_url, "another signers file content", now)?;
+
+        let signed = |content: &str, key: &features_lib::AsfaloadSecretKeys| {
+            signature_for_sha(content.as_bytes(), key)
+        };
+
+        // (case name, metadata field, metadata signature, expected status,
+        // expected error fragment)
+        let cases = vec![
+            (
+                "metadata is not base64",
+                "not base64 at all!".to_string(),
+                signed(&valid_metadata_json, secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "Could not base64 decode metadata",
+            ),
+            (
+                "metadata is not a metadata document",
+                common::base64_for_string(r#"{"data":{"Forge":{}}}"#),
+                signed(r#"{"data":{"Forge":{}}}"#, secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "Could not deserialise metadata",
+            ),
+            (
+                "metadata is signed by another key",
+                common::base64_for_string(valid_metadata_json.clone()),
+                signed(&valid_metadata_json, other_secret_key)?,
+                StatusCode::UNAUTHORIZED,
+                "Signature verification failed",
+            ),
+            (
+                "metadata describes other signers content",
+                common::base64_for_string(metadata_for_other_content.clone()),
+                signed(&metadata_for_other_content, secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "different from the client-provided",
+            ),
+        ];
+
+        for (name, metadata, metadata_signature, expected_status, expected_error) in cases {
+            let request_body = RegisterRepoRequest {
+                signers_file_url: signers_url.clone(),
+                public_key: public_key.to_base64(),
+                signature: signature_for_sha(signers_json.as_bytes(), secret_key)?,
+                metadata,
+                metadata_signature,
+            };
+            let payload_string = serde_json::to_string(&request_body)?;
+            let TestAuthHeaders {
+                timestamp,
+                nonce,
+                signature: auth_signature,
+                public_key: auth_public_key,
+            } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+            let response = reqwest::Client::new()
+                .post(format!("http://localhost:{}/v1/register_repo", port))
+                .header(HEADER_TIMESTAMP, timestamp)
+                .header(HEADER_NONCE, nonce)
+                .header(HEADER_SIGNATURE, auth_signature)
+                .header(HEADER_PUBLIC_KEY, auth_public_key)
+                .json(&request_body)
+                .send()
+                .await?;
+
+            assert_eq!(
+                response.status(),
+                expected_status,
+                "case '{}' got an unexpected status",
+                name
+            );
+            let response_body: serde_json::Value = response.json().await?;
+            let error_msg = response_body
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("");
+            assert!(
+                error_msg.contains(expected_error),
+                "case '{}': expected an error containing '{}', got: {}",
+                name,
+                expected_error,
+                error_msg
+            );
+        }
+
+        // Each request reached the metadata validation, which fetches the
+        // signers file from the forge first.
+        mock.assert_calls(4);
 
         server_handle.abort();
 

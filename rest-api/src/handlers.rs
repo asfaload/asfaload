@@ -5,8 +5,8 @@ use common::fs::names::{
 use common::{sha512_for_file, string_from_base64};
 use constants::SIGNERS_DIR;
 use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait, SignersConfig,
-    SignersConfigMetadata,
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait, AsfaloadSignatures,
+    SignersConfig, SignersConfigMetadata,
 };
 use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
@@ -120,11 +120,26 @@ pub async fn register_repo_handler(
     )
     .await?;
 
+    let signers_signature = AsfaloadSignatures::from_base64(&request.signature).map_err(|e| {
+        ApiError::InvalidRequestBody(format!(
+            "Could not base64 decode signers file signature provided by client: {}",
+            e
+        ))
+    })?;
+    let metadata_signature =
+        AsfaloadSignatures::from_base64(&request.metadata_signature).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Could not base64 decode metadata file signature provided by client: {}",
+                e
+            ))
+        })?;
     // Initialise signers - create directory structure and files
     let init_request = crate::file_auth::actors::signers_initialiser::InitialiseSignersRequest {
         project_path: project_normalised_paths,
         signers_info: signers_proposal.signers_info,
+        signers_signature,
         metadata,
+        metadata_signature,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
         pubkey: pub_key,
@@ -200,10 +215,16 @@ pub async fn register_repo_handler(
         "Project registration completed successfully"
     );
 
+    let message = if init_result.required_signers.is_empty() {
+        "Project registered successfully, and signers file activated."
+    } else {
+        "Project registered successfully. Collect signatures to activate."
+    };
+
     Ok(Json(RegisterRepoResponse {
         success: true,
         project_id: signers_proposal.project_id,
-        message: "Project registered successfully. Collect signatures to activate.".to_string(),
+        message: message.to_string(),
         required_signers: init_result.required_signers.into_iter().collect(),
         signature_submission_url: "/v1/signatures".to_string(),
     }))
@@ -280,11 +301,26 @@ pub async fn update_signers_handler(
     )
     .await?;
 
+    let signers_signature = AsfaloadSignatures::from_base64(&request.signature).map_err(|e| {
+        ApiError::InvalidRequestBody(format!(
+            "Could not base64 decode signers file signature provided by client: {}",
+            e
+        ))
+    })?;
+    let metadata_signature =
+        AsfaloadSignatures::from_base64(&request.metadata_signature).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Could not base64 decode metadata file signature provided by client: {}",
+                e
+            ))
+        })?;
     // Propose signers file update
     let propose_request = crate::file_auth::actors::signers_initialiser::ProposeSignersRequest {
         project_path: project_normalised_paths.clone(),
         signers_info: signers_proposal.signers_info,
+        signers_signature,
         metadata,
+        metadata_signature,
         request_id: request_id.to_string(),
         pubkey: pub_key,
     };
@@ -353,11 +389,16 @@ pub async fn update_signers_handler(
         "Signers update proposal completed successfully"
     );
 
+    let message = if propose_result.required_signers.is_empty() {
+        "Signers updated successfully, and signers file activated."
+    } else {
+        "Signers update proposed successfully. Collect signatures to activate."
+    };
+
     Ok(Json(UpdateRepoSignersResponse {
         success: true,
         project_id: signers_proposal.project_id,
-        message: "Signers update proposed successfully. Collect signatures to activate."
-            .to_string(),
+        message: message.to_string(),
         required_signers: propose_result.required_signers,
         signature_submission_url: "/v1/signatures".to_string(),
     }))

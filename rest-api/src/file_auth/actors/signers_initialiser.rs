@@ -1,4 +1,5 @@
-use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use features_lib::AsfaloadSignatures;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -15,7 +16,9 @@ const ACTOR_NAME: &str = "signers_initialiser";
 pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
+    pub signers_signature: AsfaloadSignatures,
     pub metadata: SignersConfigMetadata,
+    pub metadata_signature: AsfaloadSignatures,
     pub git_repo_path: PathBuf,
     pub request_id: String,
     pub pubkey: AsfaloadPublicKeys,
@@ -44,7 +47,9 @@ pub struct CleanupSignersRequest {
 pub struct ProposeSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
+    pub signers_signature: AsfaloadSignatures,
     pub metadata: SignersConfigMetadata,
+    pub metadata_signature: AsfaloadSignatures,
     pub request_id: String,
     pub pubkey: AsfaloadPublicKeys,
 }
@@ -54,50 +59,6 @@ pub struct ProposeSignersResult {
     pub project_path: NormalisedPaths,
     pub required_signers: Vec<String>,
     pub request_id: String,
-}
-
-/// Create empty pending signatures files for a signers file and its metadata file.
-/// This makes them discoverable by `list-pending`.
-async fn create_empty_pending_signatures(signers_path: &NormalisedPaths) -> Result<(), ApiError> {
-    let empty_sigs = signatures::signatures_file::SignaturesFile::new();
-    let empty_sigs_json = common::to_posix_json(&empty_sigs).map_err(|e| {
-        ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
-    })?;
-
-    let signers_abs_path = signers_path.absolute_path();
-
-    // Create pending signatures for the signers file
-    let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs_path)
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to compute pending signatures path: {}", e))
-        })?;
-    tokio::fs::write(&pending_sig_path, &empty_sigs_json)
-        .await
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
-        })?;
-
-    // Create pending signatures for the metadata file
-    let metadata_path = common::fs::names::metadata_path_for(&signers_abs_path).map_err(|e| {
-        ApiError::FileWriteFailed(format!("Failed to compute metadata path: {}", e))
-    })?;
-    let metadata_pending_sig_path = common::fs::names::pending_signatures_path_for(&metadata_path)
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!(
-                "Failed to compute metadata pending signatures path: {}",
-                e
-            ))
-        })?;
-    tokio::fs::write(&metadata_pending_sig_path, &empty_sigs_json)
-        .await
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!(
-                "Failed to write metadata pending signatures file: {}",
-                e
-            ))
-        })?;
-
-    Ok(())
 }
 
 pub struct SignersInitialiser;
@@ -195,13 +156,22 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         })
         .await??;
 
-        create_empty_pending_signatures(&signers_normalised_paths).await?;
-
-        tracing::debug!(
-            request_id = %msg.request_id,
-            file_path = %signers_normalised_paths,
-            "Initialized signers file via signers_file crate"
-        );
+        // Record the client-provided signatures
+        let signature_with_state = {
+            let signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+            let signature = msg.signers_signature.clone();
+            let metadata_signature = msg.metadata_signature.clone();
+            let pubkey = msg.pubkey.clone();
+            tokio::task::spawn_blocking(move || {
+                signers_file::sign_signers_and_metadata_file(
+                    &signers_path,
+                    &signature,
+                    &pubkey,
+                    &metadata_signature,
+                )
+            })
+            .await??
+        };
 
         // Write the history file (initialize_signers_file does not create this)
         let history_json = HistoryFile::new().to_json()?;
@@ -226,23 +196,41 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Wrote history file to disk"
         );
 
-        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
-        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
-            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
-        })
-        .await?
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %msg.request_id,
-                error = %e,
-                path = %signers_normalised_paths,
-                "Failed to compute missing signers"
-            );
-            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
-        })?
-        .into_iter()
-        .map(|key: AsfaloadPublicKeys| key.to_base64())
-        .collect();
+        let (required_signers, signers_updated_normalised_paths): (Vec<String>, NormalisedPaths) =
+            if signature_with_state.is_complete() {
+                // If the signature is complete, the signers file has been activated, hence renamed
+                // dropping the pending suffix
+                let signers_file_path = project_normalised_paths
+                    .join(SIGNERS_DIR)
+                    .await?
+                    .join(SIGNERS_FILE)
+                    .await?;
+                (vec![], signers_file_path)
+            } else {
+                let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+                let missing_signers = tokio::task::spawn_blocking(move || {
+                    features_lib::aggregate_signature_helpers::get_missing_signers(
+                        &pending_signers_path,
+                    )
+                })
+                .await?
+                .map_err(|e| {
+                    tracing::error!(
+                        request_id = %msg.request_id,
+                        error = %e,
+                        path = %signers_normalised_paths,
+                        "Failed to compute missing signers"
+                    );
+                    ApiError::ActorOperationFailed(format!(
+                        "Failed to compute missing signers: {}",
+                        e
+                    ))
+                })?
+                .into_iter()
+                .map(|key: AsfaloadPublicKeys| key.to_base64())
+                .collect();
+                (missing_signers, signers_normalised_paths)
+            };
 
         tracing::info!(
             request_id = %msg.request_id,
@@ -254,7 +242,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         Ok(InitialiseSignersResult {
             project_path: project_normalised_paths,
             required_signers,
-            signers_file_path: signers_normalised_paths,
+            signers_file_path: signers_updated_normalised_paths,
             history_file_path: history_normalised_paths,
             request_id: msg.request_id,
         })
@@ -339,27 +327,51 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             .join(SIGNERS_FILE)
             .await?;
 
-        create_empty_pending_signatures(&signers_normalised_paths).await?;
+        // Record the client-provided signatures
+        let signature_with_state = {
+            let signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+            let signature = msg.signers_signature.clone();
+            let metadata_signature = msg.metadata_signature.clone();
+            let pubkey = msg.pubkey.clone();
+            tokio::task::spawn_blocking(move || {
+                signers_file::sign_signers_and_metadata_file(
+                    &signers_path,
+                    &signature,
+                    &pubkey,
+                    &metadata_signature,
+                )
+            })
+            .await??
+        };
 
-        // Collect required signers from the *proposed* config
-        // (these are the admin/master keys that need to sign to activate)
-        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
-        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
-            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
-        })
-        .await?
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %msg.request_id,
-                error = %e,
-                path = %signers_normalised_paths,
-                "Failed to compute missing signers"
-            );
-            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
-        })?
-        .into_iter()
-        .map(|key: AsfaloadPublicKeys| key.to_base64())
-        .collect();
+        let required_signers: Vec<String> = if signature_with_state.is_complete() {
+            // If the signature is complete, the signers file has been activated: the
+            // previous active signers file was moved to the history, and the proposed
+            // file renamed, dropping the pending suffix.
+            vec![]
+        } else {
+            // Collect required signers from the *proposed* config
+            // (these are the admin/master keys that need to sign to activate)
+            let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                features_lib::aggregate_signature_helpers::get_missing_signers(
+                    &pending_signers_path,
+                )
+            })
+            .await?
+            .map_err(|e| {
+                tracing::error!(
+                    request_id = %msg.request_id,
+                    error = %e,
+                    path = %signers_normalised_paths,
+                    "Failed to compute missing signers"
+                );
+                ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+            })?
+            .into_iter()
+            .map(|key: AsfaloadPublicKeys| key.to_base64())
+            .collect()
+        };
 
         Ok(ProposeSignersResult {
             project_path: msg.project_path,

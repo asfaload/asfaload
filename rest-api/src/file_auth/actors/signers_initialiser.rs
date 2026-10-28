@@ -8,7 +8,7 @@ use signatures::types::AsfaloadPublicKeys;
 use signers_file_types::{HistoryFile, SignersConfigMetadata};
 use std::path::PathBuf;
 
-use crate::file_auth::actors::forge_signers_validator::SignersInfo;
+use crate::file_auth::actors::forge_signers_validator::{MetadataInfo, SignersInfo};
 use rest_api_types::path_validation::NormalisedPaths;
 
 const ACTOR_NAME: &str = "signers_initialiser";
@@ -17,7 +17,7 @@ pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
     pub signers_signature: AsfaloadSignatures,
-    pub metadata: SignersConfigMetadata,
+    pub metadata_info: MetadataInfo,
     pub metadata_signature: AsfaloadSignatures,
     pub git_repo_path: PathBuf,
     pub request_id: String,
@@ -48,7 +48,7 @@ pub struct ProposeSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
     pub signers_signature: AsfaloadSignatures,
-    pub metadata: SignersConfigMetadata,
+    pub metadata_info: MetadataInfo,
     pub metadata_signature: AsfaloadSignatures,
     pub request_id: String,
     pub pubkey: AsfaloadPublicKeys,
@@ -149,10 +149,10 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         // pending signers directory, write the signers file, and metadata.
         let dir = project_dir.clone();
         let json = msg.signers_info.json();
-        let meta = msg.metadata;
+        let meta_json = msg.metadata_info.json();
         let pubkey = msg.pubkey.clone();
         tokio::task::spawn_blocking(move || {
-            signers_file::initialize_signers_file(&dir, &json, meta, &pubkey)
+            signers_file::initialize_signers_file(&dir, &json, meta_json, &pubkey)
         })
         .await??;
 
@@ -287,11 +287,11 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
         }
 
         let json = msg.signers_info.json();
-        let meta = msg.metadata;
+        let meta_json = msg.metadata_info.json();
         let dir = project_dir.clone();
         let pubkey = msg.pubkey.clone();
         tokio::task::spawn_blocking(move || {
-            signers_file::propose_signers_file(&dir, &json, meta, &pubkey)
+            signers_file::propose_signers_file(&dir, &json, &meta_json, &pubkey)
         })
         .await
         .map_err(|e| {

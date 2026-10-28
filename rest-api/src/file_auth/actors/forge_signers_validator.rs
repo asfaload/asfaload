@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use features_lib::SignersConfigMetadata;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use reqwest::Client;
@@ -15,6 +16,7 @@ pub struct ValidateProjectRequest {
     pub request_id: String,
 }
 
+// Conveys the signers config and the json sent and signed by the client
 #[derive(Debug, Clone)]
 pub struct SignersInfo {
     signers_config: SignersConfig,
@@ -37,6 +39,28 @@ impl SignersInfo {
     }
 }
 
+// Conveys the metadata and the json sent and signed by the client
+#[derive(Debug, Clone)]
+pub struct MetadataInfo {
+    metadata: SignersConfigMetadata,
+    metadata_json: String,
+}
+
+impl MetadataInfo {
+    pub fn from_string(json: &str) -> Result<Self, serde_json::Error> {
+        let metadata: SignersConfigMetadata = serde_json::from_str(json)?;
+        Ok(Self {
+            metadata,
+            metadata_json: json.to_string(),
+        })
+    }
+    pub fn json(&self) -> String {
+        self.metadata_json.clone()
+    }
+    pub fn metadata(&self) -> &SignersConfigMetadata {
+        &self.metadata
+    }
+}
 #[derive(Debug, Clone)]
 pub struct ProjectSignersProposal {
     pub project_id: String,

@@ -20,8 +20,7 @@ use signatures::{
 };
 use signers_file_types::{
     CurrentSignersInfo, HistoryEntry, HistoryFile, SignersChain, SignersConfig,
-    SignersConfigMetadata, SignersConfigProposal, parse_signers_config,
-    parse_signers_config_proposal,
+    SignersConfigProposal, parse_signers_config, parse_signers_config_proposal,
 };
 use std::{borrow::Borrow, convert::identity, ffi::OsStr, fs, io::Write, path::Path};
 //
@@ -147,7 +146,7 @@ where
 pub fn write_valid_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content: &str,
-    metadata: SignersConfigMetadata,
+    metadata_json: &str,
 ) -> Result<(), SignersFileError> {
     // Ensure we work in the right directory
 
@@ -206,7 +205,6 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
     let result = (|| -> Result<(), SignersFileError> {
         // Write the metadata file (self-authored: canonical trailing newline)
         let mut metadata_file = open_new_file(&metadata_file_path)?;
-        let metadata_json = common::to_posix_json(&metadata)?;
         metadata_file.write_all(metadata_json.as_bytes())?;
         // Write the JSON content to the pending signers file
         let mut signers_file = open_new_file(&signers_file_path)?;
@@ -223,10 +221,11 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
 pub fn initialize_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content_in: impl AsRef<str>,
-    metadata: SignersConfigMetadata,
+    metadata: impl AsRef<str>,
     pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError> {
     let json_content = json_content_in.as_ref();
+    let metadata_json_content = metadata.as_ref();
     if dir_path_in.as_ref().join(SIGNERS_DIR).exists()
         || dir_path_in.as_ref().join(PENDING_SIGNERS_DIR).exists()
     {
@@ -237,7 +236,7 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
     }
     let signers_config: SignersConfig = parse_signers_config(json_content)?;
     is_valid_signer_for_signer_init(pubkey, &signers_config)?;
-    write_valid_signers_file(dir_path_in.as_ref(), json_content, metadata)
+    write_valid_signers_file(dir_path_in.as_ref(), json_content, metadata_json_content)
 }
 
 /// Propose an update to an existing signers file.
@@ -257,7 +256,7 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
 pub fn propose_signers_file<P: AsRef<Path>>(
     dir_path: P,
     json_content: &str,
-    metadata: SignersConfigMetadata,
+    metadata_json: &str,
     pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError> {
     // Determine the path to the active signers file
@@ -292,7 +291,7 @@ pub fn propose_signers_file<P: AsRef<Path>>(
     // Check if the provided pubkey is in the admin_keys or master_keys groups
     is_valid_signer_for_update_of(pubkey, &active_config)?;
 
-    write_valid_signers_file(dir_path, json_content, metadata)
+    write_valid_signers_file(dir_path, json_content, metadata_json)
 }
 
 fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), SignersFileError> {

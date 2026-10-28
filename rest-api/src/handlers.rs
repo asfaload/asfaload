@@ -6,7 +6,7 @@ use common::{sha512_for_file, string_from_base64};
 use constants::SIGNERS_DIR;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait, AsfaloadSignatures,
-    SignersConfig, SignersConfigMetadata,
+    SignersConfig,
 };
 use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
@@ -24,7 +24,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
-use crate::file_auth::actors::forge_signers_validator::ProjectSignersProposal;
+use crate::file_auth::actors::forge_signers_validator::{MetadataInfo, ProjectSignersProposal};
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
@@ -110,7 +110,7 @@ pub async fn register_repo_handler(
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
 
-    let (signers_proposal, metadata) = validate_client_provided_data(
+    let (signers_proposal, metadata_info) = validate_client_provided_data(
         request_id,
         &state,
         &request,
@@ -138,7 +138,7 @@ pub async fn register_repo_handler(
         project_path: project_normalised_paths,
         signers_info: signers_proposal.signers_info,
         signers_signature,
-        metadata,
+        metadata_info,
         metadata_signature,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
@@ -291,7 +291,7 @@ pub async fn update_signers_handler(
 
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
-    let (signers_proposal, metadata) = validate_client_provided_data(
+    let (signers_proposal, metadata_info) = validate_client_provided_data(
         request_id,
         &state,
         &request,
@@ -319,7 +319,7 @@ pub async fn update_signers_handler(
         project_path: project_normalised_paths.clone(),
         signers_info: signers_proposal.signers_info,
         signers_signature,
-        metadata,
+        metadata_info,
         metadata_signature,
         request_id: request_id.to_string(),
         pubkey: pub_key,
@@ -1155,7 +1155,7 @@ async fn validate_client_provided_data(
     pub_key: &AsfaloadPublicKeys,
     // Also used by caller to build NormalisedPaths
     repo_info: &ForgeInfo,
-) -> Result<(ProjectSignersProposal, SignersConfigMetadata), ApiError> {
+) -> Result<(ProjectSignersProposal, MetadataInfo), ApiError> {
     let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
         signers_file_url: parsed_url.clone(),
         request_id: request_id.to_string(),
@@ -1184,14 +1184,10 @@ async fn validate_client_provided_data(
     })?;
     verify_client_signature(pub_key, &request.metadata_signature, &client_metadata_json)?;
 
-    // Construct metadata from forge information
-    let client_metadata: SignersConfigMetadata = serde_json::from_str(&client_metadata_json)
-        .map_err(|e| {
-            ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
-        })?;
+    let metadata_info = MetadataInfo::from_string(&client_metadata_json)?;
 
     // Reject if the client provided timestamp is too far in the past
-    let retrieved_at = client_metadata.retrieved_at();
+    let retrieved_at = metadata_info.metadata().retrieved_at();
     let now = chrono::Utc::now();
     if now - retrieved_at > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS) {
         return Err(ApiError::InvalidRequestBody(
@@ -1213,11 +1209,11 @@ async fn validate_client_provided_data(
         forge_kind,
         request.signers_file_url.clone(),
         signers_proposal.verified_content.clone(),
-        client_metadata.retrieved_at(),
+        metadata_info.metadata().retrieved_at(),
     );
     let metadata_json = serde_json::to_string(&metadata)?;
 
-    if metadata != client_metadata {
+    if metadata != metadata_info.metadata().clone() {
         tracing::info!(
             request_id = %request_id,
             client_metadata = %client_metadata_json,
@@ -1229,7 +1225,7 @@ async fn validate_client_provided_data(
                 .to_string(),
         ));
     }
-    Ok((signers_proposal, metadata))
+    Ok((signers_proposal, metadata_info))
 }
 /// Build the client-provided data from the public key header and the
 /// GitHub release payload.

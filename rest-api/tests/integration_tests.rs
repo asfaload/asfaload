@@ -1351,7 +1351,7 @@ pub mod test_utils_tests {
         };
 
         // (case name, metadata field, metadata signature, expected status,
-        // expected error fragment)
+        // expected error fragment, whether the forge is fetched)
         let cases = vec![
             (
                 "metadata is not base64",
@@ -1359,6 +1359,7 @@ pub mod test_utils_tests {
                 signed(&valid_metadata_json, secret_key)?,
                 StatusCode::BAD_REQUEST,
                 "Could not base64 decode metadata",
+                false,
             ),
             (
                 "metadata is not a metadata document",
@@ -1366,6 +1367,7 @@ pub mod test_utils_tests {
                 signed(r#"{"data":{"Forge":{}}}"#, secret_key)?,
                 StatusCode::BAD_REQUEST,
                 "Could not deserialise metadata",
+                true,
             ),
             (
                 "metadata is empty",
@@ -1375,6 +1377,15 @@ pub mod test_utils_tests {
                 signed("some other content", secret_key)?,
                 StatusCode::BAD_REQUEST,
                 "must not be empty",
+                true,
+            ),
+            (
+                "metadata signature is not base64",
+                common::base64_for_string(valid_metadata_json.clone()),
+                "not base64 at all!".to_string(),
+                StatusCode::BAD_REQUEST,
+                "Invalid signature",
+                true,
             ),
             (
                 "metadata is signed by another key",
@@ -1382,6 +1393,7 @@ pub mod test_utils_tests {
                 signed(&valid_metadata_json, other_secret_key)?,
                 StatusCode::UNAUTHORIZED,
                 "Signature verification failed",
+                true,
             ),
             (
                 "metadata describes other signers content",
@@ -1389,10 +1401,20 @@ pub mod test_utils_tests {
                 signed(&metadata_for_other_content, secret_key)?,
                 StatusCode::BAD_REQUEST,
                 "different from the client-provided",
+                true,
             ),
         ];
 
-        for (name, metadata, metadata_signature, expected_status, expected_error) in cases {
+        for (
+            name,
+            metadata,
+            metadata_signature,
+            expected_status,
+            expected_error,
+            expects_forge_fetch,
+        ) in cases
+        {
+            let hits_before = mock.hits();
             let request_body = RegisterRepoRequest {
                 signers_file_url: signers_url.clone(),
                 public_key: public_key.to_base64(),
@@ -1436,11 +1458,30 @@ pub mod test_utils_tests {
                 expected_error,
                 error_msg
             );
+
+            let expected_hits = if expects_forge_fetch { 1 } else { 0 };
+            assert_eq!(
+                mock.hits() - hits_before,
+                expected_hits,
+                "case '{}': expected {} forge fetch(es)",
+                name,
+                expected_hits
+            );
         }
 
-        // Each request reached the metadata validation, which fetches the
-        // signers file from the forge first.
+        // Only the case with invalid base64 metadata is rejected before the
+        // forge fetch; the other five reach the metadata validation.
         mock.assert_calls(5);
+
+        // Rejected registrations must not create the project directory.
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        let project_paths =
+            rest_api::file_auth::github::get_project_normalised_paths(&git_repo_path, &project_id)
+                .await?;
+        assert!(
+            !project_paths.absolute_path().exists(),
+            "a rejected registration must not create the project directory"
+        );
 
         server_handle.abort();
 

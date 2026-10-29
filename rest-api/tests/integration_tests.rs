@@ -1153,7 +1153,8 @@ pub mod test_utils_tests {
         let client = reqwest::Client::new();
 
         // A retrieved_at beyond the accepted clock skew must be rejected,
-        // even though the metadata is otherwise perfectly valid.
+        // even though the metadata is otherwise perfectly valid. The check
+        // runs before the forge fetch, so no mock call is expected.
         let retrieved_at = chrono::Utc::now() + chrono::Duration::seconds(60);
         let (metadata, metadata_signature) = crate::metadata_and_signature_for_at(
             &signers_url,
@@ -1197,7 +1198,7 @@ pub mod test_utils_tests {
             "Unexpected error message: {}",
             error_msg
         );
-        mock.assert_calls(1);
+        mock.assert_calls(0);
 
         server_handle.abort();
 
@@ -1247,6 +1248,8 @@ pub mod test_utils_tests {
 
         // A retrieved_at older than the accepted metadata age must be
         // rejected, even though the metadata is otherwise perfectly valid.
+        // The check runs before the forge fetch, so no mock call is
+        // expected.
         let retrieved_at = chrono::Utc::now() - chrono::Duration::seconds(120);
         let (metadata, metadata_signature) = crate::metadata_and_signature_for_at(
             &signers_url,
@@ -1290,7 +1293,7 @@ pub mod test_utils_tests {
             "Unexpected error message: {}",
             error_msg
         );
-        mock.assert_calls(1);
+        mock.assert_calls(0);
 
         server_handle.abort();
 
@@ -1367,17 +1370,18 @@ pub mod test_utils_tests {
                 signed(r#"{"data":{"Forge":{}}}"#, secret_key)?,
                 StatusCode::BAD_REQUEST,
                 "Could not deserialise metadata",
-                true,
+                false,
             ),
             (
                 "metadata is empty",
                 common::base64_for_string(""),
                 // A valid signature over different content. The server must
-                // reject the empty content before it verifies the signature.
+                // reject the empty content before it verifies the signature,
+                // so the signature is never checked.
                 signed("some other content", secret_key)?,
                 StatusCode::BAD_REQUEST,
-                "must not be empty",
-                true,
+                "Could not deserialise metadata",
+                false,
             ),
             (
                 "metadata signature is not base64",
@@ -1469,9 +1473,10 @@ pub mod test_utils_tests {
             );
         }
 
-        // Only the case with invalid base64 metadata is rejected before the
-        // forge fetch; the other five reach the metadata validation.
-        mock.assert_calls(5);
+        // Only the cases rejected at deserialization time (invalid base64,
+        // not a metadata document, empty) are handled before the forge
+        // fetch; the remaining three reach the metadata validation.
+        mock.assert_calls(3);
 
         // Rejected registrations must not create the project directory.
         let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
@@ -1901,9 +1906,9 @@ pub mod test_utils_tests {
             "Unexpected error message: {}",
             error_msg
         );
-        // The forge was fetched: the request reached the client data
-        // validation, which rejected it before any write.
-        update_mock.assert_calls(1);
+        // The metadata timing check runs before the forge fetch, so the
+        // request is rejected before any write and without a mock call.
+        update_mock.assert_calls(0);
 
         server_handle.abort();
 
@@ -1987,7 +1992,7 @@ pub mod test_utils_tests {
             "Unexpected error message: {}",
             error_msg
         );
-        update_mock.assert_calls(1);
+        update_mock.assert_calls(0);
 
         server_handle.abort();
 

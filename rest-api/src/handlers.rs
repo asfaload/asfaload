@@ -1171,6 +1171,25 @@ async fn validate_client_provided_data(
     // Also used by caller to build NormalisedPaths
     repo_info: &ForgeInfo,
 ) -> Result<(ProjectSignersProposal, MetadataInfo), ApiError> {
+    let metadata_info = MetadataInfo::from_string(client_metadata_json).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
+    })?;
+
+    // Reject if the client provided timestamp is too far in the past
+    let retrieved_at = metadata_info.metadata().retrieved_at();
+    let now = chrono::Utc::now();
+    if now - retrieved_at > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS) {
+        return Err(ApiError::InvalidRequestBody(
+            "Metadata retrieved_at provided by client too far in the past".to_string(),
+        ));
+    }
+
+    if retrieved_at - now > chrono::Duration::seconds(CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS) {
+        return Err(ApiError::InvalidRequestBody(
+            "Metadata retrieved_at provided by client too far in the future".to_string(),
+        ));
+    }
+
     let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
         signers_file_url: parsed_url.clone(),
         request_id: request_id.to_string(),
@@ -1195,24 +1214,6 @@ async fn validate_client_provided_data(
 
     verify_client_signature(pub_key, &request.metadata_signature, client_metadata_json)?;
 
-    let metadata_info = MetadataInfo::from_string(client_metadata_json).map_err(|e| {
-        ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
-    })?;
-
-    // Reject if the client provided timestamp is too far in the past
-    let retrieved_at = metadata_info.metadata().retrieved_at();
-    let now = chrono::Utc::now();
-    if now - retrieved_at > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS) {
-        return Err(ApiError::InvalidRequestBody(
-            "Metadata retrieved_at provided by client too far in the past".to_string(),
-        ));
-    }
-
-    if retrieved_at - now > chrono::Duration::seconds(CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS) {
-        return Err(ApiError::InvalidRequestBody(
-            "Metadata retrieved_at provided by client too far in the future".to_string(),
-        ));
-    }
     let forge_kind = match &repo_info {
         ForgeInfo::Github(_) => signers_file_types::Forge::Github,
         ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,

@@ -62,7 +62,7 @@ asfaload-cli register-repo \
 
 ## What happens next
 
-After registration, the signers file is in a **pending** state. Every signer listed in it must sign before the project is activated. See [Activate a signers file](activate-signers-file.md).
+If registration did not complete the required signatures, the signers file stays in a **pending** state. Every signer listed in it must sign before the project is activated. See [Activate a signers file](activate-signers-file.md).
 
 ## Reference
 

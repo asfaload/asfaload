@@ -1556,6 +1556,111 @@ pub mod test_utils_tests {
         Ok(())
     }
 
+    /// The submitter is the only required signer of the updated config, so its
+    /// signature completes the update and the signers file becomes active at
+    /// once.
+    #[tokio::test]
+    async fn test_update_signers_activates_at_once() -> Result<(), anyhow::Error> {
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR};
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+
+        // The submitter must be an admin key of the active signers file to
+        // be allowed to propose an update.
+        let initial_config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        seed_active_project(
+            &git_repo_path,
+            &project_id,
+            &initial_config,
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        // The updated config requires only the submitter. Its signature
+        // therefore completes the update.
+        let updated_config = signers_file_types::SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let updated_signers_json = updated_config.to_json()?;
+
+        let updated_json_clone = updated_signers_json.clone();
+        let update_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(updated_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let response = post_update_signers(
+            port,
+            &signers_url,
+            &updated_signers_json,
+            chrono::Utc::now(),
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response_body = response.json::<RegisterRepoResponse>().await?;
+        assert!(response_body.success);
+        assert_eq!(response_body.project_id, project_id);
+        assert_eq!(
+            response_body.message,
+            "Signers updated successfully, and signers file activated."
+        );
+        assert!(response_body.required_signers.is_empty());
+
+        // The updated file is active and the pending directory is gone.
+        let project_paths =
+            rest_api::file_auth::github::get_project_normalised_paths(&git_repo_path, &project_id)
+                .await?;
+        let project_dir = project_paths.absolute_path();
+        assert!(
+            project_dir
+                .join(SIGNERS_DIR)
+                .join(constants::SIGNERS_FILE)
+                .exists(),
+            "the updated signers file must be active"
+        );
+        assert!(
+            !project_dir.join(PENDING_SIGNERS_DIR).exists(),
+            "no pending signers directory must remain"
+        );
+
+        update_mock.assert_calls(1);
+        server_handle.abort();
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_update_signers_rejects_stale_metadata() -> Result<(), anyhow::Error> {
         use httpmock::Method;

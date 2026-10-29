@@ -94,7 +94,7 @@ pub fn metadata_json_for_at(
         retrieved_at,
     );
 
-    Ok(serde_json::to_string(&metadata)?)
+    Ok(common::to_posix_json(&metadata)?)
 }
 
 #[cfg(all(test, not(feature = "test-utils")))]

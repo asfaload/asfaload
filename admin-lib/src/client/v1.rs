@@ -3,7 +3,7 @@ use std::io;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
-use common::{base64_for_string, sha512_for_content};
+use common::{base64_for_string, sha512_for_content, to_posix_json};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures, Forge, SignersConfigMetadata,
@@ -130,7 +130,7 @@ async fn get_metadata_and_signature_for(
         chrono::Utc::now(),
     );
 
-    let serialised_metadata = serde_json::to_string(&metadata)?;
+    let serialised_metadata = to_posix_json(&metadata)?;
     let metadata_hash = sha512_for_content(serialised_metadata.as_bytes())?;
     let metadata_signature = secret_key.sign(&metadata_hash)?.to_base64();
     let serialised_metadata_b64 = base64_for_string(serialised_metadata);

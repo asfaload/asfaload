@@ -74,11 +74,27 @@ assert_pending_signers_signature_count() {
         "Pending signers has $expected signature(s)"
 }
 
+# Assert a metadata file follows the POSIX JSON contract used for files the
+# backend authors: jq-parseable, pretty printed, terminated by exactly one
+# '\n'. The exact bytes are what clients sign, so a formatting regression is
+# a signing regression.
+assert_metadata_posix_json_contract() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
+    local metadata_file="$1" desc="$2"
+    run_step "Backend: $desc is a JSON object" \
+        jq -e 'type == "object"' "$metadata_file"
+    run_step "Backend: $desc ends with exactly one newline" \
+        test "$(tail -c 1 "$metadata_file" | od -An -tx1 | tr -d ' \n')" = "0a"
+    run_step "Backend: $desc ends with a closing brace" \
+        test "$(tail -c 2 "$metadata_file" | head -c 1 | od -An -tx1 | tr -d ' \n')" = "7d"
+}
+
 assert_pending_metadata_exist() {
-    local project_dir
+    local project_dir metadata_file
     project_dir="$(_project_dir)"
-    assert_file_exists "$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX" \
-        "Pending metadata file"
+    metadata_file="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX"
+    assert_file_exists "$metadata_file" "Pending metadata file"
+    assert_metadata_posix_json_contract "$metadata_file" "Pending metadata file"
 }
 
 assert_pending_metadata_signature_count() {
@@ -104,14 +120,15 @@ assert_pending_metadata_signatures_contain_keys() {
 }
 
 assert_signers_active() {
-    local project_dir
+    local project_dir metadata_file
     project_dir="$(_project_dir)"
+    metadata_file="$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX"
     assert_dir_exists "$project_dir/$SIGNERS_DIR" "Active signers dir"
     assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE" "Active signers index.json"
     assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$SIGNATURES_SUFFIX" \
         "Active signers signatures"
-    assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX" \
-        "Active metadata file"
+    assert_file_exists "$metadata_file" "Active metadata file"
+    assert_metadata_posix_json_contract "$metadata_file" "Active metadata file"
     assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX.$SIGNATURES_SUFFIX" \
         "Active metadata signatures"
     assert_file_not_exists "$project_dir/$PENDING_SIGNERS_DIR" "Pending signers dir removed"

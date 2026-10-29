@@ -110,11 +110,15 @@ pub async fn register_repo_handler(
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
 
+    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
+    })?;
     let (signers_proposal, metadata_info) = validate_client_provided_data(
         request_id,
         &state,
         &request,
         &parsed_url,
+        &client_metadata_json,
         &pub_key,
         &repo_info,
     )
@@ -291,11 +295,15 @@ pub async fn update_signers_handler(
 
     let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
+    })?;
     let (signers_proposal, metadata_info) = validate_client_provided_data(
         request_id,
         &state,
         &request,
         &parsed_url,
+        &client_metadata_json,
         &pub_key,
         &repo_info,
     )
@@ -1157,6 +1165,7 @@ async fn validate_client_provided_data(
     // The parsed signers_file_url found in request, but passed here to avoid double parsing as it
     // is also needed in the caller
     parsed_url: &Url,
+    client_metadata_json: &str,
     // The signing key
     pub_key: &AsfaloadPublicKeys,
     // Also used by caller to build NormalisedPaths
@@ -1184,13 +1193,9 @@ async fn validate_client_provided_data(
 
     verify_client_signature(pub_key, &request.signature, &signers_content)?;
 
-    // Verify the signature of the client is valid for the metadata is provides
-    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
-        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
-    })?;
-    verify_client_signature(pub_key, &request.metadata_signature, &client_metadata_json)?;
+    verify_client_signature(pub_key, &request.metadata_signature, client_metadata_json)?;
 
-    let metadata_info = MetadataInfo::from_string(&client_metadata_json).map_err(|e| {
+    let metadata_info = MetadataInfo::from_string(client_metadata_json).map_err(|e| {
         ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
     })?;
 

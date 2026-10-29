@@ -529,10 +529,19 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
         jq --arg url "$TAMPERED_RAW_URL" '
         .entries[0].metadata |= (
             @base64d | fromjson |
-            .data.Forge.verified_content.retrieval_url = $url |
+            .verified_content.retrieval_url = $url |
             tojson | @base64
         )' | \
         git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
+
+    # Assert the rewrite really changed the retrieval URL.
+    WRITTEN_URL=$(git -C "$E2E_GIT_REPO_PATH" show "$TAMPERED_HISTORY_BLOB" | \
+        jq -r '.entries[0].metadata | @base64d | fromjson | .verified_content.retrieval_url')
+    if [[ $WRITTEN_URL != "$TAMPERED_RAW_URL" ]]; then
+        echo "Tamper failed: metadata retrieval URL is '$WRITTEN_URL', expected '$TAMPERED_RAW_URL'"
+        exit 1
+    fi
+
     git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
 
     tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
@@ -547,10 +556,19 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
         jq --arg url "$NONEXISTENT_RAW_URL" '
         .entries[0].metadata |= (
             @base64d | fromjson |
-            .data.Forge.verified_content.retrieval_url = $url |
+            .verified_content.retrieval_url = $url |
             tojson | @base64
         )' | \
         git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
+
+    # Assert the rewrite really changed the retrieval URL.
+    WRITTEN_URL=$(git -C "$E2E_GIT_REPO_PATH" show "$NOTFOUND_HISTORY_BLOB" | \
+        jq -r '.entries[0].metadata | @base64d | fromjson | .verified_content.retrieval_url')
+    if [[ $WRITTEN_URL != "$NONEXISTENT_RAW_URL" ]]; then
+        echo "Tamper failed: metadata retrieval URL is '$WRITTEN_URL', expected '$NONEXISTENT_RAW_URL'"
+        exit 1
+    fi
+
     git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
 
     tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")

@@ -5106,9 +5106,9 @@ mod validate_history_tests {
         Ok(())
     }
 
-    /// Generator test: creates a fixture file with a history entry whose signatures
-    /// were computed over compact JSON, but the HistoryFile serialization produces
-    /// pretty-printed JSON for the signers_file field.
+    /// Generator test: creates a fixture file with one history entry signed
+    /// over pretty JSON and one signed over compact JSON, so validation must
+    /// compare the stored strings and not re-serialize them.
     ///
     /// Run with: cargo test --package signers_file generate_fixture_history_with_non_canonical_json -- --ignored
     #[test]
@@ -5116,7 +5116,7 @@ mod validate_history_tests {
     fn generate_fixture_history_with_non_canonical_json() -> Result<()> {
         let keys = TestKeys::new(3);
 
-        // config1: the "parent" entry, signed with pretty JSON (canonical)
+        // config1: the "parent" entry, signed with pretty JSON
         let config1 = SignersConfig::with_artifact_signers_only(
             1,
             (

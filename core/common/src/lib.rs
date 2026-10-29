@@ -91,13 +91,13 @@ impl AsfaloadHashes {
     }
 }
 
-/// Serialize `value` as pretty JSON terminated by exactly one '\n'.
+/// Serialize `value` as compact JSON terminated by exactly one '\n'.
 ///
 /// For content we AUTHOR. Never call on bytes received from a forge or another
 /// party — those must be stored and hashed verbatim (their exact bytes are
 /// signed and trust-anchor-compared).
 pub fn to_posix_json<T: serde::Serialize>(value: &T) -> serde_json::Result<String> {
-    let mut s = serde_json::to_string_pretty(value)?;
+    let mut s = serde_json::to_string(value)?;
     s.truncate(s.trim_end_matches('\n').len());
     s.push('\n');
     Ok(s)
@@ -1034,18 +1034,14 @@ mod asfaload_common_tests {
     }
 
     #[test]
-    fn to_posix_json_pretty_with_single_trailing_newline() {
+    fn to_posix_json_compact_with_single_trailing_newline() {
         #[derive(serde::Serialize)]
         struct Sample {
             a: u32,
             b: u32,
         }
         let s = super::to_posix_json(&Sample { a: 1, b: 2 }).unwrap();
-        // exactly one trailing newline
-        assert!(s.ends_with("}\n"));
-        assert!(!s.ends_with("\n\n"));
-        // pretty format preserved (multi-line, indented)
-        assert!(s.contains("\n  \"a\": 1"));
+        assert_eq!(s, "{\"a\":1,\"b\":2}\n");
     }
 
     // --- base64_for_string tests ---

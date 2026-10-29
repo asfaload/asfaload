@@ -103,8 +103,8 @@ pub fn sign_config(
 
 /// Sign a `SignersConfigMetadata`'s JSON with the given secret keys.
 /// Returns the serialized metadata JSON and the corresponding `SignaturesFile`.
-/// Uses `serde_json::to_string_pretty` to match the serialization used by
-/// `write_valid_signers_file` (which writes metadata via `serde_json::to_writer_pretty`).
+/// Uses `serde_json::to_string_pretty`; callers must keep the returned string
+/// and its signatures together, because the signature covers those bytes.
 pub fn sign_metadata(
     metadata: &SignersConfigMetadata,
     keys: &TestKeys,

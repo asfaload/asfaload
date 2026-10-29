@@ -295,8 +295,8 @@ pub fn forge_metadata(forge_url: &str, source_url: &str, content: &[u8]) -> Sign
     )
 }
 
-/// Serialize forge metadata as the backend serves it: pretty posix JSON with a
-/// single trailing newline.
+/// Serialize forge metadata as the backend serves it: compact posix JSON with
+/// a single trailing newline.
 pub fn signers_metadata_json(forge_url: &str, source_url: &str, content: &[u8]) -> String {
     common::to_posix_json(&forge_metadata(forge_url, source_url, content))
         .expect("forge metadata should serialize")

@@ -106,7 +106,7 @@ pub fn read_file_content(repo_path: &Path, file_path: &str) -> Result<String, Ap
 }
 
 /// Reads an index file written by the backend and checks the POSIX JSON
-/// contract: pretty JSON terminated by exactly one '\n'. Returns the parsed
+/// contract: compact JSON terminated by exactly one '\n'. Returns the parsed
 /// index so callers can assert the expected fields.
 ///
 /// The fields the index must carry depend on the registration flow, so only

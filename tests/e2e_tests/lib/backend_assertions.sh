@@ -75,14 +75,16 @@ assert_pending_signers_signature_count() {
 }
 
 # Assert a metadata file follows the POSIX JSON contract used for files the
-# backend authors: jq-parseable, pretty printed, terminated by exactly one
-# '\n'. The exact bytes are what clients sign, so a formatting regression is
-# a signing regression.
+# backend authors: jq-parseable, compact, terminated by exactly one '\n'. The
+# exact bytes are what clients sign, so a formatting regression is a signing
+# regression.
 assert_metadata_posix_json_contract() {
     [[ -n "${NO_ASSERT:-}" ]] && return 0
     local metadata_file="$1" desc="$2"
     run_step "Backend: $desc is a JSON object" \
         jq -e 'type == "object"' "$metadata_file"
+    run_step "Backend: $desc is compact (one line)" \
+        test "$(wc -l < "$metadata_file" | tr -d ' ')" -eq 1
     run_step "Backend: $desc ends with exactly one newline" \
         test "$(tail -c 1 "$metadata_file" | od -An -tx1 | tr -d ' \n')" = "0a"
     run_step "Backend: $desc ends with a closing brace" \
@@ -214,9 +216,9 @@ assert_signers_history_entries() {
 # --- Index content assertions ---
 
 # Assert the on-disk index file follows the POSIX JSON contract used for
-# files the backend authors: jq-parseable, pretty printed, terminated by
-# exactly one '\n'. The exact bytes are what clients hash and sign, so a
-# formatting regression is a signing regression.
+# files the backend authors: jq-parseable, compact, terminated by exactly one
+# '\n'. The exact bytes are what clients hash and sign, so a formatting
+# regression is a signing regression.
 assert_index_posix_json_contract() {
     [[ -n "${NO_ASSERT:-}" ]] && return 0
     local version="$1"
@@ -224,6 +226,8 @@ assert_index_posix_json_contract() {
     index="$(_release_dir "$version")/$INDEX_FILE"
     run_step "Backend: v$version index is a JSON object" \
         jq -e 'type == "object"' "$index"
+    run_step "Backend: v$version index is compact (one line)" \
+        test "$(wc -l < "$index" | tr -d ' ')" -eq 1
     run_step "Backend: v$version index ends with exactly one newline" \
         test "$(tail -c 1 "$index" | od -An -tx1 | tr -d ' \n')" = "0a"
     run_step "Backend: v$version index ends with a closing brace" \

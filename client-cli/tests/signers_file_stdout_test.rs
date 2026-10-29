@@ -103,7 +103,7 @@ fn stdout_matches_minus_o_structurally() {
 /// Stdout must end with exactly one trailing newline, matching the
 /// canonical POSIX JSON contract enforced by `to_posix_json`
 /// (core/common/src/lib.rs:96-101) and the
-/// `to_posix_json_pretty_with_single_trailing_newline` unit test.
+/// `to_posix_json_compact_with_single_trailing_newline` unit test.
 #[test]
 fn stdout_has_single_trailing_newline() {
     let pub_key = fixtures_pub_key(0);

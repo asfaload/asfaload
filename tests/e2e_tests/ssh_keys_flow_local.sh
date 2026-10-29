@@ -217,11 +217,11 @@ run_step_json "Register repo with SSH key 1 (submitter)" \
         --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
         "$SIGNERS_FILE_URL"
 
-# Backend: verify pending signers created (no signatures yet in two-phase flow)
+# Backend: the submitter's SSH signature is recorded at registration
 assert_pending_signers_exist
 assert_pending_metadata_exist
-assert_pending_signers_signature_count 0
-assert_pending_metadata_signature_count 0
+assert_pending_signers_signature_count 1
+assert_pending_metadata_signature_count 1
 assert_last_commit_contains "$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
 
 # Pending signers file records both SSH pubkeys (in asfaload-pub: form).
@@ -235,16 +235,10 @@ run_step "Pending signers contains SSH pubkey 2" \
 section "Activate pending signers (both SSH keys sign)"
 ################################################################################
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$SSH_KEY_1" "$backend" "$key_password")
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$SSH_KEY_2" "$backend" "$key_password")
 
-run_step_json "Sign pending signers with SSH key 1 (1st of 2)" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending \
-        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
-        $SIGNERS_SIGN_ARGS
-
-assert_pending_signers_signature_count 1
-assert_pending_metadata_signature_count 1
+# SSH key 1 (the submitter) already signed the pending signers file and
+# metadata at registration.
 
 PENDING_SIG_PATH="$(_project_dir)/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$PENDING_SIGNATURES_SUFFIX"
 run_step "Pending signers signed by SSH key 1" \

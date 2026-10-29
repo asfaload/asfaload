@@ -475,6 +475,23 @@ pub mod tests {
             ),
             chrono::Utc::now(),
         );
+        // The signatures a registering client sends: over the signers file
+        // content and over the metadata, both made with key 0.
+        let metadata_json = serde_json::to_string_pretty(&metadata)?;
+        let metadata_info =
+            rest_api::file_auth::actors::forge_signers_validator::MetadataInfo::from_string(
+                &metadata_json,
+            )?;
+        let signers_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(signers_json.as_bytes())?;
+            test_keys.sec_key(0).unwrap().sign(&digest)?
+        };
+        let metadata_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(metadata_json.as_bytes())?;
+            test_keys.sec_key(0).unwrap().sign(&digest)?
+        };
 
         let project_id = "github.com/test/repo";
         let project_dir = git_repo_path.join(project_id);
@@ -487,7 +504,9 @@ pub mod tests {
         let init_request = InitialiseSignersRequest {
             project_path,
             signers_info,
-            metadata,
+            signers_signature,
+            metadata_info,
+            metadata_signature,
             pubkey: test_keys.pub_key(0).unwrap().clone(),
             git_repo_path: git_repo_path.clone(),
             request_id: "test-123".to_string(),
@@ -872,10 +891,11 @@ pub mod test_utils_tests {
         assert_eq!(response_body.project_id, expected_project_id);
         assert_eq!(
             response_body.message,
-            "Project registered successfully. Collect signatures to activate."
+            "Project registered successfully, and signers file activated."
         );
-        // In two-phase signing, registration does not sign. The single signer must still sign.
-        assert_eq!(response_body.required_signers.len(), 1);
+        // The submitter signed the signers file and the metadata with the
+        // registration, so the single signer activated the file.
+        assert!(response_body.required_signers.is_empty());
 
         mock.assert();
         server_handle.abort();
@@ -966,8 +986,10 @@ pub mod test_utils_tests {
             response_body.message,
             "Project registered successfully. Collect signatures to activate."
         );
-        // In two-phase signing, registration does not sign. Both signers must still sign.
-        assert_eq!(response_body.required_signers.len(), 2);
+        // The submitter's registration signatures are recorded, so only the
+        // second signer is still missing.
+        assert_eq!(response_body.required_signers.len(), 1);
+        assert_eq!(response_body.required_signers[0], public_key_2.to_base64());
         assert_eq!(response_body.signature_submission_url, "/v1/signatures");
 
         mock.assert();
@@ -1524,9 +1546,9 @@ pub mod test_utils_tests {
             response_body.message,
             "Signers update proposed successfully. Collect signatures to activate."
         );
-        // The proposal is not signed yet: both artifact signers of the
-        // updated file must sign to activate it.
-        assert_eq!(response_body.required_signers.len(), 2);
+        // The submitter's signatures are recorded with the proposal: only the
+        // second artifact signer is still missing.
+        assert_eq!(response_body.required_signers.len(), 1);
 
         update_mock.assert_calls(1);
         server_handle.abort();
@@ -2564,89 +2586,11 @@ pub mod test_utils_tests {
         assert_eq!(response.status(), StatusCode::OK);
         let register_response = response.json::<RegisterRepoResponse>().await?;
         assert!(register_response.success);
+        // The single signer signed the signers file and the metadata with the
+        // registration, so the signers file is already active: register-assets
+        // can find it without a signing step.
+        assert!(register_response.required_signers.is_empty());
         signers_mock.assert();
-
-        // --- Step 1b: Sign the pending signers file to activate it ---
-        // In two-phase signing, register-repo creates pending signers but doesn't sign.
-        // We must sign to activate before register-assets can find active signers.
-        {
-            use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
-            use rest_api_types::SubmitSignatureResponse;
-
-            let project_prefix = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
-
-            // Fetch files to sign
-            let files_url = format!(
-                "http://localhost:{}/v1/files-to-sign/{}/asfaload.signers.pending/index.json",
-                port, project_prefix
-            );
-            let files_payload = "";
-            let TestAuthHeaders {
-                timestamp: ft,
-                nonce: fn_,
-                signature: fs,
-                public_key: fp,
-            } = create_auth_headers_with_key(secret_key, files_payload).await;
-            let files_resp = client
-                .get(&files_url)
-                .header(HEADER_TIMESTAMP, &ft)
-                .header(HEADER_NONCE, &fn_)
-                .header(HEADER_SIGNATURE, &fs)
-                .header(HEADER_PUBLIC_KEY, &fp)
-                .send()
-                .await?;
-            assert_eq!(files_resp.status(), StatusCode::OK);
-            let files_body: rest_api_types::FilesToSignResponse = files_resp.json().await?;
-
-            // Sign each file
-            let signers_path_str =
-                format!("{}/asfaload.signers.pending/index.json", project_prefix);
-            let mut signatures = std::collections::HashMap::new();
-            let mut signers_digest: Option<common::AsfaloadHashes> = None;
-            for (path, content_b64) in &files_body.files {
-                let content =
-                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, content_b64)
-                        .expect("base64 decode");
-                let hash = features_lib::sha512_for_content(content)?;
-                if *path == signers_path_str {
-                    signers_digest = Some(hash.clone());
-                }
-                let sig = secret_key.sign(&hash)?;
-                signatures.insert(path.clone(), sig.to_base64());
-            }
-
-            // Submit signatures
-            let submit_body = rest_api_types::SubmitSignatureRequest {
-                pending_file: rest_api_types::models::ClientPendingFile::new(
-                    signers_path_str,
-                    signers_digest.expect("signers digest not found in files response"),
-                ),
-                public_key: public_key.to_base64(),
-                signatures,
-            };
-            let submit_payload = serde_json::to_string(&submit_body)?;
-            let TestAuthHeaders {
-                timestamp: st,
-                nonce: sn,
-                signature: ss,
-                public_key: sp,
-            } = create_auth_headers_with_key(secret_key, &submit_payload).await;
-            let submit_resp = client
-                .post(format!("http://localhost:{}/v1/signatures", port))
-                .header(HEADER_TIMESTAMP, &st)
-                .header(HEADER_NONCE, &sn)
-                .header(HEADER_SIGNATURE, &ss)
-                .header(HEADER_PUBLIC_KEY, &sp)
-                .json(&submit_body)
-                .send()
-                .await?;
-            assert_eq!(submit_resp.status(), StatusCode::OK);
-            let submit_response: SubmitSignatureResponse = submit_resp.json().await?;
-            assert!(
-                submit_response.is_complete,
-                "Single signer should complete activation"
-            );
-        }
 
         // --- Step 2: Set up mock checksums file and register assets ---
 

@@ -5,7 +5,7 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::AsfaloadPublicKeys;
-use signers_file_types::{HistoryFile, SignersConfigMetadata};
+use signers_file_types::HistoryFile;
 use std::path::PathBuf;
 
 use crate::file_auth::actors::forge_signers_validator::{MetadataInfo, SignersInfo};
@@ -444,6 +444,7 @@ mod tests {
     use common::fs::names::metadata_path_for;
     use features_lib::SignersConfig;
     use kameo::actor::Spawn;
+    use signers_file_types::SignersConfigMetadata;
     use signers_file_types::{Forge, VerifiedForgeContent};
 
     /// Helper to create test InitialiseSignersRequest.
@@ -465,10 +466,27 @@ mod tests {
             ),
             chrono::Utc::now(),
         );
+        // The signatures a registering client sends: over the signers file
+        // content and over the metadata, both made with key 0. They verify
+        // against the files on disk, which hold the exact bytes sent here.
+        let metadata_json = serde_json::to_string_pretty(&metadata).unwrap();
+        let metadata_info = MetadataInfo::from_string(&metadata_json).unwrap();
+        let signers_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(signers_json.as_bytes()).unwrap();
+            test_keys.sec_key(0).unwrap().sign(&digest).unwrap()
+        };
+        let metadata_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(metadata_json.as_bytes()).unwrap();
+            test_keys.sec_key(0).unwrap().sign(&digest).unwrap()
+        };
         InitialiseSignersRequest {
             project_path,
             signers_info,
-            metadata,
+            signers_signature,
+            metadata_info,
+            metadata_signature,
             git_repo_path,
             request_id: request_id.to_string(),
             pubkey: test_keys.pub_key(0).unwrap().clone(),
@@ -577,19 +595,20 @@ mod tests {
         assert!(result.is_ok());
         let init_result = result.unwrap();
 
-        // No signing during initialization, so both keys should be missing
-        assert_eq!(init_result.required_signers.len(), 2);
-        assert!(
-            init_result
-                .required_signers
-                .contains(&test_keys.pub_key(0).unwrap().to_base64()),
-            "Key 0 should be in required_signers"
-        );
+        // The submitter's (key 0) signatures are recorded at initialisation,
+        // so only key 1 is still missing.
+        assert_eq!(init_result.required_signers.len(), 1);
         assert!(
             init_result
                 .required_signers
                 .contains(&test_keys.pub_key(1).unwrap().to_base64()),
             "Key 1 should be in required_signers"
+        );
+        assert!(
+            !init_result
+                .required_signers
+                .contains(&test_keys.pub_key(0).unwrap().to_base64()),
+            "Key 0 signed at initialisation, should not be in required_signers"
         );
         Ok(())
     }
@@ -656,10 +675,36 @@ mod tests {
             ),
             chrono::Utc::now(),
         );
+        // The signatures the updating client sends: over the proposed signers
+        // file content and over the metadata, both made with the key that
+        // signs the update (the request pubkey). They verify against the
+        // files on disk, which hold the exact bytes sent here.
+        let metadata_json = serde_json::to_string_pretty(&metadata).unwrap();
+        let metadata_info = MetadataInfo::from_string(&metadata_json).unwrap();
+        let signers_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(signers_json.as_bytes()).unwrap();
+            test_keys
+                .sec_key(signer_index)
+                .unwrap()
+                .sign(&digest)
+                .unwrap()
+        };
+        let metadata_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(metadata_json.as_bytes()).unwrap();
+            test_keys
+                .sec_key(signer_index)
+                .unwrap()
+                .sign(&digest)
+                .unwrap()
+        };
         ProposeSignersRequest {
             project_path,
             signers_info,
-            metadata,
+            signers_signature,
+            metadata_info,
+            metadata_signature,
             request_id: request_id.to_string(),
             pubkey: test_keys.pub_key(signer_index).unwrap().clone(),
         }
@@ -667,8 +712,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_propose_signers_returns_missing_signers() -> Result<()> {
-        use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
-
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
@@ -698,22 +741,10 @@ mod tests {
             init_result
         );
 
-        // Step 1b: Sign the signers file and metadata to activate them.
-        let init_res = init_result.unwrap();
-        let signers_file_path = init_res.signers_file_path.absolute_path();
-        let metadata_path = metadata_path_for(&signers_file_path)?;
-
-        // Sign the signers file and metadata to activate
-        let signers_digest = sha512_for_file(&signers_file_path)?;
-        let signers_sig = test_keys.sec_key(0).unwrap().sign(&signers_digest)?;
-        let metadata_digest = sha512_for_file(&metadata_path)?;
-        let metadata_sig = test_keys.sec_key(0).unwrap().sign(&metadata_digest)?;
-        signers_file::sign_signers_and_metadata_file(
-            &signers_file_path,
-            &signers_sig,
-            test_keys.pub_key(0).unwrap(),
-            &metadata_sig,
-        )?;
+        // With a 1-signer config, initialisation records the submitter's
+        // signature and activates the signers file at once: no signing step
+        // is needed here.
+        init_result.unwrap();
 
         // Step 2: Propose an update with 3 signers, signed by key0.
         // key0 is valid for updates because admin_keys() falls back to
@@ -746,20 +777,21 @@ mod tests {
         let propose_result = result.unwrap();
 
         // Step 3: Verify required_signers.
-        // No signing during propose_signers_file, so all 3 signers should be missing.
+        // The proposer's (key0) signatures are recorded with the proposal,
+        // so only key1 and key2 are still missing.
         let key0_b64 = test_keys.pub_key(0).unwrap().to_base64();
         let key1_b64 = test_keys.pub_key(1).unwrap().to_base64();
         let key2_b64 = test_keys.pub_key(2).unwrap().to_base64();
 
         assert_eq!(
             propose_result.required_signers.len(),
-            3,
-            "Should have 3 missing signers (all keys), got: {:?}",
+            2,
+            "Should have 2 missing signers (key1 and key2), got: {:?}",
             propose_result.required_signers
         );
         assert!(
-            propose_result.required_signers.contains(&key0_b64),
-            "key0 has not signed yet, should be in required_signers"
+            !propose_result.required_signers.contains(&key0_b64),
+            "key0 signed the proposal, should not be in required_signers"
         );
         assert!(
             propose_result.required_signers.contains(&key1_b64),

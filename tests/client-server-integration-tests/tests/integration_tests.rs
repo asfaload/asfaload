@@ -70,7 +70,8 @@ mod tests {
 
         let project_dir = git_repo_path.join(&origin).join(&project_path);
         fs::create_dir_all(&project_dir).expect("Failed to create project dir");
-        initialize_signers_file(&project_dir, signers_content, metadata, pubkey)
+        let metadata_json = common::to_posix_json(&metadata).expect("Failed to serialize metadata");
+        initialize_signers_file(&project_dir, signers_content, &metadata_json, pubkey)
             .expect("Failed to initialize signers file");
         let signers_path = project_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
         let pending_sig_path =
@@ -708,7 +709,6 @@ mod tests {
             .sec_key(0)
             .expect("key 0 should exist")
             .clone();
-        let secret_key_path = guard.secret_key_paths[0].clone();
         drop(guard);
 
         let mut forge = mockito::Server::new_async().await;
@@ -735,41 +735,6 @@ mod tests {
             .await
             .expect("admin client register_repo should succeed");
         assert!(registration.success);
-
-        // Activate the registered signers file with the regular CLI flow.
-        let pending_files = client_cli::commands::list_pending::handle_list_pending_command(
-            &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
-            None,
-            false,
-        )
-        .await
-        .expect("list-pending should succeed");
-        let pending_signers = pending_files
-            .iter()
-            .find(|pending| {
-                pending
-                    .path()
-                    .starts_with(&format!("{}/", registration.project_id))
-                    && pending.path().contains(PENDING_SIGNERS_DIR)
-            })
-            .expect("the registered signers file should be pending")
-            .clone()
-            .unseal();
-        let signed = client_cli::commands::sign_pending::handle_sign_pending_command(
-            pending_signers,
-            &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
-            false,
-        )
-        .await
-        .expect("sign-pending for the signers file should succeed");
-        assert!(
-            signed.is_complete,
-            "the single signer should activate the file"
-        );
 
         // The forge now serves the updated signers file. Its timestamp is
         // created after the initial one, so it is newer than the active file's.

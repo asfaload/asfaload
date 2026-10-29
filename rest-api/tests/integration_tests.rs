@@ -1671,6 +1671,7 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_update_signers_success() -> Result<(), anyhow::Error> {
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         use httpmock::Method;
         use rest_api_types::RegisterRepoResponse;
 
@@ -1749,6 +1750,80 @@ pub mod test_utils_tests {
         // The submitter's signatures are recorded with the proposal: only the
         // second artifact signer is still missing.
         assert_eq!(response_body.required_signers.len(), 1);
+
+        // The proposal must be stored in the pending directory with the
+        // exact bytes the client sent and signed.
+        use common::fs::names::{
+            metadata_path_for, metadata_signatures_path_for, pending_signatures_path_for,
+        };
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignaturesFile, TaggedSignature,
+        };
+
+        let project_paths =
+            rest_api::file_auth::github::get_project_normalised_paths(&git_repo_path, &project_id)
+                .await?;
+        let project_dir = project_paths.absolute_path();
+        let pending_signers_file = project_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+
+        let stored_signers = tokio::fs::read(&pending_signers_file).await?;
+        assert_eq!(
+            stored_signers,
+            updated_signers_json.as_bytes(),
+            "the stored proposed signers file must equal the signed bytes"
+        );
+
+        let pending_metadata_file = metadata_path_for(&pending_signers_file)?;
+        let stored_metadata = tokio::fs::read(&pending_metadata_file).await?;
+        assert_eq!(
+            stored_metadata,
+            sent_metadata.as_bytes(),
+            "the stored proposed metadata must equal the signed bytes"
+        );
+
+        // The submitter's signatures over both stored files must be
+        // recorded, and must verify against the stored bytes. The metadata
+        // signatures are in the complete signatures file when the metadata
+        // aggregate is complete, else in the pending one.
+        let signers_sigs_path = pending_signatures_path_for(&pending_signers_file)?;
+        let metadata_sigs_path = {
+            let complete_path = metadata_signatures_path_for(&pending_signers_file)?;
+            if complete_path.exists() {
+                complete_path
+            } else {
+                pending_signatures_path_for(&pending_metadata_file)?
+            }
+        };
+
+        for (sigs_path, stored_content) in [
+            (&signers_sigs_path, &stored_signers),
+            (&metadata_sigs_path, &stored_metadata),
+        ] {
+            assert!(
+                sigs_path.exists(),
+                "signatures must be stored for the proposal: {}",
+                sigs_path.display()
+            );
+            let sigs: SignaturesFile = serde_json::from_reader(std::fs::File::open(sigs_path)?)?;
+            let recorded: &TaggedSignature =
+                sigs.entries.get(&public_key.to_base64()).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "the submitter's signature must be recorded in {}",
+                        sigs_path.display()
+                    )
+                })?;
+            let recorded_signature =
+                features_lib::AsfaloadSignatures::from_base64(&recorded.signature)?;
+            let hash = common::sha512_for_content(stored_content.as_slice())?;
+            assert!(
+                public_key.verify(&recorded_signature, &hash).is_ok(),
+                "the recorded signature must verify against the stored bytes"
+            );
+            assert!(
+                !sigs.entries.contains_key(&added_public_key.to_base64()),
+                "the second signer must not be recorded before its signature submission"
+            );
+        }
 
         update_mock.assert_calls(1);
         server_handle.abort();

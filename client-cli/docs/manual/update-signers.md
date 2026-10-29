@@ -3,7 +3,9 @@
 - **Usage**: `asfaload-cli update-signers [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
 - **Source**: [`src/commands/update_signers.rs`](../../src/commands/update_signers.rs)
 
-Propose an update to an existing project's signers file. The backend fetches the new file from the forge and starts a signature collection round — signers from the **current** configuration must approve the change before it takes effect.
+Propose an update to an existing project's signers file. The CLI signs the new signers file and the metadata with your secret key, and the backend records both signatures.
+
+If your signature completes the required signers, the update is active at once. Otherwise the backend starts a signature collection round — signers from the **current** configuration must approve the change before it takes effect.
 
 ## Arguments
 
@@ -52,16 +54,18 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default):
+Human-readable (default), when more signatures are necessary:
 
     Signers update proposed successfully!
     Project ID: abc123
     Required signers (2): alice, bob
-    Next step: signers must submit signatures to activate the update.
+    Success: Signers update proposed successfully. Collect signatures to activate.
+
+When your signature completes the required signers, `Required signers` is empty and the last line reports the activation.
 
 JSON (with `--json`):
 
-    {"success":true,"project_id":"abc123","message":"","required_signers":["alice","bob"],"signature_submission_url":"/v1/signatures"}
+    {"success":true,"project_id":"abc123","message":"Signers update proposed successfully. Collect signatures to activate.","required_signers":["alice","bob"],"signature_submission_url":"/v1/signatures"}
 
 ## Examples
 

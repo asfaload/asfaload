@@ -27,16 +27,25 @@ asfaload-cli register-repo \
     https://github.com/acme/tool/blob/main/asfaload.signers/index.json
 ```
 
-On success:
+On success, when the submitter's signature completes the required signers:
 
 ```
 Repository registered successfully!
 Project ID: abc123
-Required signers (3): alice, bob, carol
-Next step: signers must submit signatures to activate the project.
+Required signers (0):
+Success! Project registered successfully, and signers file activated.
 ```
 
-The backend fetches the signers file, creates a pending signers entry, and waits for **all** listed signers to sign before the project becomes active.
+When more signatures are necessary:
+
+```
+Repository registered successfully!
+Project ID: abc123
+Required signers (2): bob, carol
+Success! Project registered successfully. Collect signatures to activate.
+```
+
+The CLI signs the signers file and the metadata with your key. The backend records these signatures. If they complete the required signers, the project is active at once. Otherwise the backend creates a pending signers entry and waits for the remaining signers before the project becomes active.
 
 ![Demo: register a repository](demos/register-repo.gif)
 

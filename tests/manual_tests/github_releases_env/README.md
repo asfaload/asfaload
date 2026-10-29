@@ -14,7 +14,8 @@ API and downloads release assets.
 - The signers file from GitHub is active. It has the keys `key_0`,
   `key_1` and `key_2`. The threshold is 2.
 - Release `v0.1` is registered. Its index is signed to completion.
-- Release `v0.2` is registered. Its index has no signature yet.
+- Release `v0.2` is registered. Its index only holds the signature its
+  registrant (`key_2`) made at submission: still below threshold.
 
 ## Start
 
@@ -50,10 +51,11 @@ Expected results:
 - The download of `v0.2` fails because the index is not signed.
 - `list-pending` shows the index of `v0.2`.
 
-To sign the index of `v0.2`:
+To sign the index of `v0.2` (two more signatures are needed, as `key_2`
+already signed it with the registration):
 
 1. Obtain the path and the digest from the `list-pending` output.
-2. Run `sign-pending` with two keys.
+2. Run `sign-pending` with `key_0`, then again with `key_1`.
 
 ## Stop
 

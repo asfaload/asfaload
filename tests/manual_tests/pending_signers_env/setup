@@ -2,13 +2,14 @@
 set -euo pipefail
 
 # Manual test environment holding a pending signers file: a signers file was
-# registered with the backend but not yet signed by anyone, so the backend
-# holds a pending signers file and its metadata.
+# registered with the backend, and the submitter (key0) signed it and its
+# metadata with the registration, so the backend holds a pending signers file
+# and its metadata with only the submitter's signature collected.
 #
 # This is the state right after register-repo, allowing the check of the
 # pending signers file against the forge source recorded in its metadata
-# (check-pending-signers) to be exercised manually, before any signature is
-# collected.
+# (check-pending-signers) to be exercised manually, before the remaining
+# signers collect their signatures.
 #
 # Start with: ./setup
 # Type 'exit' in the spawned shell to stop all servers and clean up.
@@ -24,7 +25,8 @@ usage() {
 Usage: $(basename "$0") [-h]
 
 Set up a manual test environment holding a pending signers file: the initial
-signers file was registered with the backend, and nobody signed it yet.
+signers file was registered with the backend, and only the submitter (key0)
+signed it, as collected with the registration.
 
 Type 'exit' in the spawned shell to stop all servers and clean up.
 
@@ -126,12 +128,14 @@ printf '  %-28s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
 printf '  %-28s %s\n' "BACKEND_REPO" "$BACKEND_REPO"
 printf '  %-28s %s\n' "PENDING_SIGNERS_MIRROR_PATH" "$PENDING_SIGNERS_MIRROR_PATH"
 printf '\n'
-printf '  The initial signers file was registered with the backend, and nobody\n'
-printf '  signed it yet: the backend holds a pending signers file and its\n'
-printf '  metadata, pointing at the signers file published on the file server.\n'
+printf '  The initial signers file was registered with the backend, and the\n'
+printf '  submitter (key0) signed it and its metadata with the registration:\n'
+printf '  the backend holds a pending signers file and its metadata, pointing\n'
+printf '  at the signers file published on the file server. key0 no longer sees\n'
+printf '  the file as pending; the remaining signers still must sign it.\n'
 printf '\n'
 printf '%s  Try:%s\n' "$BOLD" "$RESET"
-printf '    asfaload-cli list-pending -K $KEY_0\n'
+printf '    asfaload-cli list-pending -K $KEY_1\n'
 printf '    asfaload-cli check-pending-signers $PENDING_SIGNERS_MIRROR_PATH\n'
 printf '    asfaload-cli check-pending-signers --json $PENDING_SIGNERS_MIRROR_PATH\n'
 printf '\n'

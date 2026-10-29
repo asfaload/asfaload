@@ -154,10 +154,10 @@ cp "$METADATA_FILE" "$METADATA_ORIGINAL"
 TAMPERED_URL="$EVIL_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
 
 jq --arg url "$TAMPERED_URL" \
-    '.data.Forge.verified_content.retrieval_url = $url' \
+    '.verified_content.retrieval_url = $url' \
     "$METADATA_ORIGINAL" > "$METADATA_FILE"
 
-CURRENT_URL=$(jq -r '.data.Forge.verified_content.retrieval_url' "$METADATA_FILE")
+CURRENT_URL=$(jq -r '.verified_content.retrieval_url' "$METADATA_FILE")
 if [[ "$CURRENT_URL" != "$TAMPERED_URL" ]]; then
     printf '%sTampering failed: retrieval_url unchanged.%s\n' "$RED" "$RESET" >&2
     exit 1
@@ -195,10 +195,10 @@ printf '  signing. The client must reject the location: the url is outside\n'
 printf '  the realm of the backend path of the file.\n'
 printf '\n'
 printf '%s  Try:%s\n' "$BOLD" "$RESET"
-printf '    asfaload-cli list-pending -K $KEY_0\n'
+printf '    asfaload-cli list-pending -K $KEY_1\n'
 printf '    asfaload-cli check-pending-signers $PENDING_SIGNERS_PATH \\\n'
 printf '      -u $ASFALOAD_BACKEND_URL\n'
-printf '    asfaload-cli sign-pending -K $KEY_0\n'
+printf '    asfaload-cli sign-pending -K $KEY_1\n'
 printf '\n'
 printf '%s  Expected:%s check-pending-signers and sign-pending are rejected\n' "$BOLD" "$RESET"
 printf '  with an error of this shape:\n'

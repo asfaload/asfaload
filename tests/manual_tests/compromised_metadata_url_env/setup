@@ -111,10 +111,10 @@ cp "$METADATA_FILE" "$METADATA_ORIGINAL"
 TAMPERED_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$ALTERNATIVE_NAME"
 
 jq --arg url "$TAMPERED_URL" \
-    '.data.Forge.verified_content.retrieval_url = $url' \
+    '.verified_content.retrieval_url = $url' \
     "$METADATA_ORIGINAL" > "$METADATA_FILE"
 
-CURRENT_URL=$(jq -r '.data.Forge.verified_content.retrieval_url' "$METADATA_FILE")
+CURRENT_URL=$(jq -r '.verified_content.retrieval_url' "$METADATA_FILE")
 if [[ "$CURRENT_URL" != "$TAMPERED_URL" ]]; then
     printf '%sTampering failed: retrieval_url unchanged.%s\n' "$RED" "$RESET" >&2
     exit 1
@@ -140,8 +140,8 @@ printf '  The pending signers file content is genuine, but the retrieval_url in\
 printf '  its metadata now points at %s instead.\n' "$ALTERNATIVE_NAME"
 printf '\n'
 printf '%s  Try:%s\n' "$BOLD" "$RESET"
-printf '    asfaload-cli list-pending -K $KEY_0\n'
-printf '    asfaload-cli sign-pending -K $KEY_0\n'
+printf '    asfaload-cli list-pending -K $KEY_1\n'
+printf '    asfaload-cli sign-pending -K $KEY_1\n'
 printf '\n'
 printf '%s  Expected:%s signing is rejected with a Hash mismatch error: the\n' "$BOLD" "$RESET"
 printf '  client fetches the source at the tampered retrieval_url and detects\n'
@@ -149,7 +149,7 @@ printf '  that it differs from the file it is asked to sign.\n'
 printf '\n'
 printf '%s  Fetch failure variant%s (source does not exist):\n' "$BOLD" "$RESET"
 printf '    jq --arg url "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/nonexistent%s.json" \\\n' "${_SIGNERS_SUFFIX}"
-printf '      '"'"'.data.Forge.verified_content.retrieval_url = $url'"'"' \\\n'
+printf '      '"'"'.verified_content.retrieval_url = $url'"'"' \\\n'
 printf '      $METADATA_ORIGINAL > $METADATA_FILE\n'
 printf '  Signing is then rejected with a Failed to fetch signers source error.\n'
 printf '\n'

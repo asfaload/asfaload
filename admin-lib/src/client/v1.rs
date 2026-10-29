@@ -1,19 +1,21 @@
 use std::collections::HashMap;
+use std::io;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
-use common::{base64_for_string, sha512_for_content};
-use features_lib::AsfaloadSecretKeyTrait;
+use common::{base64_for_string, sha512_for_content, to_posix_json};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
-    AsfaloadSignatures,
+    AsfaloadSignatures, Forge, SignersConfigMetadata,
 };
+use features_lib::{AsfaloadSecretKeyTrait, VerifiedForgeContent};
 use forge_release::checksums::index_from_shasums_urls;
 use forge_release::common::ReleaseFetcher;
 #[cfg(not(feature = "test-utils"))]
 use forge_release::github::GithubReleaseFetcher;
 #[cfg(feature = "test-utils")]
 use forge_release::github::test_utils::MockGithubReleaseFetcher;
+use forge_url::{ForgeInfo, ForgeTrait};
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{
     ChecksumFilesPayload, ClientPendingFile, GithubReleasePayload, UpdateRepoSignersRequest,
@@ -25,6 +27,7 @@ use rest_api_types::{
     RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
+use url::Url;
 
 /// A client for interacting with the v1 REST API.
 ///
@@ -89,6 +92,53 @@ async fn build_register_assets_payload(
             }))
         }
     }
+}
+async fn get_metadata_and_signature_for(
+    signers_file_url: &str,
+    secret_key: &AsfaloadSecretKeys,
+) -> Result<(String, String, String), AdminLibError> {
+    let parsed_url = Url::parse(signers_file_url).map_err(|e| {
+        AdminLibError::InvalidInput(format!("Could not parse url {}: {}", signers_file_url, e))
+    })?;
+    let info = ForgeInfo::new(&parsed_url).map_err(|e| {
+        AdminLibError::InvalidInput(format!("Could not initialise ForgeInfo: {}", e))
+    })?;
+    let raw_url = info.url_info().raw_url().to_string();
+
+    let verified_content = VerifiedForgeContent::new(raw_url).await.map_err(|e| {
+        AdminLibError::IOError(io::Error::other(format!(
+            "Could not initialise VerifiedForgeContent: {}",
+            e
+        )))
+    })?;
+
+    let signers_file = verified_content.content().await.map_err(|e| {
+        AdminLibError::IOError(io::Error::other(format!("Could not fetch content: {}", e)))
+    })?;
+    let signers_digest = sha512_for_content(signers_file.as_bytes())?;
+    let signers_signature = secret_key.sign(&signers_digest)?.to_base64();
+
+    let forge = match info {
+        ForgeInfo::Github(_) => Forge::Github,
+        ForgeInfo::Gitlab(_) => Forge::Gitlab,
+        ForgeInfo::FileServer(_) => Forge::FileServer,
+    };
+    let metadata = SignersConfigMetadata::new(
+        forge,
+        signers_file_url.to_string(),
+        verified_content,
+        chrono::Utc::now(),
+    );
+
+    let serialised_metadata = to_posix_json(&metadata)?;
+    let metadata_hash = sha512_for_content(serialised_metadata.as_bytes())?;
+    let metadata_signature = secret_key.sign(&metadata_hash)?.to_base64();
+    let serialised_metadata_b64 = base64_for_string(serialised_metadata);
+    Ok((
+        signers_signature,
+        serialised_metadata_b64,
+        metadata_signature,
+    ))
 }
 
 impl Client {
@@ -320,9 +370,14 @@ impl Client {
     ) -> AdminLibResult<RegisterRepoResponse> {
         let url = format!("{}/v1/register_repo", self.base_url);
 
+        let (signers_signature, metadata, metadata_signature) =
+            get_metadata_and_signature_for(signers_file_url, secret_key).await?;
         let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
+            signature: signers_signature,
+            metadata,
+            metadata_signature,
         };
 
         // Serialize once: same bytes for auth and body
@@ -353,9 +408,14 @@ impl Client {
     ) -> AdminLibResult<UpdateRepoSignersResponse> {
         let url = format!("{}/v1/update_signers", self.base_url);
 
+        let (signers_signature, metadata, metadata_signature) =
+            get_metadata_and_signature_for(signers_file_url, secret_key).await?;
         let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
+            signature: signers_signature,
+            metadata,
+            metadata_signature,
         };
 
         // Serialize once: same bytes for auth and body

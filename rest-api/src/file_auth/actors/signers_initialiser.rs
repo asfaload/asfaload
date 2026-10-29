@@ -1,13 +1,14 @@
-use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use features_lib::AsfaloadSignatures;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::AsfaloadPublicKeys;
-use signers_file_types::{HistoryFile, SignersConfigMetadata};
+use signers_file_types::HistoryFile;
 use std::path::PathBuf;
 
-use crate::file_auth::actors::forge_signers_validator::SignersInfo;
+use crate::file_auth::actors::forge_signers_validator::{MetadataInfo, SignersInfo};
 use rest_api_types::path_validation::NormalisedPaths;
 
 const ACTOR_NAME: &str = "signers_initialiser";
@@ -15,7 +16,9 @@ const ACTOR_NAME: &str = "signers_initialiser";
 pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
-    pub metadata: SignersConfigMetadata,
+    pub signers_signature: AsfaloadSignatures,
+    pub metadata_info: MetadataInfo,
+    pub metadata_signature: AsfaloadSignatures,
     pub git_repo_path: PathBuf,
     pub request_id: String,
     pub pubkey: AsfaloadPublicKeys,
@@ -44,7 +47,9 @@ pub struct CleanupSignersRequest {
 pub struct ProposeSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
-    pub metadata: SignersConfigMetadata,
+    pub signers_signature: AsfaloadSignatures,
+    pub metadata_info: MetadataInfo,
+    pub metadata_signature: AsfaloadSignatures,
     pub request_id: String,
     pub pubkey: AsfaloadPublicKeys,
 }
@@ -54,50 +59,6 @@ pub struct ProposeSignersResult {
     pub project_path: NormalisedPaths,
     pub required_signers: Vec<String>,
     pub request_id: String,
-}
-
-/// Create empty pending signatures files for a signers file and its metadata file.
-/// This makes them discoverable by `list-pending`.
-async fn create_empty_pending_signatures(signers_path: &NormalisedPaths) -> Result<(), ApiError> {
-    let empty_sigs = signatures::signatures_file::SignaturesFile::new();
-    let empty_sigs_json = common::to_posix_json(&empty_sigs).map_err(|e| {
-        ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
-    })?;
-
-    let signers_abs_path = signers_path.absolute_path();
-
-    // Create pending signatures for the signers file
-    let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs_path)
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to compute pending signatures path: {}", e))
-        })?;
-    tokio::fs::write(&pending_sig_path, &empty_sigs_json)
-        .await
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
-        })?;
-
-    // Create pending signatures for the metadata file
-    let metadata_path = common::fs::names::metadata_path_for(&signers_abs_path).map_err(|e| {
-        ApiError::FileWriteFailed(format!("Failed to compute metadata path: {}", e))
-    })?;
-    let metadata_pending_sig_path = common::fs::names::pending_signatures_path_for(&metadata_path)
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!(
-                "Failed to compute metadata pending signatures path: {}",
-                e
-            ))
-        })?;
-    tokio::fs::write(&metadata_pending_sig_path, &empty_sigs_json)
-        .await
-        .map_err(|e| {
-            ApiError::FileWriteFailed(format!(
-                "Failed to write metadata pending signatures file: {}",
-                e
-            ))
-        })?;
-
-    Ok(())
 }
 
 pub struct SignersInitialiser;
@@ -188,20 +149,29 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         // pending signers directory, write the signers file, and metadata.
         let dir = project_dir.clone();
         let json = msg.signers_info.json();
-        let meta = msg.metadata;
+        let meta_json = msg.metadata_info.json();
         let pubkey = msg.pubkey.clone();
         tokio::task::spawn_blocking(move || {
-            signers_file::initialize_signers_file(&dir, &json, meta, &pubkey)
+            signers_file::initialize_signers_file(&dir, &json, meta_json, &pubkey)
         })
         .await??;
 
-        create_empty_pending_signatures(&signers_normalised_paths).await?;
-
-        tracing::debug!(
-            request_id = %msg.request_id,
-            file_path = %signers_normalised_paths,
-            "Initialized signers file via signers_file crate"
-        );
+        // Record the client-provided signatures
+        let signature_with_state = {
+            let signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+            let signature = msg.signers_signature.clone();
+            let metadata_signature = msg.metadata_signature.clone();
+            let pubkey = msg.pubkey.clone();
+            tokio::task::spawn_blocking(move || {
+                signers_file::sign_signers_and_metadata_file(
+                    &signers_path,
+                    &signature,
+                    &pubkey,
+                    &metadata_signature,
+                )
+            })
+            .await??
+        };
 
         // Write the history file (initialize_signers_file does not create this)
         let history_json = HistoryFile::new().to_json()?;
@@ -226,23 +196,41 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Wrote history file to disk"
         );
 
-        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
-        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
-            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
-        })
-        .await?
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %msg.request_id,
-                error = %e,
-                path = %signers_normalised_paths,
-                "Failed to compute missing signers"
-            );
-            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
-        })?
-        .into_iter()
-        .map(|key: AsfaloadPublicKeys| key.to_base64())
-        .collect();
+        let (required_signers, signers_updated_normalised_paths): (Vec<String>, NormalisedPaths) =
+            if signature_with_state.is_complete() {
+                // If the signature is complete, the signers file has been activated, hence renamed
+                // dropping the pending suffix
+                let signers_file_path = project_normalised_paths
+                    .join(SIGNERS_DIR)
+                    .await?
+                    .join(SIGNERS_FILE)
+                    .await?;
+                (vec![], signers_file_path)
+            } else {
+                let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+                let missing_signers = tokio::task::spawn_blocking(move || {
+                    features_lib::aggregate_signature_helpers::get_missing_signers(
+                        &pending_signers_path,
+                    )
+                })
+                .await?
+                .map_err(|e| {
+                    tracing::error!(
+                        request_id = %msg.request_id,
+                        error = %e,
+                        path = %signers_normalised_paths,
+                        "Failed to compute missing signers"
+                    );
+                    ApiError::ActorOperationFailed(format!(
+                        "Failed to compute missing signers: {}",
+                        e
+                    ))
+                })?
+                .into_iter()
+                .map(|key: AsfaloadPublicKeys| key.to_base64())
+                .collect();
+                (missing_signers, signers_normalised_paths)
+            };
 
         tracing::info!(
             request_id = %msg.request_id,
@@ -254,7 +242,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         Ok(InitialiseSignersResult {
             project_path: project_normalised_paths,
             required_signers,
-            signers_file_path: signers_normalised_paths,
+            signers_file_path: signers_updated_normalised_paths,
             history_file_path: history_normalised_paths,
             request_id: msg.request_id,
         })
@@ -299,11 +287,11 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
         }
 
         let json = msg.signers_info.json();
-        let meta = msg.metadata;
+        let meta_json = msg.metadata_info.json();
         let dir = project_dir.clone();
         let pubkey = msg.pubkey.clone();
         tokio::task::spawn_blocking(move || {
-            signers_file::propose_signers_file(&dir, &json, meta, &pubkey)
+            signers_file::propose_signers_file(&dir, &json, &meta_json, &pubkey)
         })
         .await
         .map_err(|e| {
@@ -339,27 +327,51 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             .join(SIGNERS_FILE)
             .await?;
 
-        create_empty_pending_signatures(&signers_normalised_paths).await?;
+        // Record the client-provided signatures
+        let signature_with_state = {
+            let signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+            let signature = msg.signers_signature.clone();
+            let metadata_signature = msg.metadata_signature.clone();
+            let pubkey = msg.pubkey.clone();
+            tokio::task::spawn_blocking(move || {
+                signers_file::sign_signers_and_metadata_file(
+                    &signers_path,
+                    &signature,
+                    &pubkey,
+                    &metadata_signature,
+                )
+            })
+            .await??
+        };
 
-        // Collect required signers from the *proposed* config
-        // (these are the admin/master keys that need to sign to activate)
-        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
-        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
-            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
-        })
-        .await?
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %msg.request_id,
-                error = %e,
-                path = %signers_normalised_paths,
-                "Failed to compute missing signers"
-            );
-            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
-        })?
-        .into_iter()
-        .map(|key: AsfaloadPublicKeys| key.to_base64())
-        .collect();
+        let required_signers: Vec<String> = if signature_with_state.is_complete() {
+            // If the signature is complete, the signers file has been activated: the
+            // previous active signers file was moved to the history, and the proposed
+            // file renamed, dropping the pending suffix.
+            vec![]
+        } else {
+            // Collect required signers from the *proposed* config
+            // (these are the admin/master keys that need to sign to activate)
+            let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                features_lib::aggregate_signature_helpers::get_missing_signers(
+                    &pending_signers_path,
+                )
+            })
+            .await?
+            .map_err(|e| {
+                tracing::error!(
+                    request_id = %msg.request_id,
+                    error = %e,
+                    path = %signers_normalised_paths,
+                    "Failed to compute missing signers"
+                );
+                ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+            })?
+            .into_iter()
+            .map(|key: AsfaloadPublicKeys| key.to_base64())
+            .collect()
+        };
 
         Ok(ProposeSignersResult {
             project_path: msg.project_path,
@@ -432,7 +444,8 @@ mod tests {
     use common::fs::names::metadata_path_for;
     use features_lib::SignersConfig;
     use kameo::actor::Spawn;
-    use signers_file_types::{Forge, ForgeOrigin, VerifiedForgeContent};
+    use signers_file_types::SignersConfigMetadata;
+    use signers_file_types::{Forge, VerifiedForgeContent};
 
     /// Helper to create test InitialiseSignersRequest.
     fn build_test_init_request(
@@ -444,7 +457,7 @@ mod tests {
     ) -> InitialiseSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
         let signers_info = SignersInfo::from_string(&signers_json).unwrap();
-        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
             VerifiedForgeContent::new_for_test(
@@ -452,11 +465,28 @@ mod tests {
                 "test_hash_placeholder".to_string(),
             ),
             chrono::Utc::now(),
-        ));
+        );
+        // The signatures a registering client sends: over the signers file
+        // content and over the metadata, both made with key 0. They verify
+        // against the files on disk, which hold the exact bytes sent here.
+        let metadata_json = serde_json::to_string_pretty(&metadata).unwrap();
+        let metadata_info = MetadataInfo::from_string(&metadata_json).unwrap();
+        let signers_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(signers_json.as_bytes()).unwrap();
+            test_keys.sec_key(0).unwrap().sign(&digest).unwrap()
+        };
+        let metadata_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(metadata_json.as_bytes()).unwrap();
+            test_keys.sec_key(0).unwrap().sign(&digest).unwrap()
+        };
         InitialiseSignersRequest {
             project_path,
             signers_info,
-            metadata,
+            signers_signature,
+            metadata_info,
+            metadata_signature,
             git_repo_path,
             request_id: request_id.to_string(),
             pubkey: test_keys.pub_key(0).unwrap().clone(),
@@ -565,19 +595,20 @@ mod tests {
         assert!(result.is_ok());
         let init_result = result.unwrap();
 
-        // No signing during initialization, so both keys should be missing
-        assert_eq!(init_result.required_signers.len(), 2);
-        assert!(
-            init_result
-                .required_signers
-                .contains(&test_keys.pub_key(0).unwrap().to_base64()),
-            "Key 0 should be in required_signers"
-        );
+        // The submitter's (key 0) signatures are recorded at initialisation,
+        // so only key 1 is still missing.
+        assert_eq!(init_result.required_signers.len(), 1);
         assert!(
             init_result
                 .required_signers
                 .contains(&test_keys.pub_key(1).unwrap().to_base64()),
             "Key 1 should be in required_signers"
+        );
+        assert!(
+            !init_result
+                .required_signers
+                .contains(&test_keys.pub_key(0).unwrap().to_base64()),
+            "Key 0 signed at initialisation, should not be in required_signers"
         );
         Ok(())
     }
@@ -635,7 +666,7 @@ mod tests {
     ) -> ProposeSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
         let signers_info = SignersInfo::from_string(&signers_json).unwrap();
-        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        let metadata = SignersConfigMetadata::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
             VerifiedForgeContent::new_for_test(
@@ -643,11 +674,37 @@ mod tests {
                 "test_hash_placeholder".to_string(),
             ),
             chrono::Utc::now(),
-        ));
+        );
+        // The signatures the updating client sends: over the proposed signers
+        // file content and over the metadata, both made with the key that
+        // signs the update (the request pubkey). They verify against the
+        // files on disk, which hold the exact bytes sent here.
+        let metadata_json = serde_json::to_string_pretty(&metadata).unwrap();
+        let metadata_info = MetadataInfo::from_string(&metadata_json).unwrap();
+        let signers_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(signers_json.as_bytes()).unwrap();
+            test_keys
+                .sec_key(signer_index)
+                .unwrap()
+                .sign(&digest)
+                .unwrap()
+        };
+        let metadata_signature = {
+            use features_lib::AsfaloadSecretKeyTrait;
+            let digest = common::sha512_for_content(metadata_json.as_bytes()).unwrap();
+            test_keys
+                .sec_key(signer_index)
+                .unwrap()
+                .sign(&digest)
+                .unwrap()
+        };
         ProposeSignersRequest {
             project_path,
             signers_info,
-            metadata,
+            signers_signature,
+            metadata_info,
+            metadata_signature,
             request_id: request_id.to_string(),
             pubkey: test_keys.pub_key(signer_index).unwrap().clone(),
         }
@@ -655,8 +712,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_propose_signers_returns_missing_signers() -> Result<()> {
-        use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
-
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
@@ -686,22 +741,10 @@ mod tests {
             init_result
         );
 
-        // Step 1b: Sign the signers file and metadata to activate them.
-        let init_res = init_result.unwrap();
-        let signers_file_path = init_res.signers_file_path.absolute_path();
-        let metadata_path = metadata_path_for(&signers_file_path)?;
-
-        // Sign the signers file and metadata to activate
-        let signers_digest = sha512_for_file(&signers_file_path)?;
-        let signers_sig = test_keys.sec_key(0).unwrap().sign(&signers_digest)?;
-        let metadata_digest = sha512_for_file(&metadata_path)?;
-        let metadata_sig = test_keys.sec_key(0).unwrap().sign(&metadata_digest)?;
-        signers_file::sign_signers_and_metadata_file(
-            &signers_file_path,
-            &signers_sig,
-            test_keys.pub_key(0).unwrap(),
-            &metadata_sig,
-        )?;
+        // With a 1-signer config, initialisation records the submitter's
+        // signature and activates the signers file at once: no signing step
+        // is needed here.
+        init_result.unwrap();
 
         // Step 2: Propose an update with 3 signers, signed by key0.
         // key0 is valid for updates because admin_keys() falls back to
@@ -734,20 +777,21 @@ mod tests {
         let propose_result = result.unwrap();
 
         // Step 3: Verify required_signers.
-        // No signing during propose_signers_file, so all 3 signers should be missing.
+        // The proposer's (key0) signatures are recorded with the proposal,
+        // so only key1 and key2 are still missing.
         let key0_b64 = test_keys.pub_key(0).unwrap().to_base64();
         let key1_b64 = test_keys.pub_key(1).unwrap().to_base64();
         let key2_b64 = test_keys.pub_key(2).unwrap().to_base64();
 
         assert_eq!(
             propose_result.required_signers.len(),
-            3,
-            "Should have 3 missing signers (all keys), got: {:?}",
+            2,
+            "Should have 2 missing signers (key1 and key2), got: {:?}",
             propose_result.required_signers
         );
         assert!(
-            propose_result.required_signers.contains(&key0_b64),
-            "key0 has not signed yet, should be in required_signers"
+            !propose_result.required_signers.contains(&key0_b64),
+            "key0 signed the proposal, should not be in required_signers"
         );
         assert!(
             propose_result.required_signers.contains(&key1_b64),

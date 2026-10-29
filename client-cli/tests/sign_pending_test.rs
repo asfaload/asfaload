@@ -52,11 +52,7 @@ fn files_response_json(files: &[(&str, &[u8])]) -> String {
     format!(r#"{{"files":{{{}}}}}"#, items.join(","))
 }
 
-fn signers_metadata_json(source_url: &str) -> String {
-    format!(
-        r#"{{"data":{{"Forge":{{"kind":"Github","url":"https://github.com/acme/tool/raw/main/asfaload.signers/index.json","verified_content":{{"retrieval_url":"{source_url}","content_hash":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}},"retrieved_at":"2024-01-01T00:00:00Z"}}}}}}"#
-    )
-}
+const FORGE_URL: &str = "https://github.com/acme/tool/raw/main/asfaload.signers/index.json";
 
 // ---------------------------------------------------------------------------
 // --help wiring
@@ -232,7 +228,9 @@ fn sign_pending_rejects_signers_file_not_matching_metadata() {
         .with_body(source_content.as_slice())
         .create();
 
-    let metadata = signers_metadata_json(&format!("{}{}", file_server.url(), source_path));
+    let source_url = format!("{}{}", file_server.url(), source_path);
+    let metadata =
+        test_helpers::signers_metadata_json(FORGE_URL, &source_url, source_content.as_slice());
 
     // mock handler returning files to sign for a path
     // this returns the pending_content, not matching the file server's content
@@ -299,7 +297,9 @@ fn sign_pending_accepts_signers_file_matching_metadata() {
         .with_body(signers_content.as_slice())
         .create();
 
-    let metadata = signers_metadata_json(&format!("{}{}", file_server.url(), source_path));
+    let source_url = format!("{}{}", file_server.url(), source_path);
+    let metadata =
+        test_helpers::signers_metadata_json(FORGE_URL, &source_url, signers_content.as_slice());
 
     // mock handler returning files to sign for a path
     // this returns the pending_content, identical to what is found on the file_server

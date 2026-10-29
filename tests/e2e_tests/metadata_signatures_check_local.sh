@@ -191,10 +191,9 @@ assert_pending_metadata_exist
 section "Signers File Activation"
 ################################################################################
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
-run_step_json "Sign signers file with key0" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+
+# Key0 already signed the pending signers file and metadata at registration.
 
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
@@ -234,10 +233,9 @@ run_step_json "Update signers file with key0" \
 assert_pending_signers_exist
 assert_pending_metadata_exist
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
-run_step_json "Sign pending signers with key0" \
-    '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+
+# Key0 already signed the pending signers file and metadata with the update.
 
 run_step_json "Sign pending signers with key1" \
     '.is_complete == false' \

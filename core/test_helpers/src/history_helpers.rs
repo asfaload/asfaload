@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
 use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 use signers_file_types::{
-    Forge, ForgeOrigin, HistoryEntry, SignersConfig, SignersConfigMetadata, VerifiedForgeContent,
+    Forge, HistoryEntry, SignersConfig, SignersConfigMetadata, VerifiedForgeContent,
 };
 
 use crate::TestKeys;
@@ -103,8 +103,8 @@ pub fn sign_config(
 
 /// Sign a `SignersConfigMetadata`'s JSON with the given secret keys.
 /// Returns the serialized metadata JSON and the corresponding `SignaturesFile`.
-/// Uses `serde_json::to_string_pretty` to match the serialization used by
-/// `write_valid_signers_file` (which writes metadata via `serde_json::to_writer_pretty`).
+/// Uses `serde_json::to_string_pretty`; callers must keep the returned string
+/// and its signatures together, because the signature covers those bytes.
 pub fn sign_metadata(
     metadata: &SignersConfigMetadata,
     keys: &TestKeys,
@@ -152,7 +152,7 @@ pub fn make_history_entry(
     timestamp: DateTime<Utc>,
 ) -> Result<HistoryEntry> {
     let (json, sig_file) = sign_config(config, keys, signer_indices)?;
-    let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+    let metadata = SignersConfigMetadata::new(
         Forge::Github,
         forge_url.to_string(),
         VerifiedForgeContent::new_for_test(
@@ -160,7 +160,7 @@ pub fn make_history_entry(
             "test_hash_placeholder".to_string(),
         ),
         Utc::now(),
-    ));
+    );
     let (metadata_json, metadata_sig_file) = sign_metadata(&metadata, keys, signer_indices)?;
 
     Ok(HistoryEntry {

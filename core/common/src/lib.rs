@@ -91,13 +91,13 @@ impl AsfaloadHashes {
     }
 }
 
-/// Serialize `value` as pretty JSON terminated by exactly one '\n'.
+/// Serialize `value` as compact JSON terminated by exactly one '\n'.
 ///
 /// For content we AUTHOR. Never call on bytes received from a forge or another
 /// party — those must be stored and hashed verbatim (their exact bytes are
 /// signed and trust-anchor-compared).
 pub fn to_posix_json<T: serde::Serialize>(value: &T) -> serde_json::Result<String> {
-    let mut s = serde_json::to_string_pretty(value)?;
+    let mut s = serde_json::to_string(value)?;
     s.truncate(s.trim_end_matches('\n').len());
     s.push('\n');
     Ok(s)
@@ -131,20 +131,25 @@ pub fn sha512_for_file<P: AsRef<Path>>(path_in: P) -> Result<AsfaloadHashes, std
         Ok(AsfaloadHashes::Sha512(result))
     }
 }
-pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io::Error> {
+pub async fn sha512_for_url<U: into_url::IntoUrl>(
+    url_in: U,
+) -> Result<AsfaloadHashes, std::io::Error> {
+    let url = url_in
+        .into_url()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
     let io_err = |e: reqwest::Error| std::io::Error::other(e.to_string());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(io_err)?;
 
-    let mut response = client.get(url_in.as_str()).send().await.map_err(io_err)?;
+    let mut response = client.get(url.as_str()).send().await.map_err(io_err)?;
 
     if !response.status().is_success() {
         return Err(std::io::Error::other(format!(
             "HTTP {}: {}",
             response.status(),
-            url_in
+            url
         )));
     }
 
@@ -1029,18 +1034,14 @@ mod asfaload_common_tests {
     }
 
     #[test]
-    fn to_posix_json_pretty_with_single_trailing_newline() {
+    fn to_posix_json_compact_with_single_trailing_newline() {
         #[derive(serde::Serialize)]
         struct Sample {
             a: u32,
             b: u32,
         }
         let s = super::to_posix_json(&Sample { a: 1, b: 2 }).unwrap();
-        // exactly one trailing newline
-        assert!(s.ends_with("}\n"));
-        assert!(!s.ends_with("\n\n"));
-        // pretty format preserved (multi-line, indented)
-        assert!(s.contains("\n  \"a\": 1"));
+        assert_eq!(s, "{\"a\":1,\"b\":2}\n");
     }
 
     // --- base64_for_string tests ---
@@ -1115,6 +1116,38 @@ mod sha512_for_url_tests {
         let hash = sha512_for_url(url).await.unwrap();
         let expected = sha512_for_content(content.as_ref()).unwrap();
         assert_eq!(hash, expected);
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_accepts_url_and_string_args() {
+        let content = b"hello from url";
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/file")
+            .with_status(200)
+            .with_body(content.as_ref())
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/file", server.url())).unwrap();
+        let url_str = url.as_str().to_string();
+
+        let hash_from_url = sha512_for_url(url.clone()).await.unwrap();
+        let hash_from_str = sha512_for_url(url.as_str()).await.unwrap();
+        let hash_from_string = sha512_for_url(url_str.clone()).await.unwrap();
+
+        let expected = sha512_for_content(content.as_ref()).unwrap();
+        assert_eq!(hash_from_url, expected);
+        assert_eq!(hash_from_str, expected);
+        assert_eq!(hash_from_string, expected);
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_errors_on_invalid_string_url() {
+        let result = sha512_for_url("not an url").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
     #[tokio::test]

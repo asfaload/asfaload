@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use features_lib::SignersConfigMetadata;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use reqwest::Client;
@@ -15,6 +16,7 @@ pub struct ValidateProjectRequest {
     pub request_id: String,
 }
 
+// Conveys the signers config and the json sent and signed by the client
 #[derive(Debug, Clone)]
 pub struct SignersInfo {
     signers_config: SignersConfig,
@@ -37,6 +39,28 @@ impl SignersInfo {
     }
 }
 
+// Conveys the metadata and the json sent and signed by the client
+#[derive(Debug, Clone)]
+pub struct MetadataInfo {
+    metadata: SignersConfigMetadata,
+    metadata_json: String,
+}
+
+impl MetadataInfo {
+    pub fn from_string(json: &str) -> Result<Self, serde_json::Error> {
+        let metadata: SignersConfigMetadata = serde_json::from_str(json)?;
+        Ok(Self {
+            metadata,
+            metadata_json: json.to_string(),
+        })
+    }
+    pub fn json(&self) -> String {
+        self.metadata_json.clone()
+    }
+    pub fn metadata(&self) -> &SignersConfigMetadata {
+        &self.metadata
+    }
+}
 #[derive(Debug, Clone)]
 pub struct ProjectSignersProposal {
     pub project_id: String,
@@ -82,7 +106,7 @@ pub fn validate_body_size(body: &[u8]) -> Result<(), String> {
 
 impl ForgeProjectValidator {
     pub fn new() -> Self {
-        tracing::info!(actor_name = ACTOR_NAME, "ForgeProjectAuthenticator created");
+        tracing::info!(actor_name = ACTOR_NAME, "ForgeProjectValidator created");
         Self {
             http_client: Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
@@ -235,7 +259,7 @@ impl ForgeProjectValidator {
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %request_id,
             project_id = %project_id,
-            "Project authentication successful"
+            "Project validation successful"
         );
 
         Ok(ProjectSignersProposal {
@@ -259,7 +283,7 @@ impl Message<ValidateProjectRequest> for ForgeProjectValidator {
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %msg.request_id,
             signers_file_url = %msg.signers_file_url,
-            "ForgeProjectValidator received authentication request"
+            "ForgeProjectValidator received request"
         );
 
         self.validate_project(&msg.signers_file_url, &msg.request_id)
@@ -275,10 +299,7 @@ impl Actor for ForgeProjectValidator {
         _args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(
-            actor_name = ACTOR_NAME,
-            "ForgeProjectAuthenticator starting"
-        );
+        tracing::info!(actor_name = ACTOR_NAME, "ForgeProjectValidator starting");
         Ok(Self::new())
     }
 }
@@ -343,9 +364,9 @@ mod tests {
         // Use a port that is unlikely to have a server
         let unreachable_url = url::Url::parse("http://127.0.0.1:1").unwrap();
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
-        let err = authenticator
+        let err = validator
             .fetch_with_retry(&unreachable_url, "req-6")
             .await
             .unwrap_err();
@@ -389,15 +410,11 @@ mod test_utils_tests {
             then.status(429).header("Retry-After", "2");
         });
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
-        // Start the authentication in the background
+        // Start the validation in the background
         let handle = tokio::spawn({
-            async move {
-                authenticator
-                    .validate_project(&url, "test-rate-limit")
-                    .await
-            }
+            async move { validator.validate_project(&url, "test-rate-limit").await }
         });
 
         let start = std::time::Instant::now();
@@ -438,7 +455,7 @@ mod test_utils_tests {
     }
 
     #[tokio::test]
-    async fn test_authenticate_with_localhost_url() {
+    async fn test_validate_with_localhost_url() {
         let mock_server = httpmock::MockServer::start();
 
         let test_keys = test_helpers::TestKeys::new(1);
@@ -471,12 +488,12 @@ mod test_utils_tests {
 
         assert!(
             result.is_ok(),
-            "Should authenticate with localhost URL: {:?}",
+            "Should validate with localhost URL: {:?}",
             result
         );
-        let auth_result = result.unwrap();
+        let validation_result = result.unwrap();
         let expected_project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
-        assert_eq!(auth_result.project_id, expected_project_id);
+        assert_eq!(validation_result.project_id, expected_project_id);
 
         mock.assert();
     }
@@ -489,9 +506,9 @@ mod test_utils_tests {
             then.status(200).body("success content");
         });
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
-        let result = authenticator
+        let result = validator
             .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-1")
             .await
             .unwrap();
@@ -508,9 +525,9 @@ mod test_utils_tests {
             then.status(500);
         });
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
-        let err = authenticator
+        let err = validator
             .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-2")
             .await
             .unwrap_err();
@@ -527,10 +544,10 @@ mod test_utils_tests {
             then.status(429); // No Retry-After header
         });
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
         let start = Instant::now();
-        let err = authenticator
+        let err = validator
             .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-3")
             .await
             .unwrap_err();
@@ -559,10 +576,10 @@ mod test_utils_tests {
             then.status(429).header("Retry-After", "2");
         });
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
         let start = Instant::now();
-        let err = authenticator
+        let err = validator
             .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-4")
             .await
             .unwrap_err();
@@ -596,14 +613,13 @@ mod test_utils_tests {
             then.status(429).header("Retry-After", "1");
         });
 
-        let authenticator = ForgeProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
 
         let server_url = url::Url::parse(&server.url("/")).unwrap();
 
         // Start fetch loop
-        let handle = tokio::spawn({
-            async move { authenticator.fetch_with_retry(&server_url, "req-5").await }
-        });
+        let handle =
+            tokio::spawn(async move { validator.fetch_with_retry(&server_url, "req-5").await });
 
         let start = std::time::Instant::now();
         // The mock returning 429 gets a hit, it is replaced by a success responder

@@ -7,9 +7,11 @@ name = "admin-lib"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "chrono",
  "common",
  "features_lib",
  "forge-release",
+ "forge-url",
  "http",
  "mockito",
  "reqwest",
@@ -19,6 +21,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -661,6 +664,7 @@ dependencies = [
 name = "client-server-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "admin-lib",
  "anyhow",
  "chrono",
  "client-cli",

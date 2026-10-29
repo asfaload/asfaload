@@ -118,12 +118,16 @@ mod asfaload_index_tests {
     }
 
     #[test]
-    fn to_json_is_pretty_with_single_trailing_newline() {
+    fn to_json_is_compact_with_single_trailing_newline() {
         let json = index().to_json().unwrap();
 
         assert!(json.ends_with("}\n"), "must end with a single newline");
         assert!(!json.ends_with("\n\n"), "must not have a blank last line");
-        assert!(json.contains("\n  "), "must be pretty-printed, not flat");
+        assert_eq!(
+            json.matches('\n').count(),
+            1,
+            "must be compact, not pretty-printed"
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@
 
 Register a new repository with the backend. Points the backend at your signers file so it knows which keys are authorized to sign artifacts for this project.
 
-After registration, all signers listed in the file must submit their signatures to activate the project.
+The CLI signs the signers file and the metadata with your secret key, and sends both signatures. If your signature completes the required signers, the project is active at once. Otherwise the remaining signers must submit their signatures to activate the project.
 
 ## Arguments
 
@@ -54,16 +54,18 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default):
+Human-readable (default), when more signatures are necessary:
 
     Repository registered successfully!
     Project ID: abc123
     Required signers (2): alice, bob
-    Next step: signers must submit signatures to activate the project.
+    Success! Project registered successfully. Collect signatures to activate.
+
+When your signature completes the required signers, `Required signers` is empty and the last line reports the activation.
 
 JSON (with `--json`):
 
-    {"success":true,"project_id":"abc123","message":"","required_signers":["alice","bob"],"signature_submission_url":"/v1/signatures"}
+    {"success":true,"project_id":"abc123","message":"Project registered successfully. Collect signatures to activate.","required_signers":["alice","bob"],"signature_submission_url":"/v1/signatures"}
 
 ## Examples
 

@@ -81,9 +81,7 @@ pub(crate) async fn validate_fetched_chain(
         let metadata = first
             .metadata()
             .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
-        match metadata.origin() {
-            features_lib::SignersConfigOrigin::Forge(forge) => forge.retrieval_url().to_string(),
-        }
+        metadata.retrieval_url().to_string()
     };
     assert_anchor_within_realm(artifact_path, &retrieval_url)?;
 
@@ -145,9 +143,7 @@ pub(crate) async fn validate_trust_anchor(
         .metadata()
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
-    let forge_url = match metadata.origin() {
-        features_lib::SignersConfigOrigin::Forge(forge) => forge.retrieval_url(),
-    };
+    let forge_url = metadata.retrieval_url();
 
     let response = client
         .get(forge_url)

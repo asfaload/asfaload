@@ -2,9 +2,12 @@ use common::fs::names::{
     find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
     revocation_signers_path_for, subject_path_from_pending_signatures,
 };
-use common::sha512_for_file;
+use common::{sha512_for_file, string_from_base64};
 use constants::SIGNERS_DIR;
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait, AsfaloadSignatures,
+    SignersConfig,
+};
 use forge_release::checksums::ChecksumsReleaseSource;
 use forge_release::common::{ClientIndexSources, ClientProvidedData};
 use forge_release::github::GithubReleaseSource;
@@ -21,6 +24,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
+use crate::file_auth::actors::forge_signers_validator::{MetadataInfo, ProjectSignersProposal};
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
@@ -29,9 +33,12 @@ use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
 use forge_url::ForgesPathMethods;
 use forge_url::forges::{Forges, get_forge};
-use rest_api_auth::HEADER_PUBLIC_KEY;
+use rest_api_auth::{CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS, HEADER_PUBLIC_KEY};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
+
+const CLIENT_METADATA_MAX_AGE_SECONDS: i64 = 60;
+
 pub fn map_to_user_error<M>(
     error: kameo::error::SendError<M, ApiError>,
     context: &str,
@@ -100,44 +107,46 @@ pub async fn register_repo_handler(
             project_id
         )));
     }
-    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
-        signers_file_url: parsed_url,
-        request_id: request_id.to_string(),
-    };
-
-    let signers_proposal = state
-        .forge_project_validator
-        .ask(auth_request)
-        .await
-        .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
-
-    // Construct metadata from forge information
-    let forge_kind = match &repo_info {
-        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
-        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
-        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
-    };
-    let metadata = signers_file_types::SignersConfigMetadata::from_forge(
-        signers_file_types::ForgeOrigin::new(
-            forge_kind,
-            request.signers_file_url.clone(),
-            signers_proposal.verified_content,
-            chrono::Utc::now(),
-        ),
-    );
-
-    // Parse the submitter's public key for authorization
-    let pubkey = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+    let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
 
-    // Step 2: Initialise signers - create directory structure and files
+    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
+    })?;
+    let (signers_proposal, metadata_info) = validate_client_provided_data(
+        request_id,
+        &state,
+        &request,
+        &parsed_url,
+        &client_metadata_json,
+        &pub_key,
+        &repo_info,
+    )
+    .await?;
+
+    let signers_signature = AsfaloadSignatures::from_base64(&request.signature).map_err(|e| {
+        ApiError::InvalidRequestBody(format!(
+            "Could not base64 decode signers file signature provided by client: {}",
+            e
+        ))
+    })?;
+    let metadata_signature =
+        AsfaloadSignatures::from_base64(&request.metadata_signature).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Could not base64 decode metadata file signature provided by client: {}",
+                e
+            ))
+        })?;
+    // Initialise signers - create directory structure and files
     let init_request = crate::file_auth::actors::signers_initialiser::InitialiseSignersRequest {
         project_path: project_normalised_paths,
         signers_info: signers_proposal.signers_info,
-        metadata,
+        signers_signature,
+        metadata_info,
+        metadata_signature,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
-        pubkey,
+        pubkey: pub_key,
     };
 
     let init_result = state
@@ -146,7 +155,7 @@ pub async fn register_repo_handler(
         .await
         .map_err(|e| map_to_user_error(e, "Signers initialisation failed"))?;
 
-    // Step 3: Write and commit files via Git actor
+    // Write and commit files via Git actor
     let write_commit_request = crate::file_auth::actors::git_actor::CommitFile {
         file_paths: vec![init_result.project_path.clone()],
         commit_message: format!(
@@ -210,10 +219,16 @@ pub async fn register_repo_handler(
         "Project registration completed successfully"
     );
 
+    let message = if init_result.required_signers.is_empty() {
+        "Project registered successfully, and signers file activated."
+    } else {
+        "Project registered successfully. Collect signatures to activate."
+    };
+
     Ok(Json(RegisterRepoResponse {
         success: true,
         project_id: signers_proposal.project_id,
-        message: "Project registered successfully. Collect signatures to activate.".to_string(),
+        message: message.to_string(),
         required_signers: init_result.required_signers.into_iter().collect(),
         signature_submission_url: "/v1/signatures".to_string(),
     }))
@@ -278,44 +293,44 @@ pub async fn update_signers_handler(
         )));
     }
 
-    // Validate the signers file from the forge
-    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
-        signers_file_url: parsed_url,
-        request_id: request_id.to_string(),
-    };
-
-    let signers_proposal = state
-        .forge_project_validator
-        .ask(auth_request)
-        .await
-        .map_err(|e| map_to_user_error(e, "Project validation failed"))?;
-
-    // Construct metadata from forge information
-    let forge_kind = match &repo_info {
-        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
-        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
-        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
-    };
-    let metadata = signers_file_types::SignersConfigMetadata::from_forge(
-        signers_file_types::ForgeOrigin::new(
-            forge_kind,
-            request.signers_file_url.clone(),
-            signers_proposal.verified_content,
-            chrono::Utc::now(),
-        ),
-    );
-
-    // Parse the submitter's public key for authorization
-    let pubkey = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+    let pub_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+    let client_metadata_json = string_from_base64(&request.metadata).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not base64 decode metadata: {}", e))
+    })?;
+    let (signers_proposal, metadata_info) = validate_client_provided_data(
+        request_id,
+        &state,
+        &request,
+        &parsed_url,
+        &client_metadata_json,
+        &pub_key,
+        &repo_info,
+    )
+    .await?;
 
+    let signers_signature = AsfaloadSignatures::from_base64(&request.signature).map_err(|e| {
+        ApiError::InvalidRequestBody(format!(
+            "Could not base64 decode signers file signature provided by client: {}",
+            e
+        ))
+    })?;
+    let metadata_signature =
+        AsfaloadSignatures::from_base64(&request.metadata_signature).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Could not base64 decode metadata file signature provided by client: {}",
+                e
+            ))
+        })?;
     // Propose signers file update
     let propose_request = crate::file_auth::actors::signers_initialiser::ProposeSignersRequest {
         project_path: project_normalised_paths.clone(),
         signers_info: signers_proposal.signers_info,
-        metadata,
+        signers_signature,
+        metadata_info,
+        metadata_signature,
         request_id: request_id.to_string(),
-        pubkey,
+        pubkey: pub_key,
     };
 
     let propose_result = state
@@ -382,11 +397,16 @@ pub async fn update_signers_handler(
         "Signers update proposal completed successfully"
     );
 
+    let message = if propose_result.required_signers.is_empty() {
+        "Signers updated successfully, and signers file activated."
+    } else {
+        "Signers update proposed successfully. Collect signatures to activate."
+    };
+
     Ok(Json(UpdateRepoSignersResponse {
         success: true,
         project_id: signers_proposal.project_id,
-        message: "Signers update proposed successfully. Collect signatures to activate."
-            .to_string(),
+        message: message.to_string(),
         required_signers: propose_result.required_signers,
         signature_submission_url: "/v1/signatures".to_string(),
     }))
@@ -1105,6 +1125,122 @@ pub async fn register_assets_handler(
     register_release(&state, request_id, client_provided_data).await
 }
 
+/// The signature must verify over the signers file content the server
+/// retrieved from the forge, with the public key sent in the request.
+/// A valid signature proves the submitter controls the secret key of
+/// the declared public key, and approved the exact signers file content.
+///
+fn verify_client_signature(
+    pub_key: &AsfaloadPublicKeys,
+    signature_b64: &str,
+    content: &str,
+) -> Result<(), ApiError> {
+    if content.is_empty() {
+        return Err(ApiError::InvalidRequestBody(
+            "Content to verify must not be empty".to_string(),
+        ));
+    }
+
+    let signature = features_lib::AsfaloadSignatures::from_base64(signature_b64)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid signature: {}", e)))?;
+
+    let digest = common::sha512_for_content(content.as_bytes()).map_err(|e| {
+        ApiError::ActorOperationFailed(format!("Could not hash signers file content: {}", e))
+    })?;
+
+    pub_key
+        .verify(&signature, &digest)
+        .map_err(|_| ApiError::SignatureVerificationFailed)?;
+
+    Ok(())
+}
+
+async fn validate_client_provided_data(
+    // For logging
+    request_id: &str,
+    // To access actors
+    state: &AppState,
+    // The complete client request
+    request: &RegisterRepoRequest,
+    // The parsed signers_file_url found in request, but passed here to avoid double parsing as it
+    // is also needed in the caller
+    parsed_url: &Url,
+    client_metadata_json: &str,
+    // The signing key
+    pub_key: &AsfaloadPublicKeys,
+    // Also used by caller to build NormalisedPaths
+    repo_info: &ForgeInfo,
+) -> Result<(ProjectSignersProposal, MetadataInfo), ApiError> {
+    let metadata_info = MetadataInfo::from_string(client_metadata_json).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
+    })?;
+
+    // Reject if the client provided timestamp is too far in the past
+    let retrieved_at = metadata_info.metadata().retrieved_at();
+    let now = chrono::Utc::now();
+    if now - retrieved_at > chrono::Duration::seconds(CLIENT_METADATA_MAX_AGE_SECONDS) {
+        return Err(ApiError::InvalidRequestBody(
+            "Metadata retrieved_at provided by client too far in the past".to_string(),
+        ));
+    }
+
+    if retrieved_at - now > chrono::Duration::seconds(CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS) {
+        return Err(ApiError::InvalidRequestBody(
+            "Metadata retrieved_at provided by client too far in the future".to_string(),
+        ));
+    }
+
+    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
+        signers_file_url: parsed_url.clone(),
+        request_id: request_id.to_string(),
+    };
+
+    let signers_proposal = state
+        .forge_project_validator
+        .ask(auth_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Project validation failed"))?;
+
+    // Verify the signature supplied by the client is for the content we retrieved from the forge
+    let signers_content = signers_proposal
+        .verified_content
+        .content()
+        .await
+        .map_err(|e| {
+            ApiError::ActorOperationFailed(format!("Signers file content retrieval failed: {}", e))
+        })?;
+
+    verify_client_signature(pub_key, &request.signature, &signers_content)?;
+
+    verify_client_signature(pub_key, &request.metadata_signature, client_metadata_json)?;
+
+    let forge_kind = match &repo_info {
+        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
+        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
+    };
+    let metadata = signers_file_types::SignersConfigMetadata::new(
+        forge_kind,
+        request.signers_file_url.clone(),
+        signers_proposal.verified_content.clone(),
+        metadata_info.metadata().retrieved_at(),
+    );
+    let metadata_json = serde_json::to_string(&metadata)?;
+
+    if metadata != metadata_info.metadata().clone() {
+        tracing::info!(
+            request_id = %request_id,
+            client_metadata = %client_metadata_json,
+            backend_metadata = %metadata_json,
+            "Mismatch between client-provided metadata and server-generated metadata"
+        );
+        return Err(ApiError::InvalidRequestBody(
+            "The metadata build by the backend is different from the client-provided one"
+                .to_string(),
+        ));
+    }
+    Ok((signers_proposal, metadata_info))
+}
 /// Build the client-provided data from the public key header and the
 /// GitHub release payload.
 ///
@@ -1830,5 +1966,83 @@ mod client_provided_data_tests {
                 assert!(e.to_string().contains(message_part), "got: {e}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod verify_client_signature_tests {
+    use super::*;
+    use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+    use test_helpers::TestKeys;
+
+    // The signature of the declared key over the exact content verifies, and
+    // the returned public key is the parsed declared key.
+    #[test]
+    fn accepts_signature_of_declared_key_over_content() {
+        let test_keys = TestKeys::new_generated(1);
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+
+        let content = "signers file content".to_string();
+        let digest = common::sha512_for_content(content.as_bytes()).unwrap();
+        let signature = sec_key.sign(&digest).unwrap();
+
+        verify_client_signature(pub_key, &signature.to_base64(), &content).unwrap();
+    }
+
+    // A signature made with another key than the declared public key fails
+    // verification.
+    #[test]
+    fn rejects_signature_of_another_key() {
+        let test_keys = TestKeys::new_generated(2);
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let other_sec_key = test_keys.sec_key(1).unwrap();
+
+        let content = "signers file content".to_string();
+        let digest = common::sha512_for_content(content.as_bytes()).unwrap();
+        let signature = other_sec_key.sign(&digest).unwrap();
+
+        let result = verify_client_signature(pub_key, &signature.to_base64(), &content);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.to_http_status(), axum::http::StatusCode::UNAUTHORIZED);
+        assert_eq!(err.to_string(), "Signature verification failed");
+    }
+
+    // A signature sent over content different from the one the server
+    // retrieved fails verification.
+    #[test]
+    fn rejects_signature_over_other_content() {
+        let test_keys = TestKeys::new_generated(1);
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+
+        let digest = common::sha512_for_content(&b"content signed by the client"[..]).unwrap();
+        let signature = sec_key.sign(&digest).unwrap();
+
+        let result = verify_client_signature(
+            pub_key,
+            &signature.to_base64(),
+            "content retrieved by the server",
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_http_status(),
+            axum::http::StatusCode::UNAUTHORIZED
+        );
+    }
+
+    // A signature that does not decode is an invalid request body, not a
+    // verification failure.
+    #[test]
+    fn reports_malformed_signature_as_invalid_body() {
+        let test_keys = TestKeys::new_generated(1);
+        let pub_key = test_keys.pub_key(0).unwrap();
+
+        let result = verify_client_signature(pub_key, "not-a-signature", "content");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.to_http_status(), axum::http::StatusCode::BAD_REQUEST);
+        assert!(err.to_string().contains("Invalid signature"));
     }
 }

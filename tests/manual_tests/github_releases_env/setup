@@ -10,8 +10,8 @@ set -euo pipefail
 #     key_2, threshold 2) is registered AND activated.
 #   - Release v0.1 is registered and its index is signed to completion
 #     (artifact downloadable).
-#   - Release v0.2 is registered but its index has no signature yet
-#     (fully pending).
+#   - Release v0.2 is registered but its index only holds the submitter's
+#     (key2's) signature: still below threshold.
 #
 # Requires internet access: the backend fetches release info and signers
 # files from GitHub, and artifact downloads hit the GitHub release assets.
@@ -106,8 +106,10 @@ printf '%sActivating signers file (from GitHub)...%s ' "$DIM" "$RESET"
     "$(signers_file 1)" \
     --json > /dev/null
 
-# All three signers must sign the initial signers file to activate it
-for _KEY in "$KEY_0" "$KEY_1" "$KEY_2"; do
+# All three signers must sign the initial signers file to activate it. The
+# submitter (key0) already signed it at registration, so only key1 and key2
+# sign here.
+for _KEY in "$KEY_1" "$KEY_2"; do
     _ARGS=$(mt_pending_sign_args "$PENDING_SIGNERS_DIR" "$_KEY")
     "$CLI" sign-pending \
         --secret-key "$_KEY" \
@@ -129,15 +131,14 @@ printf '%sRegistering and signing release v0.1...%s ' "$DIM" "$RESET"
     --github-release-url "$(release_url 0.1)" \
     --json > /dev/null
 
-for _KEY in "$KEY_0" "$KEY_1"; do
-    _ARGS=$(mt_pending_sign_args "$(release_index 0.1)" "$_KEY")
-    "$CLI" sign-pending \
-        --secret-key "$_KEY" \
-        -u "$BACKEND_URL" \
-        $_ARGS \
-        --json > /dev/null
-done
-unset _KEY _ARGS
+# Release v0.1 is registered by key2, whose signature is recorded with the
+# registration. One more signature (key0) brings the index to its threshold
+# and activates it.
+"$CLI" sign-pending \
+    --secret-key "$KEY_0" \
+    -u "$BACKEND_URL" \
+    $(mt_pending_sign_args "$(release_index 0.1)" "$KEY_0") \
+    --json > /dev/null
 
 V01_INDEX_FILE="$BACKEND_PROJECT_DIR/releases/tag/v0.1/$INDEX_FILE"
 if [[ ! -f "$V01_INDEX_FILE.signatures.json" || -f "$V01_INDEX_FILE.signatures.json.pending" ]]; then
@@ -192,7 +193,8 @@ printf '  %-22s %s\n' "KEY_0 KEY_1 KEY_2" "fixture keys"
 printf '\n'
 printf '  The signers file from the e2e GitHub repo (key_0, key_1, key_2;\n'
 printf '  threshold 2) is active. Release v0.1 is registered and fully\n'
-printf '  signed. Release v0.2 is registered but has no signature yet.\n'
+printf '  signed. Release v0.2 is registered, but its index only holds the\n'
+printf '  signature its registrant (key2) made at submission.\n'
 printf '\n'
 printf '%s  Try:%s\n' "$BOLD" "$RESET"
 printf '    asfaload-cli list-pending -K $KEY_0\n'
@@ -201,10 +203,12 @@ printf '    asfaload-cli download -o /tmp/artifact.bin $ARTIFACT_URL_V01\n'
 printf '\n'
 printf '%s  Expected:%s the v0.1 download succeeds (index complete), the v0.2\n' "$BOLD" "$RESET"
 printf '  download fails (unsigned), and list-pending shows the v0.2 index.\n'
-printf '  Sign the v0.2 index with two keys to activate it:\n'
+printf '  Sign the v0.2 index with two more keys (key2 already signed it with\n'
+printf '  its registration) to activate it:\n'
 printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_0 --json | \\\n'
 printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
 printf '    asfaload-cli sign-pending -K $KEY_0 $_ARGS\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 $_ARGS\n'
 printf '\n'
 printf '%s  Type '"'"'exit'"'"' to stop the backend and clean up.%s\n' "$DIM" "$RESET"
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"

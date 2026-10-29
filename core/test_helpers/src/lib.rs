@@ -13,7 +13,6 @@ use signatures::types::AsfaloadKeyPairs;
 use signatures::types::AsfaloadPublicKeys;
 use signatures::types::AsfaloadSecretKeys;
 use signers_file_types::Forge;
-use signers_file_types::ForgeOrigin;
 use signers_file_types::SignersConfigMetadata;
 use signers_file_types::VerifiedForgeContent;
 use std::path::PathBuf;
@@ -269,7 +268,7 @@ pub fn pause() {
 }
 
 pub fn test_metadata() -> SignersConfigMetadata {
-    SignersConfigMetadata::from_forge(ForgeOrigin::new(
+    SignersConfigMetadata::new(
         Forge::Github,
         "https://example.com/test".to_string(),
         VerifiedForgeContent::new_for_test(
@@ -277,7 +276,30 @@ pub fn test_metadata() -> SignersConfigMetadata {
             "test_hash_placeholder".to_string(),
         ),
         chrono::Utc::now(),
-    ))
+    )
+}
+
+/// Metadata for a signers file published on a forge.
+///
+/// The recorded retrieval url is `source_url` and the verified content hash is
+/// the sha512 of `content`, which tests serve at `source_url`. Constructed
+/// through the types in `signers_file_types`, so it stays in sync when the
+/// metadata serialization format changes.
+pub fn forge_metadata(forge_url: &str, source_url: &str, content: &[u8]) -> SignersConfigMetadata {
+    let source_content = String::from_utf8_lossy(content);
+    SignersConfigMetadata::new(
+        Forge::Github,
+        forge_url.to_string(),
+        VerifiedForgeContent::new_for_test(source_url.to_string(), source_content.to_string()),
+        chrono::Utc::now(),
+    )
+}
+
+/// Serialize forge metadata as the backend serves it: compact posix JSON with
+/// a single trailing newline.
+pub fn signers_metadata_json(forge_url: &str, source_url: &str, content: &[u8]) -> String {
+    common::to_posix_json(&forge_metadata(forge_url, source_url, content))
+        .expect("forge metadata should serialize")
 }
 
 #[cfg(test)]
@@ -395,6 +417,24 @@ mod tests {
         let priv_path = git_signing_pub_key_path().with_extension("");
         let mode = std::fs::metadata(&priv_path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "private key must be 0600, got {:o}", mode);
+    }
+
+    /// The metadata JSON helper must produce JSON that deserializes back into
+    /// the same metadata. A change in the metadata serialization format shows
+    /// up here first, before the CLI test fixtures start failing.
+    #[test]
+    fn signers_metadata_json_round_trips() {
+        let source_url = "https://github.com/acme/tool/raw/main/asfaload.signers/index.json";
+        let content = br#"{"version":1}"#;
+        let json =
+            signers_metadata_json(source_url, "https://source.example.com/index.json", content);
+        let parsed: SignersConfigMetadata =
+            serde_json::from_str(&json).expect("helper JSON should deserialize");
+        assert_eq!(
+            parsed.retrieval_url(),
+            "https://source.example.com/index.json"
+        );
+        assert!(matches!(parsed.kind(), Forge::Github));
     }
 
     #[test]

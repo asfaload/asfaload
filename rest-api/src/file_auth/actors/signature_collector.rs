@@ -9,7 +9,7 @@ use features_lib::{
 use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
-use rest_api_types::errors::ApiError;
+use rest_api_types::errors::{ApiError, map_aggregate_signature_error};
 use rest_api_types::path_validation::NormalisedPaths;
 use signers_file_types::revocation::RevocationInfo;
 use std::collections::HashMap;
@@ -461,30 +461,6 @@ impl Message<RevokeFileMessage> for SignatureCollector {
         );
 
         Ok(RevokeFileResult())
-    }
-}
-
-/// Map an `AggregateSignatureError` to the appropriate `ApiError`.
-pub(crate) fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
-    match e {
-        AggregateSignatureError::DuplicateSignature => ApiError::SignatureAlreadyCollected(
-            "Signature already collected for this key".to_string(),
-        ),
-        AggregateSignatureError::Signature(msg) => {
-            if msg.contains("signature verification failed") {
-                ApiError::SignatureVerificationFailed
-            } else {
-                ApiError::InternalServerError(msg)
-            }
-        }
-        AggregateSignatureError::Io(io) => {
-            if io.kind() == std::io::ErrorKind::AlreadyExists {
-                ApiError::SignatureAlreadyCollected("Signature already added".to_string())
-            } else {
-                ApiError::InternalServerError(format!("IO error: {}", io))
-            }
-        }
-        _ => ApiError::InternalServerError(e.to_string()),
     }
 }
 

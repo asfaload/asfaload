@@ -40,7 +40,7 @@ pub(crate) struct PreparedSignersSubmission {
 
 /// Load secret key, derive public key, and create an API client.
 /// The caller then decides which API endpoint to call with the result.
-pub(crate) async fn prepare_signers_submission(
+pub(crate) async fn prepare_signed_submission(
     backend_url: &str,
     secret_key_path: &std::path::PathBuf,
     password: &str,

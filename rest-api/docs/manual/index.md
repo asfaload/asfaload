@@ -37,7 +37,7 @@ The server rebuilds the canonical request string from the received headers and b
 
 ## Registration
 
-- [`POST /v1/register_repo`](register-repo.md) — register a new project with the signing server
+- [`POST /v1/register_repo`](register-repo.md) — register a new project with the Asfaload backend
 - [`POST /v1/update_signers`](update-signers.md) — propose an update to a project's signers file
 
 ## Signatures

@@ -15,18 +15,6 @@ pub fn signature_for_sha(
     Ok(secret_key.sign(&digest)?.to_base64())
 }
 
-/// Filler metadata and metadata signature for `RegisterRepoRequest` literals.
-///
-/// Only for tests whose registration flow fails before the backend validates
-/// the metadata (e.g. the forge fetch fails first). Tests that reach the
-/// metadata validation must use `metadata_and_signature_for` instead.
-pub fn metadata_fixture() -> (String, String) {
-    (
-        "eyJkYXRhIjp7IkZvcmdlIjp7ImtpbmQiOiJHaXRodWIifX19".to_string(),
-        "dGVzdC1tZXRhZGF0YS1zaWduYXR1cmU=".to_string(),
-    )
-}
-
 /// Build the base64-encoded metadata and its base64-encoded signature the
 /// same way the admin client does, so the backend validation accepts them.
 ///
@@ -583,11 +571,25 @@ pub mod tests {
     #[tokio::test]
     async fn test_register_repo_errors_dont_leak_internal_details() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
         init_git_repo(&git_repo_path)?;
+
+        // Mock a forge answering 404 for the signers file, so registration fails
+        // at the fetch without any real network access. A localhost host routes
+        // through the FileServerForge path (see forge_info.rs), but the
+        // sanitised error response must be the same whichever forge kind serves
+        // the URL.
+        let mock_server = httpmock::MockServer::start();
+        let _mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/nonexistent.json");
+            then.status(404);
+        });
+        let signers_file_url = format!("{}/owner/repo/main/nonexistent.json", mock_server.url(""));
 
         let port = get_random_port().await?;
         let config = build_test_config(&git_repo_path, port);
@@ -601,15 +603,19 @@ pub mod tests {
         let public_key = test_keys.pub_key(0).unwrap();
         let secret_key = test_keys.sec_key(0).unwrap();
 
-        // The backend cannot fetch this signers file, and fails before it
-        // checks the signature: any well-formed signature value works here.
+        // Build valid client metadata so the flow fails at the forge fetch, not
+        // at metadata parsing or its timestamp checks. The fetched content is
+        // never compared against this metadata, as registration aborts at the
+        // fetch. The signers and metadata signatures are also never verified,
+        // as the fetch fails before the backend checks the signature.
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_file_url, "not fetched", secret_key)?;
         let request_body = RegisterRepoRequest {
-            signers_file_url: "https://github.com/owner/repo/blob/main/nonexistent.json"
-                .to_string(),
+            signers_file_url: signers_file_url.clone(),
             public_key: public_key.to_base64(),
-            signature: signature_for_sha(b"not fetched", &secret_key)?,
-            metadata: crate::metadata_fixture().0,
-            metadata_signature: crate::metadata_fixture().1,
+            signature: signature_for_sha(b"not fetched", secret_key)?,
+            metadata,
+            metadata_signature,
         };
         let payload_string = serde_json::to_string(&request_body)?;
         let TestAuthHeaders {
@@ -628,6 +634,13 @@ pub mod tests {
             .json(&request_body)
             .send()
             .await?;
+
+        // A failed forge fetch must answer ActorOperationFailed, and so 500.
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "A failed signers file fetch must answer 500"
+        );
 
         let response_body: serde_json::Value = response.json().await?;
 
@@ -805,11 +818,10 @@ pub mod test_utils_tests {
     // Register Repo Integration Tests
     //
     // NOTE: These tests establish the integration test infrastructure pattern for
-    // register_repo endpoint. Due to architectural limitations where
-    // GitHubProjectAuthenticator only accepts github.com URLs and httpmock can
-    // only mock localhost, these tests require additional mocking infrastructure
-    // or dependency injection to fully pass. This provides the foundation for
-    // such enhancements.
+    // register_repo endpoint. They mock the forge with httpmock and use
+    // localhost signers file URLs, so requests go through the forge server
+    // parsing path (ForgeInfo::FileServer) rather than through the GitHub or
+    // GitLab URL rewriting logic.
     // ============================================================================
 
     #[tokio::test]

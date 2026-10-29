@@ -1606,6 +1606,10 @@ pub mod test_utils_tests {
 
     /// Submit a signers file update for the project served on `port`, with
     /// metadata carrying the given `retrieved_at` timestamp.
+    ///
+    /// Returns the response together with the metadata content the client
+    /// sent, so tests checking the stored proposal can compare the stored
+    /// bytes against the signed ones.
     async fn post_update_signers(
         port: u16,
         signers_url: &str,
@@ -1613,7 +1617,7 @@ pub mod test_utils_tests {
         retrieved_at: chrono::DateTime<chrono::Utc>,
         public_key: &features_lib::AsfaloadPublicKeys,
         secret_key: &features_lib::AsfaloadSecretKeys,
-    ) -> anyhow::Result<reqwest::Response> {
+    ) -> anyhow::Result<(reqwest::Response, String)> {
         use features_lib::AsfaloadPublicKeyTrait;
 
         let (metadata, metadata_signature) = crate::metadata_and_signature_for_at(
@@ -1629,7 +1633,23 @@ pub mod test_utils_tests {
             metadata,
             metadata_signature,
         };
-        let payload_string = serde_json::to_string(&request_body)?;
+        let response = post_update_signers_request(port, &request_body, secret_key).await?;
+        let sent_metadata =
+            common::string_from_base64(&request_body.metadata).map_err(anyhow::Error::msg)?;
+        Ok((response, sent_metadata))
+    }
+
+    /// POST an already-built update request to the update endpoint, with the
+    /// authentication headers computed over the serialised request.
+    ///
+    /// Used by tests that need full control over the request fields to
+    /// exercise the backend input validation.
+    async fn post_update_signers_request(
+        port: u16,
+        request_body: &RegisterRepoRequest,
+        secret_key: &features_lib::AsfaloadSecretKeys,
+    ) -> anyhow::Result<reqwest::Response> {
+        let payload_string = serde_json::to_string(request_body)?;
         let TestAuthHeaders {
             timestamp,
             nonce,
@@ -1644,7 +1664,7 @@ pub mod test_utils_tests {
             .header(HEADER_NONCE, nonce)
             .header(HEADER_SIGNATURE, auth_signature)
             .header(HEADER_PUBLIC_KEY, auth_public_key)
-            .json(&request_body)
+            .json(request_body)
             .send()
             .await?)
     }
@@ -1707,7 +1727,7 @@ pub mod test_utils_tests {
         });
 
         let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
-        let response = post_update_signers(
+        let (response, sent_metadata) = post_update_signers(
             port,
             &signers_url,
             &updated_signers_json,
@@ -1797,7 +1817,7 @@ pub mod test_utils_tests {
         });
 
         let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
-        let response = post_update_signers(
+        let (response, _sent_metadata) = post_update_signers(
             port,
             &signers_url,
             &updated_signers_json,
@@ -1897,7 +1917,7 @@ pub mod test_utils_tests {
 
         // A retrieved_at older than the accepted metadata age must be
         // rejected, even though the metadata is otherwise perfectly valid.
-        let response = post_update_signers(
+        let (response, _sent_metadata) = post_update_signers(
             port,
             &signers_url,
             &updated_signers_json,
@@ -1983,7 +2003,7 @@ pub mod test_utils_tests {
 
         // A retrieved_at beyond the accepted clock skew must be rejected,
         // even though the metadata is otherwise perfectly valid.
-        let response = post_update_signers(
+        let (response, _sent_metadata) = post_update_signers(
             port,
             &signers_url,
             &updated_signers_json,

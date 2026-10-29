@@ -903,6 +903,119 @@ pub mod test_utils_tests {
         Ok(())
     }
 
+    /// The server must store the exact bytes the client signed. The stored
+    /// signers file and metadata file must equal the request bytes, so the
+    /// recorded signatures verify against what is on disk.
+    #[tokio::test]
+    async fn test_register_repo_records_client_signatures() -> Result<(), anyhow::Error> {
+        use common::fs::names::metadata_path_for;
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        // Mock publishing server where signers file is published as trust anchor
+        let mock_server = httpmock::MockServer::start();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let (metadata, metadata_signature) =
+            crate::metadata_and_signature_for(&signers_url, &signers_json, &secret_key)?;
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            public_key: public_key.to_base64(),
+            signature: signature_for_sha(signers_json.as_bytes(), &secret_key)?,
+            metadata: metadata.clone(),
+            metadata_signature,
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response_body = response.json::<RegisterRepoResponse>().await?;
+        assert!(response_body.success);
+        assert_eq!(
+            response_body.message,
+            "Project registered successfully, and signers file activated."
+        );
+
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        let project_paths =
+            rest_api::file_auth::github::get_project_normalised_paths(&git_repo_path, &project_id)
+                .await?;
+        let project_dir = project_paths.absolute_path();
+        let signers_file_path = project_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
+
+        let stored_signers = tokio::fs::read(&signers_file_path).await?;
+        assert_eq!(
+            stored_signers,
+            signers_json.as_bytes(),
+            "the stored signers file must equal the signed bytes"
+        );
+
+        let stored_metadata = tokio::fs::read(metadata_path_for(&signers_file_path)?).await?;
+        let sent_metadata = common::string_from_base64(&metadata).map_err(anyhow::Error::msg)?;
+        assert_eq!(
+            stored_metadata,
+            sent_metadata.as_bytes(),
+            "the stored metadata must equal the signed bytes"
+        );
+
+        assert!(
+            !project_dir.join(PENDING_SIGNERS_DIR).exists(),
+            "an activated registration must not leave a pending directory"
+        );
+
+        mock.assert();
+        server_handle.abort();
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_register_repo_success_without_immediate_activation() -> Result<(), anyhow::Error>
     {

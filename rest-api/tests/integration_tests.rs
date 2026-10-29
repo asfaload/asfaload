@@ -1368,6 +1368,15 @@ pub mod test_utils_tests {
                 "Could not deserialise metadata",
             ),
             (
+                "metadata is empty",
+                common::base64_for_string(""),
+                // A valid signature over different content. The server must
+                // reject the empty content before it verifies the signature.
+                signed("some other content", secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "must not be empty",
+            ),
+            (
                 "metadata is signed by another key",
                 common::base64_for_string(valid_metadata_json.clone()),
                 signed(&valid_metadata_json, other_secret_key)?,
@@ -1431,7 +1440,7 @@ pub mod test_utils_tests {
 
         // Each request reached the metadata validation, which fetches the
         // signers file from the forge first.
-        mock.assert_calls(4);
+        mock.assert_calls(5);
 
         server_handle.abort();
 

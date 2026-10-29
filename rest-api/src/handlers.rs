@@ -1127,6 +1127,12 @@ fn verify_client_signature(
     signature_b64: &str,
     content: &str,
 ) -> Result<(), ApiError> {
+    if content.is_empty() {
+        return Err(ApiError::InvalidRequestBody(
+            "Content to verify must not be empty".to_string(),
+        ));
+    }
+
     let signature = features_lib::AsfaloadSignatures::from_base64(signature_b64)
         .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid signature: {}", e)))?;
 

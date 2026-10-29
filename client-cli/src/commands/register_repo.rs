@@ -26,7 +26,7 @@ pub async fn handle_register_repo_command(
             response.required_signers.len(),
             response.required_signers.join(", ")
         );
-        println!("Next step: signers must submit signatures to activate the project.");
+        println!("Success! {}", response.message);
     } else {
         println!("Repository registration failed: {}", response.message);
     }

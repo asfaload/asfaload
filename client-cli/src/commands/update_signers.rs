@@ -26,7 +26,7 @@ pub async fn handle_update_signers_command(
             response.required_signers.len(),
             response.required_signers.join(", ")
         );
-        println!("Next step: signers must submit signatures to activate the update.");
+        println!("Success: {}", response.message);
     } else {
         println!("Signers update failed: {}", response.message);
     }

@@ -20,7 +20,8 @@ use signatures::{
 };
 use signers_file_types::{
     CurrentSignersInfo, HistoryEntry, HistoryFile, SignersChain, SignersConfig,
-    SignersConfigProposal, parse_signers_config, parse_signers_config_proposal,
+    SignersConfigMetadata, SignersConfigProposal, parse_signers_config,
+    parse_signers_config_proposal,
 };
 use std::{borrow::Borrow, convert::identity, ffi::OsStr, fs, io::Write, path::Path};
 //
@@ -197,6 +198,7 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
     }
     // First, validate the JSON by parsing it
     let _signers_config: SignersConfig = parse_signers_config(json_content)?;
+    let _metadata_content: SignersConfigMetadata = serde_json::from_str(metadata_json)?;
 
     // Now that all validation have taken place, we can ensure directory exists
     // and create it if not.

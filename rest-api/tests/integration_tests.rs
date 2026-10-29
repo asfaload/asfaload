@@ -2106,6 +2106,208 @@ pub mod test_utils_tests {
         Ok(())
     }
 
+    /// Every client-provided metadata failure on the update path must be
+    /// reported as a client error, without touching the proposed update.
+    #[tokio::test]
+    async fn test_update_signers_rejects_invalid_client_metadata() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let added_public_key = test_keys.pub_key(1).unwrap();
+        let other_secret_key = test_keys.sec_key(1).unwrap();
+
+        // The submitter must be an admin key of the active signers file to
+        // be allowed to propose an update.
+        let initial_config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        seed_active_project(
+            &git_repo_path,
+            &project_id,
+            &initial_config,
+            public_key,
+            secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        let updated_config = signers_file_types::SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone(), added_public_key.clone()], 2),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let updated_signers_json = updated_config.to_json()?;
+
+        let updated_json_clone = updated_signers_json.clone();
+        let update_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(updated_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let now = chrono::Utc::now();
+        let valid_metadata_json =
+            crate::metadata_json_for_at(&signers_url, &updated_signers_json, now)?;
+        // Valid metadata structure, but its content hash is that of another
+        // signers file, so the backend metadata comparison must fail.
+        let metadata_for_other_content =
+            crate::metadata_json_for_at(&signers_url, "another signers file content", now)?;
+
+        let signed = |content: &str, key: &features_lib::AsfaloadSecretKeys| {
+            signature_for_sha(content.as_bytes(), key)
+        };
+
+        // (case name, metadata field, metadata signature, expected status,
+        // expected error fragment, whether the forge is fetched)
+        let cases = vec![
+            (
+                "metadata is not base64",
+                "not base64 at all!".to_string(),
+                signed(&valid_metadata_json, secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "Could not base64 decode metadata",
+                false,
+            ),
+            (
+                "metadata is not a metadata document",
+                common::base64_for_string(r#"{"data":{"Forge":{}}}"#),
+                signed(r#"{"data":{"Forge":{}}}"#, secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "Could not deserialise metadata",
+                false,
+            ),
+            (
+                "metadata is empty",
+                common::base64_for_string(""),
+                // A valid signature over different content. The server must
+                // reject the empty content before it verifies the signature,
+                // so the signature is never checked.
+                signed("some other content", secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "Could not deserialise metadata",
+                false,
+            ),
+            (
+                "metadata signature is not base64",
+                common::base64_for_string(valid_metadata_json.clone()),
+                "not base64 at all!".to_string(),
+                StatusCode::BAD_REQUEST,
+                "Invalid signature",
+                true,
+            ),
+            (
+                "metadata signature is empty",
+                common::base64_for_string(valid_metadata_json.clone()),
+                String::new(),
+                StatusCode::BAD_REQUEST,
+                "Invalid signature",
+                true,
+            ),
+            (
+                "metadata is signed by another key",
+                common::base64_for_string(valid_metadata_json.clone()),
+                signed(&valid_metadata_json, other_secret_key)?,
+                StatusCode::UNAUTHORIZED,
+                "Signature verification failed",
+                true,
+            ),
+            (
+                "metadata describes other signers content",
+                common::base64_for_string(metadata_for_other_content.clone()),
+                signed(&metadata_for_other_content, secret_key)?,
+                StatusCode::BAD_REQUEST,
+                "different from the client-provided",
+                true,
+            ),
+        ];
+
+        for (
+            name,
+            metadata,
+            metadata_signature,
+            expected_status,
+            expected_error,
+            expects_forge_fetch,
+        ) in cases
+        {
+            let hits_before = update_mock.calls();
+            let request_body = RegisterRepoRequest {
+                signers_file_url: signers_url.clone(),
+                public_key: public_key.to_base64(),
+                signature: signature_for_sha(updated_signers_json.as_bytes(), secret_key)?,
+                metadata,
+                metadata_signature,
+            };
+            let response = post_update_signers_request(port, &request_body, secret_key).await?;
+
+            assert_eq!(
+                response.status(),
+                expected_status,
+                "case '{}' got an unexpected status",
+                name
+            );
+            let response_body: serde_json::Value = response.json().await?;
+            let error_msg = response_body
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("");
+            assert!(
+                error_msg.contains(expected_error),
+                "case '{}': expected an error containing '{}', got: {}",
+                name,
+                expected_error,
+                error_msg
+            );
+
+            let expected_hits = if expects_forge_fetch { 1 } else { 0 };
+            assert_eq!(
+                update_mock.calls() - hits_before,
+                expected_hits,
+                "case '{}': expected {} forge fetch(es)",
+                name,
+                expected_hits
+            );
+        }
+
+        // Rejected updates must not create a pending signers directory.
+        let project_paths =
+            rest_api::file_auth::github::get_project_normalised_paths(&git_repo_path, &project_id)
+                .await?;
+        assert!(
+            !project_paths
+                .absolute_path()
+                .join(constants::PENDING_SIGNERS_DIR)
+                .exists(),
+            "a rejected update must not create a pending signers directory"
+        );
+
+        update_mock.assert_calls(4);
+        server_handle.abort();
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadPublicKeyTrait;

@@ -3,7 +3,7 @@
 - **Auth**: required
 - **Source**: [`src/handlers.rs`](../../src/handlers.rs) — `register_repo_handler`
 
-Register a new project with the signing server. The server fetches the signers file from the forge URL, verifies the client signatures over the signers file and the metadata, stores the client-provided bytes, and commits the result to the backing Git repository.
+Register a new project with the Asfaload backend. The server fetches the signers file from the forge URL, verifies the client signatures over the signers file and the metadata, stores the client-provided bytes, and commits the result to the backing Git repository.
 
 A project can only be registered once. Calling this endpoint again for an already-registered project returns an error.
 

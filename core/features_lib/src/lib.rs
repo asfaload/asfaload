@@ -755,7 +755,7 @@ mod tests_signers_add_signature {
         signers_file::initialize_signers_file(
             dir_path,
             &json_content,
-            test_metadata(),
+            &common::to_posix_json(&test_metadata())?,
             test_keys.pub_key(0).unwrap(),
         )?;
 
@@ -789,7 +789,7 @@ mod tests_signers_add_signature {
         signers_file::initialize_signers_file(
             dir_path,
             &json_content,
-            test_metadata(),
+            &common::to_posix_json(&test_metadata())?,
             test_keys.pub_key(0).unwrap(),
         )?;
 

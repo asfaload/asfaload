@@ -1184,7 +1184,9 @@ async fn validate_client_provided_data(
     })?;
     verify_client_signature(pub_key, &request.metadata_signature, &client_metadata_json)?;
 
-    let metadata_info = MetadataInfo::from_string(&client_metadata_json)?;
+    let metadata_info = MetadataInfo::from_string(&client_metadata_json).map_err(|e| {
+        ApiError::InvalidRequestBody(format!("Could not deserialise metadata: {}", e))
+    })?;
 
     // Reject if the client provided timestamp is too far in the past
     let retrieved_at = metadata_info.metadata().retrieved_at();

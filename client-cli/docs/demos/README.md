@@ -111,7 +111,9 @@ These run silently in the driver to bridge demos:
 |---------|---------|
 | `ASFALOAD_DEMO_FILESERVER_URL` | Local file-server origin, e.g. `http://localhost:42977`. |
 | `ASFALOAD_DEMO_SIGNERS_URL` | URL of the initial signers file. |
+| `ASFALOAD_DEMO_SIGNERS_DIGEST` | Digest of the initial signers file, computed with `get-digest` before the tape runs (the tape passes it with `--digest`). |
 | `ASFALOAD_DEMO_NEW_SIGNERS_URL` | URL of the v2 signers file (pre-staged before `update-signers-file.tape`). |
+| `ASFALOAD_DEMO_NEW_SIGNERS_DIGEST` | Digest of the v2 signers file, computed with `get-digest` before the tape runs (the tape passes it with `--digest`). |
 | `ASFALOAD_DEMO_CSUM_URL` | URL of `SHA256SUMS` for the v1.0 release. |
 | `ASFALOAD_DEMO_ARTIFACT_URL` | URL of the v1.0 artifact for `download`. |
 | `ASFALOAD_DEMO_PENDING_SIGNERS_PATH` | Backend-relative path of the pending signers file (`http/localhost/<port>/...`). |

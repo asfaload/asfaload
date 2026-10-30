@@ -1,9 +1,11 @@
 # `asfaload-cli update-signers`
 
-- **Usage**: `asfaload-cli update-signers [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
+- **Usage**: `asfaload-cli update-signers [OPTIONS] -K <SECRET_KEY> (--digest <VALUE> | --local-copy <PATH>) <SIGNERS_FILE_URL>`
 - **Source**: [`src/commands/update_signers.rs`](../../src/commands/update_signers.rs)
 
 Propose an update to an existing project's signers file. The CLI signs the new signers file and the metadata with your secret key, and the backend records both signatures.
+
+Update-signers computes the digest of the file served at `<SIGNERS_FILE_URL>` and aborts with an error before contacting the backend if it does not match the expected digest.
 
 If your signature completes the required signers, the update is active at once. Otherwise the backend starts a signature collection round — signers from the **current** configuration must approve the change before it takes effect.
 
@@ -16,6 +18,16 @@ Public URL to the **new** signers file on the forge. For example:
     https://raw.githubusercontent.com/owner/repo/main/asfaload.signers/index.json
 
 ## Options
+
+Exactly one of `--digest` or `--local-copy` is required.
+
+### `--digest <VALUE>`
+
+Digest of the new signers file that must be found at the remote URL before update-signers contacts the backend. Format `sha512:<hex>`, exactly as printed by `get-digest`.
+
+### `--local-copy <PATH>`
+
+Path to a local copy of the new signers file. Its digest is computed with sha512 and used as the expected value.
 
 ### `-K --secret-key <PATH>`
 
@@ -69,11 +81,17 @@ JSON (with `--json`):
 
 ## Examples
 
-    # propose a signers update
+    # propose a signers update; get the digest with get-digest
     asfaload-cli update-signers -K ~/.asfaload/key \
+        --digest sha512:2e2fde4e... \
+        https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
+
+    # with a local copy of the new signers file
+    asfaload-cli update-signers -K ~/.asfaload/key \
+        --local-copy ~/Downloads/index_v2.json \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
 ## Exit codes
 
 - `0` — update proposed.
-- non-zero — error (authentication failure, invalid signers file, network error).
+- non-zero — error (authentication failure, digest mismatch, invalid signers file, network error).

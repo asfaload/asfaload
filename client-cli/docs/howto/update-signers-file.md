@@ -33,11 +33,31 @@ We advise to commit the file either in your main branch, or in a dedicated branc
 
 ### 2. Propose the update
 
+Get the digest of the published file with `get-digest`, then pass it with `--digest`:
+
+```sh
+asfaload-cli get-digest --json \
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index_v2.json \
+    | jq -r .digest
+
+asfaload-cli update-signers \
+    --secret-key ~/.asfaload/mykey \
+    --digest sha512:2e2fde4e... \
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index_v2.json
+```
+
+Use the raw URL of the file, not the page URL you see in the browser (`https://github.com/acme/tool/blob/main/...`). The page is an HTML document. `get-digest` computes the digest of that HTML page, not of the signers file, so the digest check fails.
+
+If you still have the new signers file locally and its bytes are identical to the published file, pass `--local-copy` instead of `--digest`:
+
 ```sh
 asfaload-cli update-signers \
     --secret-key ~/.asfaload/mykey \
-    https://github.com/acme/tool/blob/main/asfaload.signers/index.json
+    --local-copy ./signers_v2.json \
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index_v2.json
 ```
+
+One of `--digest` or `--local-copy` is required. Update-signers fetches the file at the URL you give it and stops with an error before it contacts the backend if the digest does not match.
 
 On success:
 
@@ -45,7 +65,7 @@ On success:
 Signers update proposed successfully!
 Project ID: abc123
 Required signers (4): alice, bob, carol, dave
-Next step: signers must submit signatures to activate the update.
+Success: Signers update proposed successfully. Collect signatures to activate.
 ```
 
 ![Demo: propose a signers update](demos/update-signers-file.gif)

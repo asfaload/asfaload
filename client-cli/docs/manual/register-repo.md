@@ -1,6 +1,6 @@
 # `asfaload-cli register-repo`
 
-- **Usage**: `asfaload-cli register-repo [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
+- **Usage**: `asfaload-cli register-repo [OPTIONS] -K <SECRET_KEY> (--digest <VALUE> | --local-copy <PATH>) <SIGNERS_FILE_URL>`
 - **Source**: [`src/commands/register_repo.rs`](../../src/commands/register_repo.rs)
 
 Register a new repository with the backend. Points the backend at your signers file so it knows which keys are authorized to sign artifacts for this project.
@@ -16,6 +16,18 @@ Public URL to the signers file on the forge. For example:
     https://raw.githubusercontent.com/owner/repo/main/asfaload.signers/index.json
 
 ## Options
+
+Exactly one of `--digest` or `--local-copy` is required.
+
+Register-repo computes the digest of the file served at `<SIGNERS_FILE_URL>` and aborts with an error before contacting the backend if it does not match the expected digest.
+
+### `--digest <VALUE>`
+
+Digest of the signers file that must be found at the remote URL before register-repo contacts the backend. Format `sha512:<hex>`, exactly as printed by `get-digest`.
+
+### `--local-copy <PATH>`
+
+Path to a local copy of the signers file. Its digest is computed with sha512 and used as the expected value.
 
 ### `-K --secret-key <PATH>`
 
@@ -69,16 +81,18 @@ JSON (with `--json`):
 
 ## Examples
 
-    # register a GitHub-hosted signers file
+    # register a GitHub-hosted signers file; get the digest with get-digest
     asfaload-cli register-repo -K ~/.asfaload/key \
+        --digest sha512:2e2fde4e... \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
-    # with explicit backend
+    # with a local copy of the signers file, and an explicit backend
     asfaload-cli register-repo -K ~/.asfaload/key \
+        --local-copy ~/Downloads/index.json \
         -u https://asfaload.example.com \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
 ## Exit codes
 
 - `0` — repository registered.
-- non-zero — error (authentication failure, invalid signers file URL, network error).
+- non-zero — error (authentication failure, digest mismatch, invalid signers file URL, network error).

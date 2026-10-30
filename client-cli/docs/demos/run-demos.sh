@@ -214,12 +214,15 @@ mkdir -p "$TAPES_DIR/out"
 CLI="$REPO_ROOT/target/debug/asfaload-cli"
 PASSWORD_FILE="$FIXTURE/home/.asfaload/.demo-password"
 
-# Digests of the pending files the tapes sign. They depend on backend state
-# created by earlier tapes, so they are filled in hidden_step_before, right
-# before the tape that needs them is rendered.
+# Digests of the files the tapes register or sign. The pending-file digests
+# depend on backend state created by earlier tapes, so they are filled in
+# hidden_step_before, right before the tape that needs them is rendered. The
+# signers digest is computed from the file server before register-repo.tape.
+SIGNERS_DIGEST=""
 PENDING_SIGNERS_DIGEST=""
 RELEASE_INDEX_DIGEST=""
 PENDING_REVOCATION_DIGEST=""
+NEW_SIGNERS_DIGEST=""
 
 # Extract the digest of a signer's single pending file from list-pending JSON.
 pending_digest() {
@@ -252,6 +255,12 @@ render_tape() {
 hidden_step_before() {
     local tape="$1"
     case "$tape" in
+        register-repo.tape)
+            # register-repo requires the digest of the signers file it
+            # registers; the file was published by create-signers-file.tape.
+            SIGNERS_DIGEST="$("$CLI" get-digest --json "$SIGNERS_URL" \
+                | grep -oP '"digest":"\Ksha512:[0-9a-f]{128}' | head -n1)"
+            ;;
         activate-signers-file.tape)
             PENDING_SIGNERS_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_0")"
             ;;
@@ -276,6 +285,10 @@ hidden_step_before() {
                 --revocation-threshold 2 \
                 --output-file "$FIXTURE/fileserver/$DEMO_PROJECT/asfaload.signers/index_v2.json" \
                 >/dev/null
+            # update-signers requires the digest of the new signers file at
+            # its URL; the file was staged just above.
+            NEW_SIGNERS_DIGEST="$("$CLI" get-digest --json "$NEW_SIGNERS_URL" \
+                | grep -oP '"digest":"\Ksha512:[0-9a-f]{128}' | head -n1)"
             ;;
         *) ;;
     esac
@@ -320,7 +333,9 @@ for tape in "${TAPES[@]}"; do
         ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE" \
         ASFALOAD_DEMO_FILESERVER_URL="$FILE_SERVER_URL" \
         ASFALOAD_DEMO_SIGNERS_URL="$SIGNERS_URL" \
+        ASFALOAD_DEMO_SIGNERS_DIGEST="$SIGNERS_DIGEST" \
         ASFALOAD_DEMO_NEW_SIGNERS_URL="$NEW_SIGNERS_URL" \
+        ASFALOAD_DEMO_NEW_SIGNERS_DIGEST="$NEW_SIGNERS_DIGEST" \
         ASFALOAD_DEMO_PENDING_SIGNERS_PATH="$PENDING_SIGNERS_PATH" \
         ASFALOAD_DEMO_PENDING_SIGNERS_DIGEST="$PENDING_SIGNERS_DIGEST" \
         ASFALOAD_DEMO_RELEASE_INDEX_PATH="$RELEASE_INDEX_PATH" \

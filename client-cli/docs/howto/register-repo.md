@@ -10,21 +10,42 @@ Registering a repository tells the backend where your signers file lives. Once r
 
 ## Steps
 
-### 1. Get the signers file URL
+### 1. Get the signers file URL and its digest
 
-You need the public URL that points to your signers file on the forge. For GitHub, you can simply copy the URL from your browser when displaying the file of your repo.
-This will give you an URL of this form:
+You need the public URL that points to your signers file on the forge. For GitHub, use the raw URL of the file:
 
 ```
-https://github.com/acme/tool/blob/main/asfaload.signers/index.json
+https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
+```
+
+Do not use the page URL you see in the browser (`https://github.com/acme/tool/blob/main/...`). That page is an HTML document. `get-digest` computes the digest of that HTML page, not of the signers file, so the digest check fails.
+
+`register-repo` requires the digest of the signers file. It fetches the file at the URL you give it and stops with an error before it contacts the backend if the digest does not match. Get the digest with [`get-digest`](../manual/get-digest.md):
+
+```sh
+asfaload-cli get-digest --json \
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json \
+    | jq -r .digest
 ```
 
 ### 2. Register the repository
 
+Pass the digest with `--digest`. One of `--digest` or `--local-copy` is required; the two flags are mutually exclusive.
+
 ```sh
 asfaload-cli register-repo \
     --secret-key ~/.asfaload/mykey \
-    https://github.com/acme/tool/blob/main/asfaload.signers/index.json
+    --digest sha512:2e2fde4e... \
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
+```
+
+If you still have the signers file locally and its bytes are identical to the published file, you can pass `--local-copy` instead. `register-repo` computes the digest of the local copy for you:
+
+```sh
+asfaload-cli register-repo \
+    --secret-key ~/.asfaload/mykey \
+    --local-copy ./asfaload.signers/index.json \
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 ```
 
 On success, when the submitter's signature completes the required signers:
@@ -56,8 +77,9 @@ If your backend is not Asfaload's:
 ```sh
 asfaload-cli register-repo \
     --secret-key ~/.asfaload/mykey \
+    --digest sha512:2e2fde4e... \
     -u https://my-asfaload-deployment.example.com \
-    https://github.com/acme/tool/blob/main/asfaload.signers/index.json
+    https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 ```
 
 ## What happens next

@@ -417,12 +417,14 @@ assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01"
 section "Updating Signers File"
 ################################################################################
 
-# update-signers needs the digest of the signers file served at the URL.
-# Compute it from the URL itself with get-digest.
-UPDATE_DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file 2)" | jq -r .digest)
-run_step_json "Update signers file with key0" \
+# update-signers needs the expected digest of the signers file served at the
+# URL. Give it with --local-copy: the file server serves this file, so its
+# digest is the expected value. register-repo above uses --digest, so both
+# flags are covered in this flow.
+UPDATE_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
+run_step_json "Update signers file with key0 (--local-copy)" \
     '.success == true' \
-    cargo run --quiet -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file 2)
+    cargo run --quiet -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password --local-copy "$UPDATE_LOCAL_COPY" $(signers_file 2)
 
 # --- Backend: verify pending signers updated with the submitter's signature ---
 assert_pending_signers_exist

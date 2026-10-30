@@ -3,7 +3,7 @@ use std::io;
 
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
-use common::{base64_for_string, sha512_for_content, to_posix_json};
+use common::{AsfaloadHashes, base64_for_string, sha512_for_content, to_posix_json};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures, Forge, SignersConfigMetadata,
@@ -95,6 +95,7 @@ async fn build_register_assets_payload(
 }
 async fn get_metadata_and_signature_for(
     signers_file_url: &str,
+    expected_digest: &AsfaloadHashes,
     secret_key: &AsfaloadSecretKeys,
 ) -> Result<(String, String, String), AdminLibError> {
     let parsed_url = Url::parse(signers_file_url).map_err(|e| {
@@ -112,10 +113,17 @@ async fn get_metadata_and_signature_for(
         )))
     })?;
 
+    // content() returns the copy cached by new(), so the bytes compared
+    // below are the bytes that are signed.
     let signers_file = verified_content.content().await.map_err(|e| {
         AdminLibError::IOError(io::Error::other(format!("Could not fetch content: {}", e)))
     })?;
     let signers_digest = sha512_for_content(signers_file.as_bytes())?;
+    if signers_digest != *expected_digest {
+        return Err(AdminLibError::InvalidInput(format!(
+            "Digest mismatch: expected {expected_digest}, got {signers_digest} for {signers_file_url}"
+        )));
+    }
     let signers_signature = secret_key.sign(&signers_digest)?.to_base64();
 
     let forge = match info {
@@ -362,16 +370,19 @@ impl Client {
     /// Makes an authenticated POST request to `/v1/register_repo`.
     /// Serializes the payload once and uses the same string for both
     /// auth headers and the request body (avoids signature mismatch).
+    /// Fails without contact with the backend if the digest of the signers
+    /// file is not `expected_digest`.
     pub async fn register_repo(
         &self,
         signers_file_url: &str,
+        expected_digest: &AsfaloadHashes,
         public_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<RegisterRepoResponse> {
         let url = format!("{}/v1/register_repo", self.base_url);
 
         let (signers_signature, metadata, metadata_signature) =
-            get_metadata_and_signature_for(signers_file_url, secret_key).await?;
+            get_metadata_and_signature_for(signers_file_url, expected_digest, secret_key).await?;
         let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),
@@ -400,16 +411,19 @@ impl Client {
     /// Propose a signers file update to the backend.
     ///
     /// Makes an authenticated POST request to `/v1/update_signers`.
+    /// Fails without contact with the backend if the digest of the signers
+    /// file is not `expected_digest`.
     pub async fn update_signers(
         &self,
         signers_file_url: &str,
+        expected_digest: &AsfaloadHashes,
         public_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<UpdateRepoSignersResponse> {
         let url = format!("{}/v1/update_signers", self.base_url);
 
         let (signers_signature, metadata, metadata_signature) =
-            get_metadata_and_signature_for(signers_file_url, secret_key).await?;
+            get_metadata_and_signature_for(signers_file_url, expected_digest, secret_key).await?;
         let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
             public_key: public_key.to_base64(),

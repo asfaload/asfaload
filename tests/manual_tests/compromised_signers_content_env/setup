@@ -93,10 +93,15 @@ printf '%s✓%s\n' "$GREEN" "$RESET"
 
 # --- Register the genuine signers file (creates the pending signers file) ---
 
+SIGNERS_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
+# register-repo needs the digest of the signers file served at the URL.
+DIGEST=$("$CLI" get-digest --json "$SIGNERS_URL" | jq -r .digest)
+
 "$CLI" register-repo \
     --secret-key "$KEY_0" \
     -u "$BACKEND_URL" \
-    "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME" \
+    --digest "$DIGEST" \
+    "$SIGNERS_URL" \
     --json > /dev/null
 
 # --- Tamper: replace the backend's pending signers file content ---

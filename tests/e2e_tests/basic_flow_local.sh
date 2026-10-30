@@ -209,9 +209,21 @@ section "Initial Setup and Repo Registration"
 ################################################################################
 
 echo "$(signers_file 1)"
+# register-repo needs the digest of the signers file served at the URL.
+# Compute it from the URL itself with get-digest.
+DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file 1)" | jq -r .digest)
+
+# The digest of another signers file does not match the file served at the
+# URL. register-repo must stop before it contacts the backend. The assertions
+# after the next step prove that no signature was recorded.
+OTHER_DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file 2)" | jq -r .digest)
+expect_fail_json "Register repo with the digest of another signers file" \
+    '.error | contains("Digest mismatch")' \
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password --digest "$OTHER_DIGEST" $(signers_file 1)
+
 run_step_json "Register repo with key0" \
     '.success == true' \
-    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password --digest "$DIGEST" $(signers_file 1)
 
 # --- Backend: the submitter's signature is recorded at registration ---
 assert_pending_signers_exist
@@ -414,9 +426,23 @@ assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01"
 section "Updating Signers File"
 ################################################################################
 
-run_step_json "Update signers file with key0" \
+# update-signers needs the expected digest of the signers file served at the
+# URL. Give it with --local-copy: the file server serves this file, so its
+# digest is the expected value. register-repo above uses --digest, so both
+# flags are covered in this flow.
+UPDATE_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
+
+# A local copy of another signers file does not match the file served at the
+# URL. update-signers must stop before it contacts the backend. The assertions
+# after the next step prove that no signature was recorded.
+OTHER_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNERS_SUFFIX}.json"
+expect_fail_json "Update signers file with a local copy of another signers file" \
+    '.error | contains("Digest mismatch")' \
+    cargo run --quiet -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password --local-copy "$OTHER_LOCAL_COPY" $(signers_file 2)
+
+run_step_json "Update signers file with key0 (--local-copy)" \
     '.success == true' \
-    cargo run --quiet -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $(signers_file 2)
+    cargo run --quiet -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password --local-copy "$UPDATE_LOCAL_COPY" $(signers_file 2)
 
 # --- Backend: verify pending signers updated with the submitter's signature ---
 assert_pending_signers_exist

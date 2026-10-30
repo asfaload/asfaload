@@ -19,6 +19,16 @@ signers_file() {
     echo "https://github.com/${E2E_REPO}/blob/master/${TEST_NAME}/signers_file_${n}${_SIGNERS_SUFFIX}.json"
 }
 
+# Raw URL of a signers file, as served by raw.githubusercontent.com.
+# A github.com blob URL returns an HTML page with per-request tokens, so two
+# fetches of the same blob URL never return the same bytes: no stable digest
+# can be computed from it. forge-url maps raw and blob URLs of the same repo
+# to the same backend path, so both forms register identically.
+signers_file_raw() {
+    local n="$1"
+    echo "https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_${n}${_SIGNERS_SUFFIX}.json"
+}
+
 pending_signers_file() {
     echo "https/github.com/443/${E2E_REPO}/asfaload.signers.pending/index.json"
 }

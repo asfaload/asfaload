@@ -674,9 +674,11 @@ mod tests {
         let _forge_mock = serve_signers(&mut forge, &signers_content).await;
 
         let signers_url = format!("{}/owner/repo/main/signers.json", forge.url());
+        let expected_digest = common::sha512_for_content(signers_content.as_bytes())
+            .expect("Failed to compute signers digest");
         let client = admin_lib::v1::Client::new(backend_url);
         let response = client
-            .register_repo(&signers_url, &public_key, &secret_key)
+            .register_repo(&signers_url, &expected_digest, &public_key, &secret_key)
             .await
             .expect("admin client register_repo should succeed");
 
@@ -729,9 +731,11 @@ mod tests {
         let initial_mock = serve_signers(&mut forge, &initial_content).await;
 
         let signers_url = format!("{}/owner/repo/main/signers.json", forge.url());
+        let initial_digest = common::sha512_for_content(initial_content.as_bytes())
+            .expect("Failed to compute initial signers digest");
         let client = admin_lib::v1::Client::new(backend_url.clone());
         let registration = client
-            .register_repo(&signers_url, &public_key, &secret_key)
+            .register_repo(&signers_url, &initial_digest, &public_key, &secret_key)
             .await
             .expect("admin client register_repo should succeed");
         assert!(registration.success);
@@ -752,8 +756,10 @@ mod tests {
             .expect("Failed to serialize updated signers config");
         let _updated_mock = serve_signers(&mut forge, &updated_content).await;
 
+        let updated_digest = common::sha512_for_content(updated_content.as_bytes())
+            .expect("Failed to compute updated signers digest");
         let response = client
-            .update_signers(&signers_url, &public_key, &secret_key)
+            .update_signers(&signers_url, &updated_digest, &public_key, &secret_key)
             .await
             .expect("admin client update_signers should succeed");
 

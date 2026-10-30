@@ -100,10 +100,17 @@ BACKEND_PROJECT_DIR="$BACKEND_REPO/https/github.com/443/${E2E_REPO}"
 
 printf '%sActivating signers file (from GitHub)...%s ' "$DIM" "$RESET"
 
+# register-repo needs the digest of the signers file published at the URL,
+# and computes it itself from the URL it is given. A github.com blob URL
+# serves an HTML page whose bytes differ between fetches, so we use the
+# byte-stable raw URL both to compute the digest and to register.
+DIGEST=$("$CLI" get-digest --json "$(signers_file_raw 1)" | jq -r .digest)
+
 "$CLI" register-repo \
     --secret-key "$KEY_0" \
     -u "$BACKEND_URL" \
-    "$(signers_file 1)" \
+    --digest "$DIGEST" \
+    "$(signers_file_raw 1)" \
     --json > /dev/null
 
 # All three signers must sign the initial signers file to activate it. The

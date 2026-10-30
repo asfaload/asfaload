@@ -98,9 +98,14 @@ cd "$base_dir/client-cli/"
 section "Initial Setup and Repo Registration"
 ################################################################################
 
+# register-repo needs the digest of the signers file published at the URL,
+# and computes it itself from the URL it is given. A github.com blob URL
+# serves an HTML page whose bytes differ between fetches, so we use the
+# byte-stable raw URL both to compute the digest and to register.
+DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file_raw 1)" | jq -r .digest)
 run_step_json "Register repo with key0" \
     '.success == true' \
-    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password --digest "$DIGEST" $(signers_file_raw 1)
 
 # --- Backend: the submitter's signature is recorded at registration ---
 assert_pending_signers_exist
@@ -164,12 +169,16 @@ assert_signers_history_entries 0
 section "Signers Update by Master Key"
 ################################################################################
 
+# update-signers needs the digest of the new signers file published at the
+# URL, like register-repo. Use the byte-stable raw URL (see above).
+UPDATE_DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file_raw "update_with_new_masters")" | jq -r .digest)
+
 expect_fail "Update signers with key5 (not authorized, not in current admin/master)" \
-    cargo run -- update-signers --secret-key "$KEY_5" -u "$backend" -p $key_password $(signers_file "update_with_new_masters")
+    cargo run -- update-signers --secret-key "$KEY_5" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file_raw "update_with_new_masters")
 
 run_step_json "Update signers with key3 (master key)" \
     '.success == true' \
-    cargo run -- update-signers --secret-key "$KEY_3" -u "$backend" -p $key_password $(signers_file "update_with_new_masters")
+    cargo run -- update-signers --secret-key "$KEY_3" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file_raw "update_with_new_masters")
 
 # --- Backend: verify pending signers updated with the submitter's signature ---
 assert_pending_signers_exist

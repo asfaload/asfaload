@@ -3,12 +3,13 @@ use std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 use std::process::Command;
+use std::str::FromStr;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
 use bishop::BishopArt;
 use colored::Colorize;
-use common::AsfaloadHashes;
+use common::{AsfaloadHashes, sha512_for_file};
 use features_lib::HashAlgorithm;
 
 /// Ensures a directory exists, creating it if necessary
@@ -298,6 +299,39 @@ fn bishop_art_inner(hash: &AsfaloadHashes, render_kind: BishopRender) -> String 
     out
 }
 
+/// Resolve the expected digest of the signers file from the command flags.
+///
+/// The user gives either the digest value itself (`--digest`, format
+/// `sha512:<hex>` as printed by get-digest) or the path of a local copy
+/// of the signers file whose digest becomes the expected value.
+/// clap enforces that the two flags are mutually exclusive, but we also
+/// reject the impossible pair here.
+pub fn expected_digest(
+    digest: Option<String>,
+    local_copy: Option<String>,
+) -> Result<AsfaloadHashes> {
+    match (digest, local_copy) {
+        (Some(value), None) => AsfaloadHashes::from_str(value.trim())
+            .map_err(|e| ClientCliError::InvalidInput(format!("Invalid --digest value: {e}"))),
+        (None, Some(path)) => sha512_for_file(&path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => ClientCliError::InvalidInput(format!(
+                "Invalid --local-copy: File not found at {path}"
+            )),
+            // sha512_for_file returns InvalidData only for an empty file.
+            std::io::ErrorKind::InvalidData => ClientCliError::InvalidInput(format!(
+                "Invalid --local-copy: File is empty at {path}"
+            )),
+            _ => ClientCliError::from(e),
+        }),
+        // clap enforces the conflict; handle the impossible pair anyway.
+        (Some(_), Some(_)) => Err(ClientCliError::InvalidInput(
+            "--digest and --local-copy are mutually exclusive".to_string(),
+        )),
+        (None, None) => Err(ClientCliError::InvalidInput(
+            "One of --digest or --local-copy is required".to_string(),
+        )),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +422,119 @@ mod tests {
             plain,
             strip_ansi(&colored),
             "plain art must be the colored art without ANSI codes"
+        );
+    }
+
+    // test expected_digest
+    // --------------------
+    const SIGNERS_CONTENT: &[u8] = b"{\"version\": 1}";
+
+    fn signers_hash() -> AsfaloadHashes {
+        common::sha512_for_content(SIGNERS_CONTENT).unwrap()
+    }
+
+    fn assert_invalid_input(result: Result<AsfaloadHashes>, expected_start: &str, case: &str) {
+        match result {
+            Err(ClientCliError::InvalidInput(msg)) => assert!(
+                msg.starts_with(expected_start),
+                "case {case}: unexpected message {msg:?}"
+            ),
+            other => panic!("case {case}: expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn expected_digest_accepts_valid_digest_values() {
+        let hex = signers_hash().to_hex();
+        let cases = vec![
+            ("canonical", format!("sha512:{hex}")),
+            ("uppercase hex", format!("sha512:{}", hex.to_uppercase())),
+            ("uppercase algorithm", format!("SHA512:{hex}")),
+            ("surrounding whitespace", format!("  sha512:{hex}\n")),
+        ];
+        for (case, value) in cases {
+            let result = expected_digest(Some(value), None);
+            assert_eq!(result.ok(), Some(signers_hash()), "case {case}");
+        }
+    }
+
+    #[test]
+    fn expected_digest_rejects_invalid_digest_values() {
+        let hex = signers_hash().to_hex();
+        let cases = vec![
+            ("bare hex", hex.clone()),
+            ("sha256 algorithm", format!("sha256:{hex}")),
+            ("hex too short", format!("sha512:{}", &hex[..hex.len() - 2])),
+            ("hex too long", format!("sha512:{hex}00")),
+            (
+                "odd hex length",
+                format!("sha512:{}", &hex[..hex.len() - 1]),
+            ),
+            (
+                "non hex character",
+                format!("sha512:{}zz", &hex[..hex.len() - 2]),
+            ),
+            ("whitespace in value", format!("sha512: {hex}")),
+            ("empty", String::new()),
+        ];
+        for (case, value) in cases {
+            let result = expected_digest(Some(value), None);
+            assert_invalid_input(result, "Invalid --digest value", case);
+        }
+    }
+
+    #[test]
+    fn expected_digest_uses_digest_of_local_copy() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("signers.json");
+        std::fs::write(&path, SIGNERS_CONTENT).unwrap();
+
+        let result = expected_digest(None, Some(path.to_string_lossy().into_owned()));
+
+        assert_eq!(result.ok(), Some(signers_hash()));
+    }
+
+    #[test]
+    fn expected_digest_rejects_missing_local_copy() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("missing.json");
+
+        let result = expected_digest(None, Some(path.to_string_lossy().into_owned()));
+
+        assert_invalid_input(
+            result,
+            "Invalid --local-copy: File not found at",
+            "missing file",
+        );
+    }
+
+    #[test]
+    fn expected_digest_rejects_empty_local_copy() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("empty.json");
+        std::fs::write(&path, b"").unwrap();
+
+        let result = expected_digest(None, Some(path.to_string_lossy().into_owned()));
+
+        assert_invalid_input(
+            result,
+            "Invalid --local-copy: File is empty at",
+            "empty file",
+        );
+    }
+
+    #[test]
+    fn expected_digest_requires_exactly_one_flag() {
+        let value = format!("sha512:{}", signers_hash().to_hex());
+        assert_invalid_input(
+            expected_digest(Some(value), Some("signers.json".to_string())),
+            "--digest and --local-copy are mutually exclusive",
+            "both flags",
+        );
+        assert_invalid_input(
+            expected_digest(None, None),
+            "One of --digest or --local-copy is required",
+            "no flag",
         );
     }
 }

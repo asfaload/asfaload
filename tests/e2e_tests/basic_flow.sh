@@ -103,10 +103,15 @@ cd "$base_dir/client-cli/"
 section "Initial Setup and Repo Registration"
 ################################################################################
 
-echo "$(signers_file 1)"
+echo "$(signers_file_raw 1)"
+# register-repo needs the digest of the signers file published at the URL,
+# and computes it itself from the URL it is given. A github.com blob URL
+# serves an HTML page whose bytes differ between fetches, so we use the
+# byte-stable raw URL both to compute the digest and to register.
+DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file_raw 1)" | jq -r .digest)
 run_step_json "Register repo with key1" \
     '.success == true' \
-    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password --digest "$DIGEST" $(signers_file_raw 1)
 
 # --- Backend: the submitter's signature is recorded at registration ---
 assert_pending_signers_exist
@@ -311,9 +316,12 @@ assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01"
 section "Updating Signers File"
 ################################################################################
 
+# update-signers needs the digest of the new signers file published at the
+# URL, like register-repo. Use the byte-stable raw URL (see above).
+UPDATE_DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file_raw 2)" | jq -r .digest)
 run_step_json "Update signers file with key0" \
     '.success == true' \
-    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $(signers_file 2)
+    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file_raw 2)
 
 # --- Backend: verify pending signers updated with the submitter's signature ---
 assert_pending_signers_exist

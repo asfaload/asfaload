@@ -211,10 +211,14 @@ SIGNERS_FILE_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/${HIDDEN_SIGNERS_DIR}/${
 
 cd "$base_dir/client-cli/"
 
+# register-repo needs the digest of the signers file served at the URL.
+# Compute it from the URL itself with get-digest.
+DIGEST=$(cargo run --quiet -- get-digest --json "$SIGNERS_FILE_URL" | jq -r .digest)
 run_step_json "Register repo with SSH key 1 (submitter)" \
     '.success == true' \
     cargo run --quiet -- register-repo \
         --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
+        --digest "$DIGEST" \
         "$SIGNERS_FILE_URL"
 
 # Backend: the submitter's SSH signature is recorded at registration

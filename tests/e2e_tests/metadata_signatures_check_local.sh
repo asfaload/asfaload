@@ -180,9 +180,12 @@ cd "$base_dir/client-cli/"
 section "Initial Setup and Repo Registration"
 ################################################################################
 
+# register-repo needs the digest of the signers file served at the URL.
+# Compute it from the URL itself with get-digest.
+DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file 1)" | jq -r .digest)
 run_step_json "Register repo with key0" \
     '.success == true' \
-    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password --digest "$DIGEST" $(signers_file 1)
 
 assert_pending_signers_exist
 assert_pending_metadata_exist
@@ -226,9 +229,12 @@ assert_release_index_active "0.1"
 section "Update Signers File (creates history entry)"
 ################################################################################
 
+# update-signers needs the digest of the signers file served at the URL.
+# Compute it from the URL itself with get-digest.
+UPDATE_DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file 2)" | jq -r .digest)
 run_step_json "Update signers file with key0" \
     '.success == true' \
-    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $(signers_file 2)
+    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file 2)
 
 assert_pending_signers_exist
 assert_pending_metadata_exist

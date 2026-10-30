@@ -21,8 +21,8 @@ fn test_register_repo_help_shows_usage() {
 #[test]
 fn test_register_repo_requires_digest_or_local_copy() {
     // -K is a required clap arg (SecretKeyArgs.secret_key is a bare PathBuf),
-    // so pass a fixture key to reach the digest validation.
-    // expected_digest runs before get_password, so no password is needed.
+    // so pass a fixture key. Then only the missing digest flags cause the
+    // clap usage error.
     let key = test_helpers::fixtures_sec_key(0);
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-repo")
@@ -30,8 +30,12 @@ fn test_register_repo_requires_digest_or_local_copy() {
         .arg("-K")
         .arg(&key);
     cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("--digest"));
+        .code(2)
+        .stderr(predicate::str::contains(
+            "required arguments were not provided",
+        ))
+        .stderr(predicate::str::contains("--digest"))
+        .stderr(predicate::str::contains("--local-copy"));
 }
 
 #[test]
@@ -118,11 +122,11 @@ fn expected_sha512(content: &[u8]) -> String {
 fn test_register_repo_digest_mismatch_aborts() {
     let mut server = mockito::Server::new();
     let _m = server
-        .mock("GET", "/signers.json")
+        .mock("GET", "/owner/repo/main/signers.json")
         .with_status(200)
         .with_body(SIGNERS_CONTENT)
         .create();
-    let url = format!("{}/signers.json", server.url());
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
 
     // A separate backend stub proves the backend saw zero requests even if
     // the pre-flight ordering regresses.
@@ -156,10 +160,10 @@ fn test_register_repo_digest_mismatch_aborts() {
 fn test_register_repo_remote_fetch_failure_does_not_register() {
     let mut server = mockito::Server::new();
     let _m = server
-        .mock("GET", "/signers.json")
+        .mock("GET", "/owner/repo/main/signers.json")
         .with_status(404)
         .create();
-    let url = format!("{}/signers.json", server.url());
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
 
     // A separate backend stub proves the backend saw zero requests even if
     // the pre-flight ordering regresses.
@@ -192,19 +196,20 @@ fn test_register_repo_remote_fetch_failure_does_not_register() {
 fn test_register_repo_matching_digest_passes_pre_flight() {
     let mut server = mockito::Server::new();
     let signers_mock = server
-        .mock("GET", "/signers.json")
+        .mock("GET", "/owner/repo/main/signers.json")
         .with_status(200)
         .with_body(SIGNERS_CONTENT)
         .expect_at_least(1)
         .create();
-    let url = format!("{}/signers.json", server.url());
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
     let digest = expected_sha512(SIGNERS_CONTENT);
 
-    // The handler decrypts the key first, then fetches the signers file and
-    // checks its digest, and only then contacts the backend. The fetch happens
-    // only after decryption, so it proves the flow got past the password check
-    // and the digest matched. It is fetched again later when admin-lib signs
-    // the metadata, hence "at least one".
+    // The handler decrypts the key, fetches the signers file, checks its
+    // digest, then contacts the backend. The backend is unreachable, so
+    // failing on the connection to 127.0.0.1:1 proves the flow got past the
+    // digest check. The forge URL must have at least four path segments, or
+    // admin-lib rejects it before any request. The forge is fetched again
+    // when admin-lib signs the metadata, hence "at least one".
     let key = test_helpers::fixtures_sec_key(0);
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-repo")
@@ -219,6 +224,7 @@ fn test_register_repo_matching_digest_passes_pre_flight() {
         .arg("http://127.0.0.1:1");
     cmd.assert()
         .failure()
+        .stderr(predicate::str::contains("127.0.0.1:1"))
         .stderr(predicate::str::contains("Digest mismatch").not());
     signers_mock.assert();
 }
@@ -227,20 +233,22 @@ fn test_register_repo_matching_digest_passes_pre_flight() {
 fn test_register_repo_local_copy_matches_remote_passes_pre_flight() {
     let mut server = mockito::Server::new();
     let signers_mock = server
-        .mock("GET", "/signers.json")
+        .mock("GET", "/owner/repo/main/signers.json")
         .with_status(200)
         .with_body(SIGNERS_CONTENT)
         .expect_at_least(1)
         .create();
-    let url = format!("{}/signers.json", server.url());
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
 
     let dir = tempfile::TempDir::new().unwrap();
     let copy = dir.path().join("register_repo_local_copy_match.json");
     std::fs::write(&copy, SIGNERS_CONTENT).unwrap();
     let copy_path = copy.to_string_lossy().into_owned();
 
-    // The signers-file fetch happens only after the local copy was hashed and
-    // matched, so a fetch pins that the pre-flight check passed.
+    // The backend is unreachable, so failing on the connection to
+    // 127.0.0.1:1 proves the flow got past the digest check computed from
+    // the local copy. See test_register_repo_matching_digest_passes_pre_flight
+    // for why the forge URL needs four path segments.
     let key = test_helpers::fixtures_sec_key(0);
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-repo")
@@ -255,6 +263,7 @@ fn test_register_repo_local_copy_matches_remote_passes_pre_flight() {
         .arg("http://127.0.0.1:1");
     cmd.assert()
         .failure()
+        .stderr(predicate::str::contains("127.0.0.1:1"))
         .stderr(predicate::str::contains("Digest mismatch").not());
     signers_mock.assert();
 }
@@ -263,11 +272,11 @@ fn test_register_repo_local_copy_matches_remote_passes_pre_flight() {
 fn test_register_repo_local_copy_mismatch_aborts() {
     let mut server = mockito::Server::new();
     let _m = server
-        .mock("GET", "/signers.json")
+        .mock("GET", "/owner/repo/main/signers.json")
         .with_status(200)
         .with_body(SIGNERS_CONTENT)
         .create();
-    let url = format!("{}/signers.json", server.url());
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
 
     let mut backend = mockito::Server::new();
     let m = backend
@@ -308,12 +317,12 @@ fn test_register_repo_local_copy_mismatch_aborts() {
 fn test_register_repo_wrong_password_fails_before_fetch() {
     let mut server = mockito::Server::new();
     let m = server
-        .mock("GET", "/signers.json")
+        .mock("GET", "/owner/repo/main/signers.json")
         .with_status(200)
         .with_body(SIGNERS_CONTENT)
         .expect(0)
         .create();
-    let url = format!("{}/signers.json", server.url());
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
 
     let key = test_helpers::fixtures_sec_key(0);
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");

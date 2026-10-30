@@ -424,4 +424,117 @@ mod tests {
             "plain art must be the colored art without ANSI codes"
         );
     }
+
+    // test expected_digest
+    // --------------------
+    const SIGNERS_CONTENT: &[u8] = b"{\"version\": 1}";
+
+    fn signers_hash() -> AsfaloadHashes {
+        common::sha512_for_content(SIGNERS_CONTENT).unwrap()
+    }
+
+    fn assert_invalid_input(result: Result<AsfaloadHashes>, expected_start: &str, case: &str) {
+        match result {
+            Err(ClientCliError::InvalidInput(msg)) => assert!(
+                msg.starts_with(expected_start),
+                "case {case}: unexpected message {msg:?}"
+            ),
+            other => panic!("case {case}: expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn expected_digest_accepts_valid_digest_values() {
+        let hex = signers_hash().to_hex();
+        let cases = vec![
+            ("canonical", format!("sha512:{hex}")),
+            ("uppercase hex", format!("sha512:{}", hex.to_uppercase())),
+            ("uppercase algorithm", format!("SHA512:{hex}")),
+            ("surrounding whitespace", format!("  sha512:{hex}\n")),
+        ];
+        for (case, value) in cases {
+            let result = expected_digest(Some(value), None);
+            assert_eq!(result.ok(), Some(signers_hash()), "case {case}");
+        }
+    }
+
+    #[test]
+    fn expected_digest_rejects_invalid_digest_values() {
+        let hex = signers_hash().to_hex();
+        let cases = vec![
+            ("bare hex", hex.clone()),
+            ("sha256 algorithm", format!("sha256:{hex}")),
+            ("hex too short", format!("sha512:{}", &hex[..hex.len() - 2])),
+            ("hex too long", format!("sha512:{hex}00")),
+            (
+                "odd hex length",
+                format!("sha512:{}", &hex[..hex.len() - 1]),
+            ),
+            (
+                "non hex character",
+                format!("sha512:{}zz", &hex[..hex.len() - 2]),
+            ),
+            ("whitespace in value", format!("sha512: {hex}")),
+            ("empty", String::new()),
+        ];
+        for (case, value) in cases {
+            let result = expected_digest(Some(value), None);
+            assert_invalid_input(result, "Invalid --digest value", case);
+        }
+    }
+
+    #[test]
+    fn expected_digest_uses_digest_of_local_copy() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("signers.json");
+        std::fs::write(&path, SIGNERS_CONTENT).unwrap();
+
+        let result = expected_digest(None, Some(path.to_string_lossy().into_owned()));
+
+        assert_eq!(result.ok(), Some(signers_hash()));
+    }
+
+    #[test]
+    fn expected_digest_rejects_missing_local_copy() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("missing.json");
+
+        let result = expected_digest(None, Some(path.to_string_lossy().into_owned()));
+
+        assert_invalid_input(
+            result,
+            "Invalid --local-copy: File not found at",
+            "missing file",
+        );
+    }
+
+    #[test]
+    fn expected_digest_rejects_empty_local_copy() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("empty.json");
+        std::fs::write(&path, b"").unwrap();
+
+        let result = expected_digest(None, Some(path.to_string_lossy().into_owned()));
+
+        assert_invalid_input(
+            result,
+            "Invalid --local-copy: File is empty at",
+            "empty file",
+        );
+    }
+
+    #[test]
+    fn expected_digest_requires_exactly_one_flag() {
+        let value = format!("sha512:{}", signers_hash().to_hex());
+        assert_invalid_input(
+            expected_digest(Some(value), Some("signers.json".to_string())),
+            "--digest and --local-copy are mutually exclusive",
+            "both flags",
+        );
+        assert_invalid_input(
+            expected_digest(None, None),
+            "One of --digest or --local-copy is required",
+            "no flag",
+        );
+    }
 }

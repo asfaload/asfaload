@@ -1,3 +1,5 @@
+use common::AsfaloadHashes;
+
 use crate::error::Result;
 
 use super::prepare_signed_submission;
@@ -5,6 +7,7 @@ use super::prepare_signed_submission;
 pub async fn handle_update_signers_command(
     backend_url: &str,
     signers_file_url: &str,
+    expected_digest: &AsfaloadHashes,
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
@@ -13,7 +16,12 @@ pub async fn handle_update_signers_command(
 
     let response = sub
         .client
-        .update_signers(signers_file_url, &sub.public_key, &sub.secret_key)
+        .update_signers(
+            signers_file_url,
+            expected_digest,
+            &sub.public_key,
+            &sub.secret_key,
+        )
         .await?;
 
     if json {

@@ -3,12 +3,13 @@ use std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 use std::process::Command;
+use std::str::FromStr;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
 use bishop::BishopArt;
 use colored::Colorize;
-use common::AsfaloadHashes;
+use common::{AsfaloadHashes, sha512_for_file};
 use features_lib::HashAlgorithm;
 
 /// Ensures a directory exists, creating it if necessary
@@ -298,6 +299,39 @@ fn bishop_art_inner(hash: &AsfaloadHashes, render_kind: BishopRender) -> String 
     out
 }
 
+/// Resolve the expected digest of the signers file from the command flags.
+///
+/// The user gives either the digest value itself (`--digest`, format
+/// `sha512:<hex>` as printed by get-digest) or the path of a local copy
+/// of the signers file whose digest becomes the expected value.
+/// clap enforces that the two flags are mutually exclusive, but we also
+/// reject the impossible pair here.
+pub fn expected_digest(
+    digest: Option<String>,
+    local_copy: Option<String>,
+) -> Result<AsfaloadHashes> {
+    match (digest, local_copy) {
+        (Some(value), None) => AsfaloadHashes::from_str(value.trim())
+            .map_err(|e| ClientCliError::InvalidInput(format!("Invalid --digest value: {e}"))),
+        (None, Some(path)) => sha512_for_file(&path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => ClientCliError::InvalidInput(format!(
+                "Invalid --local-copy: File not found at {path}"
+            )),
+            // sha512_for_file returns InvalidData only for an empty file.
+            std::io::ErrorKind::InvalidData => ClientCliError::InvalidInput(format!(
+                "Invalid --local-copy: File is empty at {path}"
+            )),
+            _ => ClientCliError::from(e),
+        }),
+        // clap enforces the conflict; handle the impossible pair anyway.
+        (Some(_), Some(_)) => Err(ClientCliError::InvalidInput(
+            "--digest and --local-copy are mutually exclusive".to_string(),
+        )),
+        (None, None) => Err(ClientCliError::InvalidInput(
+            "One of --digest or --local-copy is required".to_string(),
+        )),
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

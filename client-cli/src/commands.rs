@@ -5,7 +5,7 @@ use crate::{
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
-        bishop_art, get_password,
+        bishop_art, expected_digest, get_password,
     },
 };
 
@@ -330,11 +330,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::RegisterRepo {
             signers_file_url,
+            digest,
+            local_copy,
             secret_key_args,
             password_args,
             backend_url_args,
             json_args,
         } => {
+            // First check valid digest was provided
+            let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -353,6 +357,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(register_repo::handle_register_repo_command(
                 &url,
                 signers_file_url,
+                &expected_digest,
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
@@ -394,11 +399,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::UpdateSigners {
             signers_file_url,
+            digest,
+            local_copy,
             secret_key_args,
             password_args,
             backend_url_args,
             json_args,
         } => {
+            // First check valid digest was provided
+            let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -417,6 +426,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(update_signers::handle_update_signers_command(
                 &url,
                 signers_file_url,
+                &expected_digest,
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,

@@ -243,9 +243,18 @@ pub enum Commands {
     },
 
     /// Register a repository with the backend
+    #[command(group(clap::ArgGroup::new("expected_digest").required(true).multiple(false)))]
     RegisterRepo {
         /// URL to the signers file (e.g., https://raw.githubusercontent.com/owner/repo/branch/asfaload.signers/index.json)
         signers_file_url: String,
+
+        /// Expected digest of the signers file, format sha512:<hex> (as printed by get-digest).
+        #[arg(long, group = "expected_digest")]
+        digest: Option<String>,
+
+        /// Path to a local copy of the signers file. Its digest is the expected value.
+        #[arg(long, group = "expected_digest")]
+        local_copy: Option<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,
@@ -284,9 +293,18 @@ pub enum Commands {
     },
 
     /// Propose an update to an existing signers file
+    #[command(group(clap::ArgGroup::new("expected_digest").required(true).multiple(false)))]
     UpdateSigners {
         /// URL to the new signers file on the forge
         signers_file_url: String,
+
+        /// Expected digest of the signers file, format sha512:<hex> (as printed by get-digest).
+        #[arg(long, group = "expected_digest")]
+        digest: Option<String>,
+
+        /// Path to a local copy of the signers file. Its digest is the expected value.
+        #[arg(long, group = "expected_digest")]
+        local_copy: Option<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,

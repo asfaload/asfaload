@@ -101,9 +101,13 @@ SIGNERS_FILE_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE_NAM
     -o "$SIGNERS_FILE_PATH" \
     > /dev/null 2>&1
 
+# register-repo needs the digest of the signers file served at the URL.
+DIGEST=$("$CLI" get-digest --json "$SIGNERS_FILE_URL" | jq -r .digest)
+
 "$CLI" register-repo \
     --secret-key "$KEY_0" \
     -u "$BACKEND_URL" \
+    --digest "$DIGEST" \
     "$SIGNERS_FILE_URL" \
     --json > /dev/null
 

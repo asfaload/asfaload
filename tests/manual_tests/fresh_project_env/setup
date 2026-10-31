@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Manual test environment for a fresh project: the backend and the file server
+# run, and the file server holds release artifacts, but no signers file exists
+# and nothing is registered with the backend.
+#
+# The user generates the signers file, puts it on the file server, registers
+# it, and signs it to activate it. The welcome message shows the commands.
+#
+# Start with: ./setup
+# Type 'exit' in the spawned shell to stop all servers and clean up.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+. "$REPO_ROOT/tests/e2e_tests/lib/helpers.sh"
+. "$SCRIPT_DIR/../lib.sh"
+
+# --- Defaults ---
+RELEASE_COUNT=3
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Set up a manual test environment for a fresh project: a backend and a file
+server run, and the file server holds RELEASE_COUNT releases (artifact.bin
+and SHA256SUMS). No signers file exists and nothing is registered with the
+backend.
+
+The welcome message shows the commands to generate the signers file, put it
+on the file server, register it and activate it.
+
+Type 'exit' in the spawned shell to stop all servers and clean up.
+
+OPTIONS
+  --release-count N   Number of releases on the file server (default: $RELEASE_COUNT)
+  -h, --help          Show this help message and exit
+
+ENVIRONMENT SET IN SPAWNED SHELL
+  ASFALOAD_BACKEND_URL   Backend REST API address
+  ASFALOAD_PASSWORD_FILE Path to file containing the key password
+  KEY_0 .. KEY_9         Paths to fixture private keys (public key: \$KEY_N.pub)
+  FILE_SERVER_URL        Local file server address
+  SIGNERS_FILE_PATH      Local path where the signers file must be written
+  SIGNERS_FILE_URL       URL of the signers file on the file server
+  RELEASES_URL           URL of the releases directory on the file server
+  PATH                   target/debug prepended (asfaload-cli available directly)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --release-count)
+            RELEASE_COUNT="${2:?--release-count requires a value}"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf '%sUnknown argument: %s%s\n' "$RED" "$1" "$RESET" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+mt_init_workspace
+mt_build_binaries
+mt_start_file_server
+mt_start_backend
+
+# --- Releases on the file server (not registered) ---
+printf '%sCreating %d releases on the file server...%s ' "$DIM" "$RELEASE_COUNT" "$RESET"
+
+for _I in $(seq 1 "$RELEASE_COUNT"); do
+    RELEASE_DIR="$PROJECT_DIR/releases/v0.$_I"
+    mkdir -p "$RELEASE_DIR"
+    dd if=/dev/urandom of="$RELEASE_DIR/artifact.bin" bs=1024 count=4 2>/dev/null
+    (cd "$RELEASE_DIR" && sha256sum artifact.bin > SHA256SUMS)
+done
+unset _I RELEASE_DIR
+
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+# --- Signers file location ---
+# A signers file in the signers directory of the project applies to all
+# artifacts below the project directory, e.g. project/releases/v0.1/.
+SIGNERS_FILE_PATH="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE"
+SIGNERS_FILE_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE"
+RELEASES_URL="$FILE_SERVER_URL/project/releases"
+
+MT_RC_EXTRA_EXPORTS+=(
+    "KEY_3=$KEY_3"
+    "KEY_4=$KEY_4"
+    "KEY_5=$KEY_5"
+    "KEY_6=$KEY_6"
+    "KEY_7=$KEY_7"
+    "KEY_8=$KEY_8"
+    "KEY_9=$KEY_9"
+    "SIGNERS_FILE_PATH=$SIGNERS_FILE_PATH"
+    "SIGNERS_FILE_URL=$SIGNERS_FILE_URL"
+    "RELEASES_URL=$RELEASES_URL"
+)
+
+# --- Welcome message ---
+printf '\n'
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$BOLD" "$RESET"
+printf '%s  Manual test environment: fresh project%s\n' "$GREEN" "$RESET"
+printf '\n'
+printf '  %-22s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
+printf '  %-22s %s\n' "ASFALOAD_PASSWORD_FILE" "$PASSWORD_FILE"
+printf '  %-22s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
+printf '  %-22s %s\n' "SIGNERS_FILE_PATH" "$SIGNERS_FILE_PATH"
+printf '  %-22s %s\n' "SIGNERS_FILE_URL" "$SIGNERS_FILE_URL"
+printf '  %-22s %s\n' "RELEASES_URL" "$RELEASES_URL"
+printf '  %-22s %s\n' "KEY_0 .. KEY_9" "$KEYS_DIR/key_{0..9}"
+printf '\n'
+printf '  The file server holds %d releases (v0.1 .. v0.%d) in\n' "$RELEASE_COUNT" "$RELEASE_COUNT"
+printf '  %s/releases. No signers file exists. Nothing is registered.\n' "$PROJECT_DIR"
+printf '  asfaload-cli is in PATH.\n'
+printf '\n'
+printf '%s  1. Generate the signers file on the file server%s\n' "$BOLD" "$RESET"
+printf '  Write it to $SIGNERS_FILE_PATH (project/%s/%s on the\n' "$HIDDEN_SIGNERS_DIR" "$SIGNERS_FILE"
+printf '  file server): in this location, it applies to the artifacts in\n'
+printf '  project/releases. Use any of KEY_0 .. KEY_9 ($KEY_N.pub):\n'
+printf '    asfaload-cli new-signers-file \\\n'
+printf '      --artifact-signers-file $KEY_0.pub \\\n'
+printf '      --artifact-signers-file $KEY_1.pub \\\n'
+printf '      --artifact-signers-file $KEY_2.pub \\\n'
+printf '      -A 2 -o $SIGNERS_FILE_PATH\n'
+printf '\n'
+printf '%s  2. Get the digest of the signers file on the file server%s\n' "$BOLD" "$RESET"
+printf '    asfaload-cli get-digest $SIGNERS_FILE_URL\n'
+printf '\n'
+printf '%s  3. Register the signers file%s\n' "$BOLD" "$RESET"
+printf '  Replace <DIGEST> with the digest of step 2 (sha512:...):\n'
+printf '    asfaload-cli register-repo -K $KEY_0 --digest <DIGEST> $SIGNERS_FILE_URL\n'
+printf '\n'
+printf '%s  4. Sign the signers file to activate it%s\n' "$BOLD" "$RESET"
+printf '  All signers must sign the initial signers file. The submitter (key0)\n'
+printf '  signed it with the registration. Sign it with the other signers:\n'
+printf '    asfaload-cli list-pending -K $KEY_1\n'
+printf '    asfaload-cli sign-pending -K $KEY_1\n'
+printf '    asfaload-cli sign-pending -K $KEY_2\n'
+printf '\n'
+printf '%s  5. Optional: register a release%s\n' "$BOLD" "$RESET"
+printf '    asfaload-cli register-assets -K $KEY_0 --csum-file $RELEASES_URL/v0.1/SHA256SUMS\n'
+printf '\n'
+printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"
+
+mt_spawn_shell

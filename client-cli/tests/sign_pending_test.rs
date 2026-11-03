@@ -338,3 +338,159 @@ fn sign_pending_accepts_signers_file_matching_metadata() {
     submit.assert();
     source.assert();
 }
+
+// ---------------------------------------------------------------------------
+// The client signs the hash of each file it gets from the backend, and the
+// signature is not bound to a path. A compromised backend must not be able to
+// add files to the set to sign, nor remove the file the user asked for.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sign_pending_rejects_unexpected_files_to_sign() {
+    let content = b"legitimate release index";
+    let injected_content = b"index injected by the backend";
+    let file_path = "releases/v1/asfaload.index.json";
+    let injected_path = "releases/v2/asfaload.index.json";
+
+    let mut backend = mockito::Server::new();
+    let _files = backend
+        .mock("GET", format!("/v1/files-to-sign/{}", file_path).as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[
+            (file_path, content.as_slice()),
+            (injected_path, injected_content.as_slice()),
+        ]))
+        .create();
+
+    let submit = backend
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .expect(0)
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(backend.url())
+        .arg(file_path)
+        .arg("--digest")
+        .arg(sha512_digest_str(content))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(injected_path));
+    submit.assert();
+}
+
+#[test]
+fn sign_pending_rejects_files_to_sign_without_requested_file() {
+    let injected_content = b"index injected by the backend";
+    let file_path = "releases/v1/asfaload.index.json";
+    let injected_path = "releases/v2/asfaload.index.json";
+
+    let mut backend = mockito::Server::new();
+    let _files = backend
+        .mock("GET", format!("/v1/files-to-sign/{}", file_path).as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[(
+            injected_path,
+            injected_content.as_slice(),
+        )]))
+        .create();
+
+    let submit = backend
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .expect(0)
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(backend.url())
+        .arg(file_path)
+        .arg("--digest")
+        .arg(sha512_digest_str(b"legitimate release index"))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(file_path));
+    submit.assert();
+}
+
+#[test]
+fn sign_pending_rejects_unexpected_file_next_to_signers_metadata() {
+    let signers_content = br#"{"version":1}"#;
+    let injected_content = b"index injected by the backend";
+    let injected_path = "releases/v2/asfaload.index.json";
+
+    let mut file_server = mockito::Server::new();
+    let mut backend = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+
+    let metadata_path = common::fs::names::metadata_path_for(&signers_path)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    let source_path = "/acme/tool/asfaload.signers/index.json";
+    let _source = file_server
+        .mock("GET", source_path)
+        .with_status(200)
+        .with_body(signers_content.as_slice())
+        .create();
+
+    let source_url = format!("{}{}", file_server.url(), source_path);
+    let metadata =
+        test_helpers::signers_metadata_json(FORGE_URL, &source_url, signers_content.as_slice());
+
+    let _files = backend
+        .mock(
+            "GET",
+            format!("/v1/files-to-sign/{}", signers_path).as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[
+            (signers_path.as_str(), signers_content.as_slice()),
+            (metadata_path.as_str(), metadata.as_bytes()),
+            (injected_path, injected_content.as_slice()),
+        ]))
+        .create();
+
+    let submit = backend
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .expect(0)
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(backend.url())
+        .arg(&signers_path)
+        .arg("--digest")
+        .arg(sha512_digest_str(signers_content))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(injected_path));
+    submit.assert();
+}

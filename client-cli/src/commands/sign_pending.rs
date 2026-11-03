@@ -4,7 +4,7 @@ use crate::error::Result;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-    AsfaloadSignatures, SignersConfigMetadata, sha512_for_content,
+    AsfaloadSignatures, SignersConfigMetadata, sha512_for_content, to_posix_json,
 };
 use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
 
@@ -81,8 +81,7 @@ pub async fn handle_sign_pending_sec_key(
             ))
         })?;
 
-        let metadata: SignersConfigMetadata = serde_json::from_slice(metadata_content)
-            .map_err(crate::error::signers_metadata_parse_error)?;
+        let metadata = parse_canonical_metadata(metadata_content)?;
         // Retrieves file from publishing platform to assess validity.
         client_lib::verify_signers_file_matches_metadata_source(
             signers_content,
@@ -130,6 +129,30 @@ pub async fn handle_sign_pending_sec_key(
     }
 
     Ok(response)
+}
+
+/// Parse signers metadata, and accept it only in its canonical form.
+///
+/// The metadata is signed without a digest given by the user, so its bytes
+/// must contain nothing more than the metadata itself. Without this check, a
+/// compromised backend could add fields of another file type, for example an
+/// index, and the signature of the metadata would also be valid for that
+/// other file. Clients always write metadata with `to_posix_json`, so
+/// legitimate metadata is always in that form.
+///
+/// # Errors
+/// * `BackendDataError` when the content is not valid metadata, or when it is
+///   not in its canonical form
+fn parse_canonical_metadata(content: &[u8]) -> Result<SignersConfigMetadata> {
+    let metadata: SignersConfigMetadata =
+        serde_json::from_slice(content).map_err(crate::error::signers_metadata_parse_error)?;
+    if to_posix_json(&metadata)?.as_bytes() == content {
+        Ok(metadata)
+    } else {
+        Err(crate::error::ClientCliError::BackendDataError(
+            "Metadata is not in its canonical form".to_string(),
+        ))
+    }
 }
 
 /// Make sure the backend sends exactly the files the user agreed to sign.
@@ -262,6 +285,51 @@ mod tests {
                 (Ok(()), Some(fragment)) => panic!(
                     "requested {requested}, sent {sent:?}: expected error containing {fragment:?}, got Ok"
                 ),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_canonical_metadata_cases() {
+        let canonical = test_helpers::signers_metadata_json(
+            "https://github.com/acme/tool/raw/main/asfaload.signers/index.json",
+            "https://github.com/acme/tool/raw/main/asfaload.signers/index.json",
+            br#"{"version":1}"#,
+        );
+        let value: serde_json::Value = serde_json::from_str(&canonical).unwrap();
+        let pretty = serde_json::to_string_pretty(&value).unwrap();
+        let mut with_extra_field = value.clone();
+        with_extra_field
+            .as_object_mut()
+            .unwrap()
+            .insert("publishedFiles".to_string(), serde_json::json!([]));
+        let with_extra_field = to_posix_json(&with_extra_field).unwrap();
+        let without_final_newline = canonical.trim_end().to_string();
+
+        // (description, content, expected error message fragment)
+        let cases: Vec<(&str, &str, Option<&str>)> = vec![
+            ("canonical", &canonical, None),
+            ("pretty printed", &pretty, Some("canonical form")),
+            ("extra field", &with_extra_field, Some("canonical form")),
+            (
+                "without final newline",
+                &without_final_newline,
+                Some("canonical form"),
+            ),
+            ("not json", "not json", Some("Failed to parse metadata")),
+        ];
+
+        for (description, content, expected_error) in cases {
+            match (parse_canonical_metadata(content.as_bytes()), expected_error) {
+                (Ok(_), None) => {}
+                (Err(ClientCliError::BackendDataError(msg)), Some(fragment)) => assert!(
+                    msg.contains(fragment),
+                    "{description}: message {msg:?} does not contain {fragment:?}"
+                ),
+                (Err(e), _) => panic!("{description}: unexpected error {e}"),
+                (Ok(_), Some(fragment)) => {
+                    panic!("{description}: expected error containing {fragment:?}, got Ok")
+                }
             }
         }
     }

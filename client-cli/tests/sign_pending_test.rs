@@ -494,3 +494,96 @@ fn sign_pending_rejects_unexpected_file_next_to_signers_metadata() {
         .stderr(predicate::str::contains(injected_path));
     submit.assert();
 }
+
+// ---------------------------------------------------------------------------
+// Signers metadata is signed without a digest given by the user. A
+// compromised backend must not be able to hide other content in it, such as
+// the fields of an index, to get a signature for that content.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sign_pending_rejects_metadata_that_is_also_an_index() {
+    let signers_content = br#"{"version":1}"#;
+
+    let mut file_server = mockito::Server::new();
+    let mut backend = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+
+    let metadata_path = common::fs::names::metadata_path_for(&signers_path)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    let source_path = "/acme/tool/asfaload.signers/index.json";
+    let _source = file_server
+        .mock("GET", source_path)
+        .with_status(200)
+        .with_body(signers_content.as_slice())
+        .create();
+
+    let source_url = format!("{}{}", file_server.url(), source_path);
+    let legitimate_metadata =
+        test_helpers::signers_metadata_json(FORGE_URL, &source_url, signers_content.as_slice());
+
+    // Add the fields of an index to the legitimate metadata. The field names
+    // of both types do not overlap, so these bytes parse as both.
+    let mut polyglot: serde_json::Value = serde_json::from_str(&legitimate_metadata).unwrap();
+    let index_fields = serde_json::json!({
+        "mirroredOn": "2026-01-01T00:00:00Z",
+        "publishedOn": "2026-01-01T00:00:00Z",
+        "version": 1,
+        "publishedFiles": [{
+            "fileName": "tool",
+            "algo": "Sha256",
+            "source": "https://github.com/acme/tool/releases/download/v1/checksums.txt",
+            "sourceFormat": "ShaSum",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }]
+    });
+    polyglot
+        .as_object_mut()
+        .unwrap()
+        .extend(index_fields.as_object().unwrap().clone());
+    let polyglot_metadata = common::to_posix_json(&polyglot).unwrap();
+    assert!(
+        serde_json::from_str::<common::index_types::AsfaloadIndex>(&polyglot_metadata).is_ok(),
+        "the injected metadata must also be a valid index for this test to be meaningful"
+    );
+
+    let _files = backend
+        .mock(
+            "GET",
+            format!("/v1/files-to-sign/{}", signers_path).as_str(),
+        )
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[
+            (signers_path.as_str(), signers_content.as_slice()),
+            (metadata_path.as_str(), polyglot_metadata.as_bytes()),
+        ]))
+        .create();
+
+    let submit = backend
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .expect(0)
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(backend.url())
+        .arg(&signers_path)
+        .arg("--digest")
+        .arg(sha512_digest_str(signers_content))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("canonical"));
+    submit.assert();
+}

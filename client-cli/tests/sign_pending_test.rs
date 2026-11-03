@@ -526,7 +526,8 @@ fn sign_pending_rejects_metadata_that_is_also_an_index() {
         test_helpers::signers_metadata_json(FORGE_URL, &source_url, signers_content.as_slice());
 
     // Add the fields of an index to the legitimate metadata. The field names
-    // of both types do not overlap, so these bytes parse as both.
+    // of both types do not overlap, so these bytes would parse as both if
+    // unknown fields were accepted.
     let mut polyglot: serde_json::Value = serde_json::from_str(&legitimate_metadata).unwrap();
     let index_fields = serde_json::json!({
         "mirroredOn": "2026-01-01T00:00:00Z",
@@ -545,10 +546,6 @@ fn sign_pending_rejects_metadata_that_is_also_an_index() {
         .unwrap()
         .extend(index_fields.as_object().unwrap().clone());
     let polyglot_metadata = common::to_posix_json(&polyglot).unwrap();
-    assert!(
-        serde_json::from_str::<common::index_types::AsfaloadIndex>(&polyglot_metadata).is_ok(),
-        "the injected metadata must also be a valid index for this test to be meaningful"
-    );
 
     let _files = backend
         .mock(
@@ -584,6 +581,6 @@ fn sign_pending_rejects_metadata_that_is_also_an_index() {
 
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("canonical"));
+        .stderr(predicate::str::contains("Backend data error"));
     submit.assert();
 }

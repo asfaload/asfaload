@@ -310,7 +310,7 @@ mod tests {
         let cases: Vec<(&str, &str, Option<&str>)> = vec![
             ("canonical", &canonical, None),
             ("pretty printed", &pretty, Some("canonical form")),
-            ("extra field", &with_extra_field, Some("canonical form")),
+            ("extra field", &with_extra_field, Some("unknown field")),
             (
                 "without final newline",
                 &without_final_newline,

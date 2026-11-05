@@ -4,9 +4,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
-use crate::utils::{ensure_dir_exists, validate_threshold};
+use crate::utils::{ensure_dir_exists, executable_name, validate_threshold};
 use anstyle::Style;
-use clap::CommandFactory;
 use common::sha512_for_content;
 use features_lib::{
     ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
@@ -202,10 +201,7 @@ pub fn handle_new_signers_file_command(
     let print_human_overview =
         |p: &PathBuf| -> std::result::Result<(), crate::error::ClientCliError> {
             let digest = sha512_for_file(p)?;
-            let executable = std::env::args_os()
-                .next()
-                .map(|a| a.to_string_lossy().into_owned())
-                .unwrap_or_else(|| crate::cli::Cli::command().get_name().to_string());
+            let executable = executable_name();
             let groups = [
                 (
                     "Artifact signers",

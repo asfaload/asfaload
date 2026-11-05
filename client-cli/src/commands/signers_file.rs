@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
-use crate::utils::{bishop_art, bishop_plain, ensure_dir_exists, validate_threshold};
+use crate::utils::{ensure_dir_exists, validate_threshold};
+use clap::CommandFactory;
 use features_lib::{
     ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
     sha512_for_file,
@@ -162,7 +163,6 @@ pub fn handle_new_signers_file_command(
     let print_json_output =
         |signers_file_destination| -> std::result::Result<(), crate::error::ClientCliError> {
             let digest = sha512_for_file(&signers_file_destination)?;
-            let bishop_art = bishop_plain(&digest);
             let output = crate::output::NewSignersFileOutput {
                 output_file: signers_file_destination,
                 artifact_signers_count: all_artifact_signers_count,
@@ -174,7 +174,6 @@ pub fn handle_new_signers_file_command(
                 revocation_keys_count: all_revocation_keys_count,
                 revocation_threshold,
                 digest: digest.into(),
-                bishop_art,
             };
             println!("{}", serde_json::to_string(&output)?);
             Ok(())
@@ -205,7 +204,14 @@ pub fn handle_new_signers_file_command(
                 revocation_threshold.map_or("none".to_string(), |t| t.to_string())
             );
             println!("Generated file's digest: {}", digest);
-            println!("{}", bishop_art(&digest));
+            println!(
+                "You can now place this file in your git repository.\nAfter that, you can register your repository with the following command, where you subsitute <url> by the url where you published the signers file:\n"
+            );
+            let executable = std::env::args_os()
+                .next()
+                .map(|a| a.to_string_lossy().into_owned())
+                .unwrap_or_else(|| crate::cli::Cli::command().get_name().to_string());
+            println!("{} register-repo --digest {} <url>\n", executable, digest);
             Ok(())
         };
 

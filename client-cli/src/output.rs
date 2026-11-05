@@ -25,7 +25,6 @@ pub struct NewSignersFileOutput {
     pub revocation_keys_count: usize,
     pub revocation_threshold: Option<u32>,
     pub digest: String,
-    pub bishop_art: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -6,6 +6,7 @@ use std::str::FromStr;
 use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
 use clap::CommandFactory;
+use common::sha512_for_content;
 use features_lib::{
     ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
     sha512_for_file,
@@ -161,9 +162,9 @@ pub fn handle_new_signers_file_command(
     };
     // Print the --json flag output when the --output-file is also present
     let print_json_output_for_file = |signers_file_destination,
-                                      file_content|
+                                      file_content: String|
      -> std::result::Result<(), crate::error::ClientCliError> {
-        let digest = sha512_for_file(&signers_file_destination)?;
+        let digest = sha512_for_content(file_content.as_bytes())?;
         let output = crate::output::NewSignersFileOutput {
             output_file: signers_file_destination,
             artifact_signers_count: all_artifact_signers_count,
@@ -221,7 +222,10 @@ pub fn handle_new_signers_file_command(
         // -o and --json
         (Some(p), true) => {
             write_signers_file(p)?;
-            print_json_output_for_file(p.to_string_lossy().to_string(), signers_file_content)?;
+            print_json_output_for_file(
+                Some(p.to_string_lossy().to_string()),
+                signers_file_content,
+            )?;
         }
         // -o, no --json
         (Some(p), false) => {
@@ -230,9 +234,7 @@ pub fn handle_new_signers_file_command(
         }
         // no -o, --json
         (None, true) => {
-            return Err(crate::error::ClientCliError::InvalidInput(
-                "Cannot output to stdout with --json flag".to_string(),
-            ));
+            print_json_output_for_file(None, signers_file_content)?;
         }
         // no -o, no --json
         (None, false) => print_signers_file_content(),

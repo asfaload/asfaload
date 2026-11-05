@@ -192,8 +192,9 @@ fn json_without_output_file_prints_signers_config() {
     );
 }
 
-/// With `-o` and no `--json`, the human output must include a "Generated
-/// file's digest:" line whose value is the sha512 of the written file.
+/// With `-o` and no `--json`, the human output must show the sha512 of the
+/// written file under the "Digest" heading, and use it in the suggested
+/// register-repo command, together with the required secret key flag.
 #[test]
 fn digest_printed_and_correct_in_human_output() {
     let pub_key = fixtures_pub_key(0);
@@ -218,19 +219,23 @@ fn digest_printed_and_correct_in_human_output() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
 
-    assert!(
-        stdout.contains("Generated file's digest:"),
-        "stdout should contain 'Generated file's digest:', got: {}",
-        stdout
-    );
-
     let file_bytes = fs::read(&output_file).unwrap();
     let hash = Sha512::digest(&file_bytes);
     let expected = format!("sha512:{}", hex::encode(hash));
     assert!(
-        stdout.contains(&expected),
-        "stdout should contain the sha512 digest '{}', got: {}",
+        stdout.contains(&format!("Digest\n  {expected}\n")),
+        "stdout should contain the sha512 digest '{}' under the Digest heading, got: {}",
         expected,
+        stdout
+    );
+    // Long flags only, and the parts to fill in at the end.
+    let expected_hint = format!(
+        " register-repo \\\n       --digest {expected} \\\n       --secret-key <secret-key> <url>\n"
+    );
+    assert!(
+        stdout.contains(&expected_hint),
+        "stdout should contain the register-repo hint '{}', got: {}",
+        expected_hint,
         stdout
     );
 }

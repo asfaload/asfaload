@@ -176,10 +176,11 @@ fn test_new_signers_file_human_output_includes_revocation_keys() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains(
-            "Artifact signers: 1 (threshold: 1)",
+            "Artifact signers   1 of 1 key must sign",
         ))
+        .stdout(predicate::str::contains("Admin keys         none"))
         .stdout(predicate::str::contains(
-            "Revocation keys: 1 (threshold: 1)",
+            "Revocation keys    1 of 1 key must sign",
         ));
 }
 

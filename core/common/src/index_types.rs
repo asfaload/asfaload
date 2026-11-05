@@ -16,6 +16,7 @@ pub enum ChecksumSourceFormat {
 /// Digest of one published file, as recorded in the index.
 #[derive(Hash, Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct FileChecksum {
     pub file_name: String,
     pub algo: HashAlgorithm,
@@ -31,6 +32,7 @@ pub struct FileChecksum {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct AsfaloadIndex {
     pub mirrored_on: chrono::DateTime<chrono::Utc>,
     pub published_on: chrono::DateTime<chrono::Utc>,
@@ -101,6 +103,34 @@ mod asfaload_index_tests {
                         .to_string(),
                 },
             ],
+        }
+    }
+
+    /// Add an unknown field to the JSON object found at `pointer`.
+    fn with_unknown_field(json: &str, pointer: &str) -> String {
+        let mut value: Value = serde_json::from_str(json).unwrap();
+        value
+            .pointer_mut(pointer)
+            .and_then(Value::as_object_mut)
+            .unwrap_or_else(|| panic!("no JSON object at {pointer}"))
+            .insert("unexpected".to_string(), Value::Bool(true));
+        serde_json::to_string(&value).unwrap()
+    }
+
+    // An index is signed. Accepting unknown fields would let the same signed
+    // bytes also be a valid file of another type, for example signers metadata.
+    #[test]
+    fn index_rejects_unknown_fields() {
+        let json = index().to_json().unwrap();
+        for pointer in ["", "/publishedFiles/0"] {
+            let result = serde_json::from_str::<AsfaloadIndex>(&with_unknown_field(&json, pointer));
+            match result {
+                Err(e) => assert!(
+                    e.to_string().contains("unknown field `unexpected`"),
+                    "unknown field at {pointer:?}: unexpected error {e}"
+                ),
+                Ok(_) => panic!("unknown field at {pointer:?} was accepted"),
+            }
         }
     }
 

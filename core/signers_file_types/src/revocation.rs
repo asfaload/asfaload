@@ -45,6 +45,7 @@ impl<'de> Deserialize<'de> for RevocationInfo {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct RevocationInfoHelper {
             timestamp: DateTime<Utc>,
             subject_digest: AsfaloadHashes,
@@ -440,8 +441,15 @@ mod tests {
 
         let result: Result<RevocationInfo, _> = serde_json::from_str(&json_with_extra);
 
-        // Should succeed with extra fields being ignored
-        assert!(result.is_ok());
+        // A revocation file is signed. Accepting unknown fields would let the
+        // same signed bytes also be a valid file of another type.
+        match result {
+            Err(e) => assert!(
+                e.to_string().contains("unknown field `extra_field`"),
+                "unexpected error {e}"
+            ),
+            Ok(_) => panic!("unknown fields were accepted"),
+        }
     }
 
     #[test]

@@ -48,6 +48,7 @@ impl<'de> Deserialize<'de> for SignersConfig {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct SignersConfigHelper {
             version: u32,
             timestamp: DateTime<Utc>,
@@ -88,6 +89,7 @@ impl<'de> Deserialize<'de> for SignersConfig {
 //    serialize = "APK: AsfaloadPublicKeyTrait",
 //    deserialize = "APK: AsfaloadPublicKeyTrait"
 //))]
+#[serde(deny_unknown_fields)]
 pub struct SignersConfigProposal {
     pub version: u32,
     pub timestamp: DateTime<Utc>,
@@ -318,6 +320,7 @@ pub enum VerifiedForgeContentError {
 /// and computes the hash internally, eliminating any possibility of
 /// URL/content mismatch.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct VerifiedForgeContent {
     retrieval_url: String,
     content_hash: String,
@@ -412,6 +415,7 @@ pub enum Forge {
 }
 // Metadata about the signers file retrieved from a forge
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct SignersConfigMetadata {
     kind: Forge,
     url: String,
@@ -479,6 +483,7 @@ impl<'de> Deserialize<'de> for SignerGroup {
         // Create a helper struct that mirrors SignerGroup but without the custom Deserialize
         #[derive(Deserialize)]
         //#[serde(bound(deserialize = "APK: AsfaloadPublicKeyTrait"))]
+        #[serde(deny_unknown_fields)]
         struct SignerGroupHelper {
             signers: Vec<Signer>,
             threshold: u32,
@@ -521,6 +526,7 @@ impl<'de> Deserialize<'de> for SignerGroup {
 //    deserialize = "APK: AsfaloadPublicKeyTrait"
 //))]
 #[derive(Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Signer {
     pub kind: SignerKind,
     pub data: SignerData,
@@ -566,6 +572,7 @@ impl<'de> Deserialize<'de> for SignerData {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct SignerDataHelper {
             pubkey: String,
         }
@@ -1250,6 +1257,75 @@ mod tests {
         );
 
         assert!(parse_signers_config(&json).is_ok());
+    }
+
+    /// Add an unknown field to the JSON object found at `pointer`.
+    fn with_unknown_field(json: &str, pointer: &str) -> String {
+        let mut value: serde_json::Value = serde_json::from_str(json).unwrap();
+        value
+            .pointer_mut(pointer)
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap_or_else(|| panic!("no JSON object at {pointer}"))
+            .insert("unexpected".to_string(), serde_json::Value::Bool(true));
+        serde_json::to_string(&value).unwrap()
+    }
+
+    /// Assert that parsing `json` with an unknown field at each pointer fails.
+    fn assert_unknown_fields_rejected<T: serde::de::DeserializeOwned>(
+        json: &str,
+        pointers: &[&str],
+    ) {
+        for pointer in pointers {
+            match serde_json::from_str::<T>(&with_unknown_field(json, pointer)) {
+                Err(e) => assert!(
+                    e.to_string().contains("unknown field `unexpected`"),
+                    "unknown field at {pointer:?}: unexpected error {e}"
+                ),
+                Ok(_) => panic!("unknown field at {pointer:?} was accepted"),
+            }
+        }
+    }
+
+    // Signers files and their metadata are signed. Accepting unknown fields
+    // would let the same signed bytes also be a valid file of another type,
+    // for example an index.
+    const SIGNERS_CONFIG_POINTERS: [&str; 4] = [
+        "",
+        "/artifact_signers/0",
+        "/artifact_signers/0/signers/0",
+        "/artifact_signers/0/signers/0/data",
+    ];
+
+    #[test]
+    fn signers_config_rejects_unknown_fields() {
+        let keys = TestKeys::new(1);
+        let config = build_config(vec![keys.pub_key(0).unwrap().clone()], None, None);
+        let json = serde_json::to_string(&config).unwrap();
+        assert_unknown_fields_rejected::<SignersConfig>(&json, &SIGNERS_CONFIG_POINTERS);
+    }
+
+    #[test]
+    fn signers_config_proposal_rejects_unknown_fields() {
+        let keys = TestKeys::new(1);
+        let config = build_config(vec![keys.pub_key(0).unwrap().clone()], None, None);
+        let json = serde_json::to_string(&config).unwrap();
+        assert_unknown_fields_rejected::<SignersConfigProposal>(&json, &SIGNERS_CONFIG_POINTERS);
+    }
+
+    #[test]
+    fn signers_config_metadata_rejects_unknown_fields() {
+        let metadata = SignersConfigMetadata::new(
+            Forge::Github,
+            "https://github.com/acme/tool/blob/main/asfaload.signers/index.json".to_string(),
+            VerifiedForgeContent::new_for_test(
+                "https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json"
+                    .to_string(),
+                r#"{"version":1}"#.to_string(),
+            ),
+            chrono::Utc::now(),
+        );
+        let json = serde_json::to_string(&metadata).unwrap();
+        assert_unknown_fields_rejected::<SignersConfigMetadata>(&json, &["", "/verified_content"]);
     }
 
     #[test]

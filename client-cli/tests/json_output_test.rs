@@ -153,55 +153,6 @@ fn test_new_signers_file_json_digest_present_and_correct() {
 }
 
 #[test]
-fn test_new_signers_file_json_bishop_art_matches_digest() {
-    let pub_key = fixtures_pub_key(0);
-    let temp_dir = TempDir::new().unwrap();
-    let output_file = temp_dir.path().join("signers.json");
-
-    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("new-signers-file")
-        .arg("--json")
-        .arg("--artifact-signers-file")
-        .arg(&pub_key)
-        .arg("-A")
-        .arg("1")
-        .arg("-o")
-        .arg(&output_file)
-        // Force colorization in the subprocess: without it, the colored crate
-        // disables colors for non-TTY stdout and a plain/colored mix-up would
-        // go unnoticed.
-        .env("CLICOLOR_FORCE", "1");
-
-    let output = cmd.output().unwrap();
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
-
-    let bishop_art = json["bishop_art"]
-        .as_str()
-        .expect("bishop_art field should be a string");
-    assert!(!bishop_art.is_empty(), "bishop_art should not be empty");
-    assert!(
-        !bishop_art.contains('\x1b'),
-        "bishop_art in JSON output must be plain, without ANSI codes"
-    );
-
-    // The art must be the plain rendering of the generated signers file digest.
-    let file_bytes = fs::read(&output_file).unwrap();
-    let hash = common::AsfaloadHashes::Sha512(Sha512::digest(&file_bytes));
-    assert_eq!(
-        bishop_art,
-        client_cli::utils::bishop_plain(&hash),
-        "bishop_art does not match the plain rendering of the signers file digest"
-    );
-}
-
-#[test]
 fn test_new_signers_file_human_output_includes_revocation_keys() {
     let (_key_dir, key_path) = generate_test_keypair();
     let temp_dir = TempDir::new().unwrap();

@@ -159,25 +159,27 @@ pub fn handle_new_signers_file_command(
         // We have posix json content, with trailing \n, so no println!
         print!("{}", signers_file_content);
     };
-    // Print the --json flag output
-    let print_json_output =
-        |signers_file_destination| -> std::result::Result<(), crate::error::ClientCliError> {
-            let digest = sha512_for_file(&signers_file_destination)?;
-            let output = crate::output::NewSignersFileOutput {
-                output_file: signers_file_destination,
-                artifact_signers_count: all_artifact_signers_count,
-                artifact_threshold,
-                admin_keys_count: all_admin_keys_count,
-                admin_threshold,
-                master_keys_count: all_master_keys_count,
-                master_threshold,
-                revocation_keys_count: all_revocation_keys_count,
-                revocation_threshold,
-                digest: digest.into(),
-            };
-            println!("{}", serde_json::to_string(&output)?);
-            Ok(())
+    // Print the --json flag output when the --output-file is also present
+    let print_json_output_for_file = |signers_file_destination,
+                                      file_content|
+     -> std::result::Result<(), crate::error::ClientCliError> {
+        let digest = sha512_for_file(&signers_file_destination)?;
+        let output = crate::output::NewSignersFileOutput {
+            output_file: signers_file_destination,
+            artifact_signers_count: all_artifact_signers_count,
+            artifact_threshold,
+            admin_keys_count: all_admin_keys_count,
+            admin_threshold,
+            master_keys_count: all_master_keys_count,
+            master_threshold,
+            revocation_keys_count: all_revocation_keys_count,
+            revocation_threshold,
+            digest: digest.into(),
+            signers_config: file_content,
         };
+        println!("{}", serde_json::to_string(&output)?);
+        Ok(())
+    };
 
     // Print a human overview of the file written to disk
     let print_human_overview =
@@ -219,7 +221,7 @@ pub fn handle_new_signers_file_command(
         // -o and --json
         (Some(p), true) => {
             write_signers_file(p)?;
-            print_json_output(p.to_string_lossy().to_string())?;
+            print_json_output_for_file(p.to_string_lossy().to_string(), signers_file_content)?;
         }
         // -o, no --json
         (Some(p), false) => {

@@ -368,6 +368,10 @@ pub mod models {
         pub message: String,
         pub required_signers: Vec<String>,
         pub signature_submission_url: String,
+        /// Path of the signers file in the mirror, relative to the mirror root.
+        /// It is the pending signers file when signatures are still necessary,
+        /// and the active signers file when the file is already active.
+        pub signers_file_path: String,
     }
 
     pub type UpdateRepoSignersRequest = RegisterRepoRequest;

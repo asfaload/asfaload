@@ -231,6 +231,11 @@ pub async fn register_repo_handler(
         message: message.to_string(),
         required_signers: init_result.required_signers.into_iter().collect(),
         signature_submission_url: "/v1/signatures".to_string(),
+        signers_file_path: init_result
+            .signers_file_path
+            .relative_path()
+            .to_string_lossy()
+            .to_string(),
     }))
 }
 
@@ -409,6 +414,11 @@ pub async fn update_signers_handler(
         message: message.to_string(),
         required_signers: propose_result.required_signers,
         signature_submission_url: "/v1/signatures".to_string(),
+        signers_file_path: propose_result
+            .signers_file_path
+            .relative_path()
+            .to_string_lossy()
+            .to_string(),
     }))
 }
 

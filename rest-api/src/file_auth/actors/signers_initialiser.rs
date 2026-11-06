@@ -58,6 +58,7 @@ pub struct ProposeSignersRequest {
 pub struct ProposeSignersResult {
     pub project_path: NormalisedPaths,
     pub required_signers: Vec<String>,
+    pub signers_file_path: NormalisedPaths,
     pub request_id: String,
 }
 
@@ -344,38 +345,49 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             .await??
         };
 
-        let required_signers: Vec<String> = if signature_with_state.is_complete() {
-            // If the signature is complete, the signers file has been activated: the
-            // previous active signers file was moved to the history, and the proposed
-            // file renamed, dropping the pending suffix.
-            vec![]
-        } else {
-            // Collect required signers from the *proposed* config
-            // (these are the admin/master keys that need to sign to activate)
-            let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
-            tokio::task::spawn_blocking(move || {
-                features_lib::aggregate_signature_helpers::get_missing_signers(
-                    &pending_signers_path,
-                )
-            })
-            .await?
-            .map_err(|e| {
-                tracing::error!(
-                    request_id = %msg.request_id,
-                    error = %e,
-                    path = %signers_normalised_paths,
-                    "Failed to compute missing signers"
-                );
-                ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
-            })?
-            .into_iter()
-            .map(|key: AsfaloadPublicKeys| key.to_base64())
-            .collect()
-        };
+        let (required_signers, signers_file_path): (Vec<String>, NormalisedPaths) =
+            if signature_with_state.is_complete() {
+                // If the signature is complete, the signers file has been activated: the
+                // previous active signers file was moved to the history, and the proposed
+                // file renamed, dropping the pending suffix.
+                let active_signers_path = project_normalised_paths
+                    .join(SIGNERS_DIR)
+                    .await?
+                    .join(SIGNERS_FILE)
+                    .await?;
+                (vec![], active_signers_path)
+            } else {
+                // Collect required signers from the *proposed* config
+                // (these are the admin/master keys that need to sign to activate)
+                let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+                let missing_signers = tokio::task::spawn_blocking(move || {
+                    features_lib::aggregate_signature_helpers::get_missing_signers(
+                        &pending_signers_path,
+                    )
+                })
+                .await?
+                .map_err(|e| {
+                    tracing::error!(
+                        request_id = %msg.request_id,
+                        error = %e,
+                        path = %signers_normalised_paths,
+                        "Failed to compute missing signers"
+                    );
+                    ApiError::ActorOperationFailed(format!(
+                        "Failed to compute missing signers: {}",
+                        e
+                    ))
+                })?
+                .into_iter()
+                .map(|key: AsfaloadPublicKeys| key.to_base64())
+                .collect();
+                (missing_signers, signers_normalised_paths)
+            };
 
         Ok(ProposeSignersResult {
             project_path: msg.project_path,
             required_signers,
+            signers_file_path,
             request_id: msg.request_id,
         })
     }

@@ -826,6 +826,7 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_register_repo_success() -> Result<(), anyhow::Error> {
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
         use features_lib::AsfaloadPublicKeyTrait;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
@@ -908,6 +909,10 @@ pub mod test_utils_tests {
         // The submitter signed the signers file and the metadata with the
         // registration, so the single signer activated the file.
         assert!(response_body.required_signers.is_empty());
+        assert_eq!(
+            response_body.signers_file_path,
+            format!("{}/{}/{}", expected_project_id, SIGNERS_DIR, SIGNERS_FILE)
+        );
 
         mock.assert();
         server_handle.abort();
@@ -1031,6 +1036,7 @@ pub mod test_utils_tests {
     #[tokio::test]
     async fn test_register_repo_success_without_immediate_activation() -> Result<(), anyhow::Error>
     {
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         use features_lib::AsfaloadPublicKeyTrait;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
@@ -1116,6 +1122,13 @@ pub mod test_utils_tests {
         assert_eq!(response_body.required_signers.len(), 1);
         assert_eq!(response_body.required_signers[0], public_key_2.to_base64());
         assert_eq!(response_body.signature_submission_url, "/v1/signatures");
+        assert_eq!(
+            response_body.signers_file_path,
+            format!(
+                "{}/{}/{}",
+                expected_project_id, PENDING_SIGNERS_DIR, SIGNERS_FILE
+            )
+        );
 
         mock.assert();
         server_handle.abort();
@@ -1750,6 +1763,10 @@ pub mod test_utils_tests {
         // The submitter's signatures are recorded with the proposal: only the
         // second artifact signer is still missing.
         assert_eq!(response_body.required_signers.len(), 1);
+        assert_eq!(
+            response_body.signers_file_path,
+            format!("{}/{}/{}", project_id, PENDING_SIGNERS_DIR, SIGNERS_FILE)
+        );
 
         // The proposal must be stored in the pending directory with the
         // exact bytes the client sent and signed.
@@ -1836,7 +1853,7 @@ pub mod test_utils_tests {
     /// once.
     #[tokio::test]
     async fn test_update_signers_activates_at_once() -> Result<(), anyhow::Error> {
-        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR};
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
         use httpmock::Method;
         use rest_api_types::RegisterRepoResponse;
 
@@ -1912,6 +1929,10 @@ pub mod test_utils_tests {
             "Signers updated successfully, and signers file activated."
         );
         assert!(response_body.required_signers.is_empty());
+        assert_eq!(
+            response_body.signers_file_path,
+            format!("{}/{}/{}", project_id, SIGNERS_DIR, SIGNERS_FILE)
+        );
 
         // The updated file is active and the pending directory is gone.
         let project_paths =

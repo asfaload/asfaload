@@ -111,9 +111,11 @@ pub async fn handle_sign_pending_sec_key(
     }
 
     // Submit all signatures to backend
+    let file_path = pending_file.path().to_string();
     let response = client
         .submit_signatures(pending_file, &public_key, &signatures, secret_key)
-        .await?;
+        .await
+        .map_err(|e| crate::error::submit_signature_error(e, &file_path))?;
 
     // Display result
     if json {

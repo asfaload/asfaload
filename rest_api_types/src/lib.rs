@@ -342,7 +342,7 @@ pub mod models {
 
     use crate::errors::ApiError;
 
-    #[derive(Debug, Serialize)]
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct ErrorResponse {
         pub error: String,
     }

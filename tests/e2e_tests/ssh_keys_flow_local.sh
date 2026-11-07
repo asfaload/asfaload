@@ -233,12 +233,20 @@ cd "$base_dir/client-cli/"
 DIGEST=$(cargo run --quiet -- get-digest --json "$SIGNERS_FILE_URL" | jq -r .digest)
 run_step "new-signers-file JSON digest matches get-digest of the served file" \
     bash -c "[[ '$NEW_SIGNERS_DIGEST' == '$DIGEST' ]]"
-run_step_json "Register repo with SSH key 1 (submitter)" \
-    '.success == true' \
-    cargo run --quiet -- register-repo \
-        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
-        --digest "$NEW_SIGNERS_DIGEST" \
-        "$SIGNERS_FILE_URL"
+# Keep the JSON output: signers use its signers_file_path with sign-pending.
+REGISTER_JSON="$SSH_KEYS_DIR/register_repo.json"
+run_step "Register repo with SSH key 1 (submitter)" \
+    bash -c "cargo run --quiet -- register-repo \
+        --secret-key '$SSH_KEY_1' -u '$backend' --password '$key_password' \
+        --digest '$NEW_SIGNERS_DIGEST' \
+        '$SIGNERS_FILE_URL' --json > '$REGISTER_JSON'"
+
+run_step "Register repo response reports success" \
+    bash -c "jq -e '.success == true' '$REGISTER_JSON' > /dev/null"
+
+REGISTERED_SIGNERS_FILE_PATH=$(jq -r '.signers_file_path' "$REGISTER_JSON")
+run_step "Register repo response gives the pending signers file path" \
+    bash -c "[[ '$REGISTERED_SIGNERS_FILE_PATH' == '$PROJECT_DIR_OVERRIDE/$PENDING_SIGNERS_DIR/$SIGNERS_FILE' ]]"
 
 # Backend: the submitter's SSH signature is recorded at registration
 assert_pending_signers_exist
@@ -258,7 +266,9 @@ run_step "Pending signers contains SSH pubkey 2" \
 section "Activate pending signers (both SSH keys sign)"
 ################################################################################
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$SSH_KEY_2" "$backend" "$key_password")
+# Use the path from the register-repo response and the digest of the
+# published signers file, as the register-repo output tells signers to do.
+SIGNERS_SIGN_ARGS="$REGISTERED_SIGNERS_FILE_PATH --digest $NEW_SIGNERS_DIGEST"
 
 # SSH key 1 (the submitter) already signed the pending signers file and
 # metadata at registration.

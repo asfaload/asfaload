@@ -1325,6 +1325,7 @@ async fn register_release(
                 .to_string(),
         ),
         required_signers: result.required_signers,
+        index_digest: result.index_digest,
     }))
 }
 

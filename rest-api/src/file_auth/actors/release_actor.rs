@@ -2,8 +2,8 @@ use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseAdders;
 use aggregate_signature::get_authorized_signers_for_file;
-use common::SignedFileLoader;
 use common::errors::AggregateSignatureError;
+use common::{AsfaloadHashes, SignedFileLoader};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
 use forge_release::common::{ClientProvidedData, ReleaseHandlingError};
 use kameo::message::Context;
@@ -35,6 +35,8 @@ pub struct RegisterResult {
     /// Base64 public keys that can still sign the release index, sorted.
     /// Empty when the aggregate signature is complete.
     pub required_signers: Vec<String>,
+    /// Digest of the index file as stored on disk.
+    pub index_digest: AsfaloadHashes,
 }
 
 impl Actor for ReleaseActor {
@@ -212,6 +214,26 @@ impl ReleaseActor {
             .await
             .map_err(|e| ApiError::InternalServerError(format!("Failed to commit file: {}", e)))?;
 
+        // Read back from disk, so that the client can detect a stored index
+        // that is not the index it signed.
+        let index_absolute_path = index_file_path.absolute_path().to_path_buf();
+        let index_digest =
+            tokio::task::spawn_blocking(move || common::sha512_for_file(&index_absolute_path))
+                .await?
+                .map_err(|e| {
+                    tracing::error!(
+                        request_id = %msg.request_id,
+                        actor = %ACTOR_NAME,
+                        error = %e,
+                        index_path = %index_file_path,
+                        "Failed to compute the digest of the index file"
+                    );
+                    ApiError::InternalServerError(format!(
+                        "Failed to compute the digest of the index file: {}",
+                        e
+                    ))
+                })?;
+
         let index_absolute_path = index_file_path.absolute_path().to_path_buf();
         let mut required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
             features_lib::aggregate_signature_helpers::get_missing_signers(&index_absolute_path)
@@ -236,6 +258,7 @@ impl ReleaseActor {
         Ok(RegisterResult {
             index_file_path,
             required_signers,
+            index_digest,
         })
     }
 }

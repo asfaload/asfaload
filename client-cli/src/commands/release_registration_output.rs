@@ -92,6 +92,7 @@ mod tests {
             message: "unused".to_string(),
             index_file_path: Some(INDEX_PATH.to_string()),
             required_signers: required_signers.into_iter().map(String::from).collect(),
+            index_digest: digest(),
         }
     }
 

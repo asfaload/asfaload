@@ -589,6 +589,9 @@ pub mod models {
         /// Empty when the registration signature completed the aggregate
         /// signature.
         pub required_signers: Vec<String>,
+        /// Digest of the index file as stored by the backend. The client
+        /// compares it with the digest of the index it signed.
+        pub index_digest: AsfaloadHashes,
     }
 
     /// Response for the get_signers_chain endpoint.

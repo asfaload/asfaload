@@ -167,6 +167,16 @@ pub mod tests {
                 .expect("the payload index is base64-encoded index json"),
             "the persisted index must be exactly the bytes the client signed"
         );
+        // The digest in the response is the digest of the index the client
+        // signed, so that the client can compare it with its own.
+        let client_index =
+            common::string_from_base64(payload["GithubRelease"]["index"].as_str().unwrap())
+                .expect("the payload index is base64-encoded index json");
+        assert_eq!(
+            response_json["index_digest"],
+            common::sha512_for_content(client_index.as_bytes())?.to_string(),
+            "the response digest must be the digest of the signed index"
+        );
         let index = rest_api_test_helpers::read_on_disk_index(&index_path)?;
         assert_eq!(index.version, 1);
         assert_eq!(

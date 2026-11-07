@@ -3272,6 +3272,11 @@ pub mod test_utils_tests {
 
         // The on-disk index is what consumers read: its content must match
         // the entries of the checksums file the server downloaded.
+        assert_eq!(
+            assets_response.index_digest,
+            common::sha512_for_file(git_repo_path.join(&index_path_str))?,
+            "the response digest must be the digest of the stored index"
+        );
         let index = rest_api_test_helpers::read_on_disk_index(&git_repo_path.join(index_path_str))?;
         assert_eq!(index.version, 1);
         // A checksums file carries no upstream publication date: both

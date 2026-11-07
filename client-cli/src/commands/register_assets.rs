@@ -1,3 +1,4 @@
+use crate::commands::release_registration_output::print_registration_overview;
 use crate::error::Result;
 use admin_lib::v1::RegistrationMode;
 use features_lib::AsfaloadSecretKeyTrait;
@@ -14,15 +15,13 @@ pub async fn handle_register_assets_command(
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
     let client = admin_lib::v1::Client::new(backend_url);
-    let response = client.register_assets(&mode, &secret_key).await?;
+    let registered = client.register_assets(&mode, &secret_key).await?;
+    let response = registered.response;
 
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.success {
-        println!("Assets registered successfully! You have also signed it!");
-        if let Some(index_path) = response.index_file_path {
-            println!("Index file path: {}", index_path);
-        }
+        print_registration_overview(&response, &registered.index_digest, backend_url);
     } else {
         println!("Asset registration failed: {}", response.message);
     }

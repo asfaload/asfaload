@@ -44,6 +44,15 @@ pub enum RegistrationMode {
     ChecksumFiles { urls: Vec<String> },
 }
 
+/// Result of a successful assets registration.
+pub struct RegisteredAssets {
+    /// The response of the backend.
+    pub response: rest_api_types::RegisterAssetsResponse,
+    /// Digest of the index signed by the client. The backend stores this
+    /// index as sent, so the other signers sign the same digest.
+    pub index_digest: AsfaloadHashes,
+}
+
 // The fetcher type depends on the build mode: the real fetcher in
 // production, one returning a fixed response when building tests.
 #[cfg(not(feature = "test-utils"))]
@@ -61,11 +70,11 @@ fn create_github_fetcher() -> MockGithubReleaseFetcher {
 /// Downloads and indexes the release content (a GitHub release or shasums
 /// files), signs the index with the secret key, and encodes both index and
 /// signature in base64, with the same conventions the server expects when
-/// handling the payload.
+/// handling the payload. Also returns the digest of the index that was signed.
 async fn build_register_assets_payload(
     mode: &RegistrationMode,
     secret_key: &AsfaloadSecretKeys,
-) -> AdminLibResult<RegisterAssetsPayload> {
+) -> AdminLibResult<(RegisterAssetsPayload, AsfaloadHashes)> {
     match mode {
         RegistrationMode::GithubRelease { url } => {
             let fetcher = create_github_fetcher();
@@ -73,11 +82,12 @@ async fn build_register_assets_payload(
             let index = release.generate_index_json()?;
             let hash = sha512_for_content(index.as_bytes())?;
             let signature = secret_key.sign(&hash)?;
-            Ok(RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
+            let payload = RegisterAssetsPayload::GithubRelease(GithubReleasePayload {
                 github_release_url: url.clone(),
                 index: base64_for_string(index),
                 signature: signature.to_base64(),
-            }))
+            });
+            Ok((payload, hash))
         }
         RegistrationMode::ChecksumFiles { urls } => {
             let client = reqwest::Client::new();
@@ -85,11 +95,12 @@ async fn build_register_assets_payload(
             let json = index.to_json()?;
             let hash = sha512_for_content(json.as_bytes())?;
             let signature = secret_key.sign(&hash)?.to_base64();
-            Ok(RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
+            let payload = RegisterAssetsPayload::ChecksumFiles(ChecksumFilesPayload {
                 csum_files: urls.clone(),
                 index: base64_for_string(json),
                 signature,
-            }))
+            });
+            Ok((payload, hash))
         }
     }
 }
@@ -339,14 +350,15 @@ impl Client {
     /// Makes an authenticated POST request to `/v1/assets`.
     /// Serializes the payload once and uses the same string for both
     /// auth headers and the request body (avoids signature mismatch).
+    /// Returns the backend response with the digest of the signed index.
     pub async fn register_assets(
         &self,
         mode: &RegistrationMode,
         secret_key: &AsfaloadSecretKeys,
-    ) -> AdminLibResult<rest_api_types::RegisterAssetsResponse> {
+    ) -> AdminLibResult<RegisteredAssets> {
         let url = format!("{}/v1/assets", self.base_url);
 
-        let payload = build_register_assets_payload(mode, secret_key).await?;
+        let (payload, index_digest) = build_register_assets_payload(mode, secret_key).await?;
 
         // Serialize once: same bytes for auth and body
         let payload_string = serde_json::to_string(&payload)?;
@@ -362,7 +374,11 @@ impl Client {
             .await?;
 
         let response = Self::check_response_status(response).await?;
-        Self::parse_json_response(response).await
+        let response = Self::parse_json_response(response).await?;
+        Ok(RegisteredAssets {
+            response,
+            index_digest,
+        })
     }
 
     /// Register a repository with the backend.
@@ -729,7 +745,7 @@ mod tests {
             .await;
 
         let urls = vec![format!("{}/SHA256SUMS", server.url())];
-        let payload = build_register_assets_payload(
+        let (payload, index_digest) = build_register_assets_payload(
             &RegistrationMode::ChecksumFiles { urls: urls.clone() },
             &secret_key,
         )
@@ -753,6 +769,10 @@ mod tests {
         let decoded_index = string_from_base64(&index)
             .unwrap_or_else(|e| panic!("server could not decode the index: {e}"));
         let hash = sha512_for_content(decoded_index.as_bytes()).expect("index is not empty");
+        assert_eq!(
+            index_digest, hash,
+            "the returned digest must be the digest of the index sent"
+        );
 
         // Parse the key and the signature the way the server does.
         let pub_key = AsfaloadPublicKeys::from_base64(&key_pair.public_key().to_base64())
@@ -779,7 +799,7 @@ mod tests {
         let key_pair = AsfaloadKeyPairs::new("test_password").unwrap();
         let secret_key = key_pair.secret_key("test_password").unwrap();
 
-        let payload = build_register_assets_payload(
+        let (payload, index_digest) = build_register_assets_payload(
             &RegistrationMode::GithubRelease {
                 url: MOCK_RELEASE_PAGE_URL.to_string(),
             },
@@ -806,6 +826,10 @@ mod tests {
         let decoded_index = string_from_base64(&index)
             .unwrap_or_else(|e| panic!("server could not decode the index: {e}"));
         let hash = sha512_for_content(decoded_index.as_bytes()).expect("index is not empty");
+        assert_eq!(
+            index_digest, hash,
+            "the returned digest must be the digest of the index sent"
+        );
 
         // Parse the key and the signature the way the server does.
         let pub_key = AsfaloadPublicKeys::from_base64(&key_pair.public_key().to_base64())

@@ -8,17 +8,17 @@ use rest_api_types::RegisterRepoResponse;
 use crate::cli::DEFAULT_BACKEND;
 use crate::utils::program_name;
 
-const BOLD: Style = Style::new().bold();
+pub(crate) const BOLD: Style = Style::new().bold();
 
 /// Removes control characters, so that text from the backend cannot
 /// use terminal escape sequences to hide or change the output.
-fn strip_control_chars(text: &str) -> String {
+pub(crate) fn strip_control_chars(text: &str) -> String {
     text.chars().filter(|c| !c.is_control()).collect()
 }
 
 /// A project ID is safe in a shell command when it has only ASCII letters, digits
 /// and `/`, `.`, `-`, `_`, and when no path segment is empty, `.` or `..`.
-fn is_safe_project_id(project_id: &str) -> bool {
+pub(crate) fn is_safe_project_id(project_id: &str) -> bool {
     !project_id.is_empty()
         && project_id
             .chars()
@@ -81,18 +81,63 @@ pub fn submission_overview(
         ),
         String::new(),
     ];
-    if response.required_signers.is_empty() {
-        lines.push("The signers file is active. No more signatures are necessary.".to_string());
-    } else {
-        lines.push(format!("{bold}Keys that can still sign{bold:#}"));
-        lines.extend(
-            response
-                .required_signers
-                .iter()
-                .map(|key| format!("  {}", strip_control_chars(key))),
-        );
-        lines.push(String::new());
-        if is_safe_to_show_command(response) {
+    let file_path =
+        is_safe_to_show_command(response).then_some(response.signers_file_path.as_str());
+    lines.extend(signatures_to_collect_lines(
+        &SignaturesToCollect {
+            required_signers: &response.required_signers,
+            file_path,
+            digest,
+            complete_message: "The signers file is active. No more signatures are necessary.",
+            unexpected_data_warning:
+                "The backend returned an unexpected project ID or signers file path.",
+        },
+        backend_url,
+        executable,
+        bold,
+    ));
+    let mut output = lines.join("\n");
+    output.push('\n');
+    output
+}
+
+/// The signatures still to collect for a file, as shown after a submission.
+pub(crate) struct SignaturesToCollect<'a> {
+    /// Keys that can still sign, empty when the signature is complete.
+    pub required_signers: &'a [String],
+    /// The path of the file to sign, `None` when the backend data is not
+    /// safe to put in a command.
+    pub file_path: Option<&'a str>,
+    pub digest: &'a AsfaloadHashes,
+    /// Shown instead of the keys when no more signatures are necessary.
+    pub complete_message: &'a str,
+    /// Shown instead of the command when `file_path` is `None`.
+    pub unexpected_data_warning: &'a str,
+}
+
+/// Build the lines about the signatures still to collect: the keys that can
+/// still sign, and the sign-pending command to send to them.
+///
+/// `backend_url` is `Some` only when the user did not use the default backend.
+pub(crate) fn signatures_to_collect_lines(
+    to_collect: &SignaturesToCollect,
+    backend_url: Option<&str>,
+    executable: &str,
+    bold: Style,
+) -> Vec<String> {
+    if to_collect.required_signers.is_empty() {
+        return vec![to_collect.complete_message.to_string()];
+    }
+    let mut lines = vec![format!("{bold}Keys that can still sign{bold:#}")];
+    lines.extend(
+        to_collect
+            .required_signers
+            .iter()
+            .map(|key| format!("  {}", strip_control_chars(key))),
+    );
+    lines.push(String::new());
+    match to_collect.file_path {
+        Some(file_path) => {
             lines.push(format!("{bold}Next step{bold:#}"));
             lines.push(
                 "  Send this command to the signers. Each signer replaces <secret-key>".to_string(),
@@ -100,21 +145,18 @@ pub fn submission_overview(
             lines.push("  with their secret key file:".to_string());
             lines.push(String::new());
             lines.push(format!("     {executable} sign-pending \\"));
-            lines.push(format!("       --digest {digest} \\"));
-            lines.push(format!("       {} \\", response.signers_file_path));
+            lines.push(format!("       --digest {} \\", to_collect.digest));
+            lines.push(format!("       {file_path} \\"));
             lines.extend(command_tail(backend_url));
-        } else {
+        }
+        None => {
             lines.push(format!("{bold}Warning{bold:#}"));
-            lines.push(
-                "  The backend returned an unexpected project ID or signers file path.".to_string(),
-            );
+            lines.push(format!("  {}", to_collect.unexpected_data_warning));
             lines.push("  For security, the command for the signers is not shown.".to_string());
             lines.push("  Signers can find the file with list-pending.".to_string());
         }
     }
-    let mut output = lines.join("\n");
-    output.push('\n');
-    output
+    lines
 }
 
 /// The last lines of a command to copy: the backend URL when it is not the

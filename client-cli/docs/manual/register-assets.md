@@ -56,14 +56,36 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default):
+Human-readable (default), when more signatures are necessary:
 
-    Assets registered successfully! You have also signed it!
-    Index file path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+    Release registered: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+    Your signature is included.
+
+    Keys that can still sign
+      asfaload-pub:alice-key
+      asfaload-pub:bob-key
+
+    Next step
+      Send this command to the signers. Each signer replaces <secret-key>
+      with their secret key file:
+
+         asfaload-cli sign-pending \
+           --digest sha512:2e2fde4e... \
+           https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json \
+           --secret-key <secret-key>
+
+Send the `sign-pending` command to the signers. Each signer replaces `<secret-key>` with their secret key file. The digest is the digest of the index that you signed. When you use a backend other than the default, the command contains `--backend-url`. If the backend returns an unexpected index file path, a warning replaces the command.
+
+When your signature completes the aggregate signature, the output says that the release is fully signed:
+
+    Release registered: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+    Your signature is included.
+
+    The release is fully signed. No more signatures are necessary.
 
 JSON (with `--json`):
 
-    {"success":true,"message":"Release registered successfully","index_file_path":"https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json"}
+    {"success":true,"message":"Release registered successfully","index_file_path":"https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json","required_signers":["asfaload-pub:alice-key","asfaload-pub:bob-key"]}
 
 ## Examples
 

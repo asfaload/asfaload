@@ -39,6 +39,13 @@ pub fn validate_threshold(threshold: u32, key_count: usize) -> Result<()> {
     Ok(())
 }
 
+/// Name of the program as defined in the command line parser.
+/// Use it in hints that other people run. Use `executable_name()` in hints
+/// that the same user runs.
+pub fn program_name() -> String {
+    crate::cli::Cli::command().get_name().to_string()
+}
+
 /// Name of the executable as started by the user, like `$0` in a shell.
 /// Use it in command hints, so that the user can copy them.
 pub fn executable_name() -> String {
@@ -49,7 +56,7 @@ pub fn executable_name() -> String {
 fn executable_name_from(arg0: Option<std::ffi::OsString>) -> String {
     arg0.filter(|a| !a.is_empty())
         .map(|a| a.to_string_lossy().into_owned())
-        .unwrap_or_else(|| crate::cli::Cli::command().get_name().to_string())
+        .unwrap_or_else(program_name)
 }
 
 /// Reads password from a file
@@ -437,6 +444,11 @@ mod tests {
             strip_ansi(&colored),
             "plain art must be the colored art without ANSI codes"
         );
+    }
+
+    #[test]
+    fn program_name_is_the_clap_command_name() {
+        assert_eq!(program_name(), "asfaload-cli");
     }
 
     #[test]

@@ -1443,7 +1443,7 @@ pub mod test_utils_tests {
             expects_forge_fetch,
         ) in cases
         {
-            let hits_before = mock.hits();
+            let hits_before = mock.calls();
             let request_body = RegisterRepoRequest {
                 signers_file_url: signers_url.clone(),
                 public_key: public_key.to_base64(),
@@ -1490,7 +1490,7 @@ pub mod test_utils_tests {
 
             let expected_hits = if expects_forge_fetch { 1 } else { 0 };
             assert_eq!(
-                mock.hits() - hits_before,
+                mock.calls() - hits_before,
                 expected_hits,
                 "case '{}': expected {} forge fetch(es)",
                 name,

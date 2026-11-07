@@ -1,6 +1,8 @@
 use anstyle::Style;
 use common::AsfaloadHashes;
 use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+use features_lib::{Forge, SignersConfigMetadata};
+use forge_url::{ForgeInfo, ForgeTrait};
 use rest_api_types::RegisterRepoResponse;
 
 use crate::cli::DEFAULT_BACKEND;
@@ -100,11 +102,7 @@ pub fn submission_overview(
             lines.push(format!("     {executable} sign-pending \\"));
             lines.push(format!("       --digest {digest} \\"));
             lines.push(format!("       {} \\", response.signers_file_path));
-            // The parts to fill in come last, so the backend URL is before the secret key.
-            if let Some(url) = backend_url {
-                lines.push(format!("       --backend-url {url} \\"));
-            }
-            lines.push("       --secret-key <secret-key>".to_string());
+            lines.extend(command_tail(backend_url));
         } else {
             lines.push(format!("{bold}Warning{bold:#}"));
             lines.push(
@@ -112,6 +110,123 @@ pub fn submission_overview(
             );
             lines.push("  For security, the command for the signers is not shown.".to_string());
             lines.push("  Signers can find the file with list-pending.".to_string());
+        }
+    }
+    let mut output = lines.join("\n");
+    output.push('\n');
+    output
+}
+
+/// The last lines of a command to copy: the backend URL when it is not the
+/// default one, then the secret key placeholder.
+///
+/// The parts to fill in come last, so the backend URL is before the secret key.
+fn command_tail(backend_url: Option<&str>) -> Vec<String> {
+    backend_url
+        .map(|url| format!("       --backend-url {url} \\"))
+        .into_iter()
+        .chain(std::iter::once(
+            "       --secret-key <secret-key>".to_string(),
+        ))
+        .collect()
+}
+
+/// The kind of release registration to show as example once a signers file
+/// is active.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReleaseExample {
+    /// A GitHub release. Holds the `owner/repo` of the project when it is
+    /// safe to put in a command.
+    GithubRelease(Option<String>),
+    /// Checksums files, for releases that are not on GitHub.
+    ChecksumsFiles,
+}
+
+/// Select the release registration example for the project of a signers file.
+///
+/// The owner and repo come from the retrieval URL, because sign-pending
+/// checks that URL against the forge before it signs. The backend path is
+/// not used.
+pub fn release_example_for(metadata: &SignersConfigMetadata) -> ReleaseExample {
+    match metadata.kind() {
+        Forge::Github => ReleaseExample::GithubRelease(github_owner_repo(metadata.retrieval_url())),
+        Forge::Gitlab | Forge::FileServer => ReleaseExample::ChecksumsFiles,
+    }
+}
+
+/// The `owner/repo` of a GitHub URL, when it is safe to put in a command.
+fn github_owner_repo(url: &str) -> Option<String> {
+    let url = url::Url::parse(url).ok()?;
+    let info = ForgeInfo::new(&url).ok()?;
+    let owner_repo = format!("{}/{}", info.owner(), info.repo());
+    is_safe_project_id(&owner_repo).then_some(owner_repo)
+}
+
+/// Print the next step after a signature activated a signers file.
+pub fn print_activation_next_step(example: &ReleaseExample, backend_url: &str) {
+    let non_default_backend = (backend_url != DEFAULT_BACKEND).then_some(backend_url);
+    // anstream removes the styles when stdout is not a terminal.
+    anstream::print!(
+        "{}",
+        activation_next_step(example, non_default_backend, &program_name(), true)
+    );
+}
+
+/// Build the next step after a signature activated a signers file: an
+/// example command to register a release.
+///
+/// `backend_url` is `Some` only when the user did not use the default backend.
+pub fn activation_next_step(
+    example: &ReleaseExample,
+    backend_url: Option<&str>,
+    executable: &str,
+    with_ansi: bool,
+) -> String {
+    let bold = if with_ansi { BOLD } else { Style::new() };
+    let mut lines = vec![format!("{bold}Next step{bold:#}")];
+    match example {
+        ReleaseExample::GithubRelease(owner_repo) => {
+            let (owner_repo, to_replace) = match owner_repo {
+                Some(owner_repo) => (owner_repo.as_str(), "<tag> and <secret-key>"),
+                None => ("<owner>/<repo>", "<owner>/<repo>, <tag> and <secret-key>"),
+            };
+            lines.push(
+                "  The signers file is now active. An artifact signer can register a release."
+                    .to_string(),
+            );
+            lines.push(format!(
+                "  Example for a GitHub release. Replace {to_replace}:"
+            ));
+            lines.push(String::new());
+            lines.push(format!("     {executable} register-assets \\"));
+            lines.push(format!(
+                "       --github-release-url https://github.com/{owner_repo}/releases/tag/<tag> \\"
+            ));
+            lines.extend(command_tail(backend_url));
+            lines.push(String::new());
+            lines.push(
+                "  Releases on other forges or file servers are registered with their".to_string(),
+            );
+            lines.push("  checksums files, using --csum-file.".to_string());
+        }
+        ReleaseExample::ChecksumsFiles => {
+            lines.push(
+                "  The signers file is now active. An artifact signer can register a release"
+                    .to_string(),
+            );
+            lines.push(
+                "  with its checksums files. Replace <checksums-file-url> and <secret-key>:"
+                    .to_string(),
+            );
+            lines.push(String::new());
+            lines.push(format!("     {executable} register-assets \\"));
+            lines.push("       --csum-file <checksums-file-url> \\".to_string());
+            lines.extend(command_tail(backend_url));
+            lines.push(String::new());
+            lines.push(
+                "  --csum-file can be repeated. For a GitHub release, use --github-release-url."
+                    .to_string(),
+            );
         }
     }
     let mut output = lines.join("\n");
@@ -327,5 +442,160 @@ mod tests {
     #[test]
     fn strip_control_chars_removes_only_control_chars() {
         assert_eq!(strip_control_chars("a\x1b[2Kb\nc\u{7}"), "a[2Kbc");
+    }
+
+    fn metadata(kind: Forge, retrieval_url: &str) -> SignersConfigMetadata {
+        SignersConfigMetadata::new(
+            kind,
+            retrieval_url.to_string(),
+            features_lib::VerifiedForgeContent::new_for_test(
+                retrieval_url.to_string(),
+                "{}".to_string(),
+            ),
+            chrono::Utc::now(),
+        )
+    }
+
+    #[test]
+    fn release_example_for_cases() {
+        let github_raw =
+            "https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json";
+        let github_blob = "https://github.com/acme/tool/blob/main/asfaload.signers/index.json";
+        // (forge, retrieval url, expected example)
+        let cases = [
+            (
+                Forge::Github,
+                github_raw,
+                ReleaseExample::GithubRelease(Some("acme/tool".to_string())),
+            ),
+            (
+                Forge::Github,
+                github_blob,
+                ReleaseExample::GithubRelease(Some("acme/tool".to_string())),
+            ),
+            // A retrieval URL that cannot be parsed gives placeholders.
+            (
+                Forge::Github,
+                "not a url",
+                ReleaseExample::GithubRelease(None),
+            ),
+            // Shell metacharacters must never reach the command.
+            (
+                Forge::Github,
+                "https://raw.githubusercontent.com/ac;me/tool/main/asfaload.signers/index.json",
+                ReleaseExample::GithubRelease(None),
+            ),
+            (
+                Forge::Gitlab,
+                "https://gitlab.com/acme/tool/-/raw/main/asfaload.signers/index.json",
+                ReleaseExample::ChecksumsFiles,
+            ),
+            (
+                Forge::FileServer,
+                "http://localhost:8080/acme/asfaload.signers/index.json",
+                ReleaseExample::ChecksumsFiles,
+            ),
+        ];
+        for (kind, url, expected) in cases {
+            assert_eq!(
+                release_example_for(&metadata(kind, url)),
+                expected,
+                "retrieval url {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn activation_next_step_for_github_release() {
+        let output = activation_next_step(
+            &ReleaseExample::GithubRelease(Some("acme/tool".to_string())),
+            None,
+            "asfaload-cli",
+            false,
+        );
+        assert_eq!(
+            output,
+            "Next step\n  \
+             The signers file is now active. An artifact signer can register a release.\n  \
+             Example for a GitHub release. Replace <tag> and <secret-key>:\n\
+             \n     \
+             asfaload-cli register-assets \\\n       \
+             --github-release-url https://github.com/acme/tool/releases/tag/<tag> \\\n       \
+             --secret-key <secret-key>\n\
+             \n  \
+             Releases on other forges or file servers are registered with their\n  \
+             checksums files, using --csum-file.\n"
+        );
+    }
+
+    #[test]
+    fn activation_next_step_for_github_release_without_owner_repo() {
+        let output = activation_next_step(
+            &ReleaseExample::GithubRelease(None),
+            None,
+            "asfaload-cli",
+            false,
+        );
+        assert!(
+            output.contains("Replace <owner>/<repo>, <tag> and <secret-key>:\n"),
+            "got: {output}"
+        );
+        assert!(
+            output.contains("https://github.com/<owner>/<repo>/releases/tag/<tag> \\\n"),
+            "got: {output}"
+        );
+    }
+
+    #[test]
+    fn activation_next_step_for_checksums_files() {
+        let output =
+            activation_next_step(&ReleaseExample::ChecksumsFiles, None, "asfaload-cli", false);
+        assert_eq!(
+            output,
+            "Next step\n  \
+             The signers file is now active. An artifact signer can register a release\n  \
+             with its checksums files. Replace <checksums-file-url> and <secret-key>:\n\
+             \n     \
+             asfaload-cli register-assets \\\n       \
+             --csum-file <checksums-file-url> \\\n       \
+             --secret-key <secret-key>\n\
+             \n  \
+             --csum-file can be repeated. For a GitHub release, use --github-release-url.\n"
+        );
+    }
+
+    #[test]
+    fn activation_next_step_adds_non_default_backend_before_secret_key() {
+        for example in [
+            ReleaseExample::GithubRelease(Some("acme/tool".to_string())),
+            ReleaseExample::ChecksumsFiles,
+        ] {
+            let output = activation_next_step(
+                &example,
+                Some("http://localhost:3000"),
+                "asfaload-cli",
+                false,
+            );
+            assert!(
+                output.contains(
+                    "       --backend-url http://localhost:3000 \\\n       --secret-key <secret-key>\n"
+                ),
+                "backend URL must come just before the secret key placeholder, got: {output}"
+            );
+        }
+    }
+
+    #[test]
+    fn activation_next_step_without_ansi_has_no_escape_codes_and_with_ansi_has_some() {
+        let build = |with_ansi| {
+            activation_next_step(
+                &ReleaseExample::ChecksumsFiles,
+                None,
+                "asfaload-cli",
+                with_ansi,
+            )
+        };
+        assert!(!build(false).contains('\x1b'));
+        assert!(build(true).contains('\x1b'));
     }
 }

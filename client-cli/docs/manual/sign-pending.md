@@ -72,6 +72,33 @@ Human-readable (default), when the aggregate signature is now complete:
 
     Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
 
+When your signature completes a pending signers file, that file is now the active signers file. The output then also shows an example command to register a release. For a project on GitHub, the owner and repository come from the signers file metadata:
+
+    Next step
+      The signers file is now active. An artifact signer can register a release.
+      Example for a GitHub release. Replace <tag> and <secret-key>:
+
+         asfaload-cli register-assets \
+           --github-release-url https://github.com/acme/tool/releases/tag/<tag> \
+           --secret-key <secret-key>
+
+      Releases on other forges or file servers are registered with their
+      checksums files, using --csum-file.
+
+For a project on another forge or on a file server, the example uses checksums files:
+
+    Next step
+      The signers file is now active. An artifact signer can register a release
+      with its checksums files. Replace <checksums-file-url> and <secret-key>:
+
+         asfaload-cli register-assets \
+           --csum-file <checksums-file-url> \
+           --secret-key <secret-key>
+
+      --csum-file can be repeated. For a GitHub release, use --github-release-url.
+
+When you use a backend that is not the default one, the command also contains `--backend-url`.
+
 When other signers must still provide their signatures:
 
     Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.

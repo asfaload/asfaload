@@ -59,7 +59,20 @@ When your signature completes the required count (every signer must sign for an 
 
 ```
 Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
+
+Next step
+  The signers file is now active. An artifact signer can register a release.
+  Example for a GitHub release. Replace <tag> and <secret-key>:
+
+     asfaload-cli register-assets \
+       --github-release-url https://github.com/acme/tool/releases/tag/<tag> \
+       --secret-key <secret-key>
+
+  Releases on other forges or file servers are registered with their
+  checksums files, using --csum-file.
 ```
+
+For a project that is not on GitHub, the example uses `--csum-file` with the checksums files of the release.
 
 ![Demo: sign the pending signers file](demos/activate-signers-file.gif)
 

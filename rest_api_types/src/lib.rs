@@ -585,6 +585,10 @@ pub mod models {
         pub success: bool,
         pub message: String,
         pub index_file_path: Option<String>,
+        /// Base64 public keys that can still sign the release index.
+        /// Empty when the registration signature completed the aggregate
+        /// signature.
+        pub required_signers: Vec<String>,
     }
 
     /// Response for the get_signers_chain endpoint.

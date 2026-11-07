@@ -32,6 +32,9 @@ pub struct ProcessRelease {
 
 pub struct RegisterResult {
     pub index_file_path: NormalisedPaths,
+    /// Base64 public keys that can still sign the release index, sorted.
+    /// Empty when the aggregate signature is complete.
+    pub required_signers: Vec<String>,
 }
 
 impl Actor for ReleaseActor {
@@ -209,7 +212,31 @@ impl ReleaseActor {
             .await
             .map_err(|e| ApiError::InternalServerError(format!("Failed to commit file: {}", e)))?;
 
-        Ok(RegisterResult { index_file_path })
+        let index_absolute_path = index_file_path.absolute_path().to_path_buf();
+        let mut required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
+            features_lib::aggregate_signature_helpers::get_missing_signers(&index_absolute_path)
+        })
+        .await?
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %msg.request_id,
+                actor = %ACTOR_NAME,
+                error = %e,
+                index_path = %index_file_path,
+                "Failed to compute missing signers"
+            );
+            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+        })?
+        .into_iter()
+        .map(|key| key.to_base64())
+        .collect();
+        // Sorted to give a stable output, as the missing signers are a set.
+        required_signers.sort_unstable();
+
+        Ok(RegisterResult {
+            index_file_path,
+            required_signers,
+        })
     }
 }
 

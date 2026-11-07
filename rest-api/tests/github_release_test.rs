@@ -129,6 +129,13 @@ pub mod tests {
             response_json["index_file_path"].is_string(),
             "Expected index_file_path to be a string"
         );
+        // With the threshold at 2, only the key that did not register the
+        // release can still sign.
+        assert_eq!(
+            response_json["required_signers"],
+            serde_json::json!([test_keys.pub_key(1).unwrap().to_base64()]),
+            "Expected the second key as the only required signer"
+        );
 
         // Verify index file exists and get its path from response
         let index_path_str = response_json["index_file_path"]

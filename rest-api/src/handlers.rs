@@ -1324,6 +1324,7 @@ async fn register_release(
                 .to_string_lossy()
                 .to_string(),
         ),
+        required_signers: result.required_signers,
     }))
 }
 

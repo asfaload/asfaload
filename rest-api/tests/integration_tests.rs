@@ -3254,6 +3254,9 @@ pub mod test_utils_tests {
 
         let assets_response = response.json::<RegisterAssetsResponse>().await?;
         assert!(assets_response.success);
+        // The single artifact signer completed the release signature with the
+        // registration, so no key needs to sign.
+        assert!(assets_response.required_signers.is_empty());
 
         // Verify the index file was created at the expected origin-prefix path
         let index_path_str = assets_response

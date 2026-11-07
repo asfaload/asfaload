@@ -117,7 +117,15 @@ On an interactive terminal you can also omit the path and digest entirely: `sign
 
 ## Troubleshooting
 
-**"Already completed" error when signing** — someone else already provided the final signature. The signers file is active; no action needed.
+**"Your signature ... was already collected"** — you signed this file before. The backend keeps your first signature. You do not need to do more. The full message is:
+
+```
+Your signature for https/github.com/443/acme/tool/asfaload.signers.pending/index.json was already collected. You do not need to sign it again.
+```
+
+For this message, the exit code of `sign-pending` is not zero. Scripts must not use only the exit code to find if the signing round failed.
+
+**`sign-pending` cannot get the pending signers file** — the other signers possibly provided all the necessary signatures before you. When the signers file becomes active, the backend removes the pending signers file. Its path is then not available. Run `list-pending` again: if the file is not in the list, you do not need to do more.
 
 **list-pending returns empty** — either your key is not listed in the signers file, or the file has already been fully signed.
 

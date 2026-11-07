@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 
 use crate::auth::create_auth_headers;
-use crate::error::{AdminLibError, AdminLibResult};
+use crate::error::{AdminLibError, AdminLibResult, IndexDigests};
 use common::{AsfaloadHashes, base64_for_string, sha512_for_content, to_posix_json};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
@@ -48,9 +48,27 @@ pub enum RegistrationMode {
 pub struct RegisteredAssets {
     /// The response of the backend.
     pub response: rest_api_types::RegisterAssetsResponse,
-    /// Digest of the index signed by the client. The backend stores this
-    /// index as sent, so the other signers sign the same digest.
+    /// Digest of the index signed by the client. The digest of the index
+    /// stored by the backend was checked to be the same.
     pub index_digest: AsfaloadHashes,
+}
+
+/// Fail when the index stored by the backend is not the index the client
+/// signed. The other signers would then sign a different index.
+fn check_stored_index_digest(
+    signed: &AsfaloadHashes,
+    stored: &AsfaloadHashes,
+) -> AdminLibResult<()> {
+    if signed == stored {
+        Ok(())
+    } else {
+        Err(AdminLibError::StoredIndexDigestMismatch(Box::new(
+            IndexDigests {
+                signed: signed.clone(),
+                stored: stored.clone(),
+            },
+        )))
+    }
 }
 
 // The fetcher type depends on the build mode: the real fetcher in
@@ -374,7 +392,9 @@ impl Client {
             .await?;
 
         let response = Self::check_response_status(response).await?;
-        let response = Self::parse_json_response(response).await?;
+        let response: rest_api_types::RegisterAssetsResponse =
+            Self::parse_json_response(response).await?;
+        check_stored_index_digest(&index_digest, &response.index_digest)?;
         Ok(RegisteredAssets {
             response,
             index_digest,
@@ -522,6 +542,30 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_stored_index_digest_accepts_same_digest() {
+        let digest = sha512_for_content(&b"index"[..]).unwrap();
+        assert!(check_stored_index_digest(&digest, &digest.clone()).is_ok());
+    }
+
+    #[test]
+    fn check_stored_index_digest_rejects_other_digest() {
+        let signed = sha512_for_content(&b"index"[..]).unwrap();
+        let stored = sha512_for_content(&b"other index"[..]).unwrap();
+        match check_stored_index_digest(&signed, &stored) {
+            Err(e @ AdminLibError::StoredIndexDigestMismatch(_)) => {
+                let message = e.to_string();
+                assert!(message.contains(&signed.to_string()), "got: {message}");
+                assert!(message.contains(&stored.to_string()), "got: {message}");
+                assert!(
+                    message.starts_with("The release is registered"),
+                    "got: {message}"
+                );
+            }
+            other => panic!("Expected StoredIndexDigestMismatch, got: {other:?}"),
+        }
+    }
 
     #[tokio::test]
     async fn check_response_status_passes_through_on_success() {

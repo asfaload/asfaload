@@ -1,3 +1,4 @@
+use common::AsfaloadHashes;
 use common::errors::keys::SignError;
 use forge_release::common::ReleaseHandlingError;
 use thiserror::Error;
@@ -30,6 +31,24 @@ pub enum AdminLibError {
 
     #[error("Sign error: {0}")]
     SignError(#[from] SignError),
+
+    #[error(
+        "The release is registered, but the index stored by the backend is not the index you signed. \
+         Signed index: {}. Stored index: {}. \
+         Do not ask other signers to sign this release. Tell the backend operators about this problem.",
+        .0.signed,
+        .0.stored
+    )]
+    // Box the IndexDigests to avoid clippy warning of very large variant
+    StoredIndexDigestMismatch(Box<IndexDigests>),
+}
+
+/// The digest of the index signed by the client and the digest of the index
+/// stored by the backend.
+#[derive(Debug)]
+pub struct IndexDigests {
+    pub signed: AsfaloadHashes,
+    pub stored: AsfaloadHashes,
 }
 
 pub type AdminLibResult<T> = std::result::Result<T, AdminLibError>;

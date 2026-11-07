@@ -85,7 +85,17 @@ When your signature completes the aggregate signature, the output says that the 
 
 JSON (with `--json`):
 
-    {"success":true,"message":"Release registered successfully","index_file_path":"https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json","required_signers":["asfaload-pub:alice-key","asfaload-pub:bob-key"]}
+    {"success":true,"message":"Release registered successfully","index_file_path":"https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json","required_signers":["asfaload-pub:alice-key","asfaload-pub:bob-key"],"index_digest":"sha512:2e2fde4e..."}
+
+`index_digest` is the digest of the index that you signed. Use it as the `--digest` value of `sign-pending`.
+
+## Check of the stored index
+
+The backend sends the digest of the index file that it stored. The command compares it with the digest of the index that you signed. If the two digests are not the same, the command fails with this message:
+
+    Admin library error: The release is registered, but the index stored by the backend is not the index you signed. Signed index: sha512:2e2fde4e.... Stored index: sha512:9c1a77b0.... Do not ask other signers to sign this release. Tell the backend operators about this problem.
+
+The release is registered when this check occurs. If you register the release again, the backend refuses it.
 
 ## Examples
 
@@ -101,7 +111,7 @@ JSON (with `--json`):
 ## Exit codes
 
 - `0` — assets registered.
-- non-zero — error (authentication failure, invalid URL, mutually exclusive flags, network error).
+- non-zero — error (authentication failure, invalid URL, mutually exclusive flags, network error, stored index not the same as the signed index).
 
 ## Errors
 

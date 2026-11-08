@@ -55,13 +55,19 @@ Human-readable (default):
 
     <file_path>: pending
 
+    Keys that can still sign
+      <base64 public key>
+      <base64 public key>
+
+A key is in the list when it has no valid signature yet. The list does not tell how many signatures are still necessary.
+
 or
 
     <file_path>: complete
 
 JSON (with `--json`):
 
-    {"file_path":"<file_path>","is_complete":false}
+    {"file_path":"<file_path>","is_complete":false,"required_signers":["<base64 public key>","<base64 public key>"]}
 
 ## Examples
 

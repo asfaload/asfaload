@@ -109,6 +109,16 @@ pub(crate) struct SignaturesToCollect<'a> {
     pub unexpected_data_warning: &'a str,
 }
 
+/// The heading and the keys that can still sign, one key per line.
+pub(crate) fn keys_that_can_sign_lines(keys: &[String], bold: Style) -> Vec<String> {
+    std::iter::once(format!("{bold}Keys that can still sign{bold:#}"))
+        .chain(
+            keys.iter()
+                .map(|key| format!("  {}", strip_control_chars(key))),
+        )
+        .collect()
+}
+
 /// Build the lines about the signatures still to collect: the keys that can
 /// still sign, and the sign-pending command to send to them.
 ///
@@ -122,13 +132,7 @@ pub(crate) fn signatures_to_collect_lines(
     if to_collect.required_signers.is_empty() {
         return vec![to_collect.complete_message.to_string()];
     }
-    let mut lines = vec![format!("{bold}Keys that can still sign{bold:#}")];
-    lines.extend(
-        to_collect
-            .required_signers
-            .iter()
-            .map(|key| format!("  {}", strip_control_chars(key))),
-    );
+    let mut lines = keys_that_can_sign_lines(to_collect.required_signers, bold);
     lines.push(String::new());
     match to_collect.file_path {
         Some(file_path) => {
@@ -157,7 +161,7 @@ pub(crate) fn signatures_to_collect_lines(
 /// default one, then the secret key placeholder.
 ///
 /// The parts to fill in come last, so the backend URL is before the secret key.
-fn command_tail(backend_url: Option<&str>) -> Vec<String> {
+pub(crate) fn command_tail(backend_url: Option<&str>) -> Vec<String> {
     backend_url
         .map(|url| format!("       --backend-url {url} \\"))
         .into_iter()
@@ -276,6 +280,15 @@ mod tests {
     use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
 
     const PROJECT_ID: &str = "http/localhost/44241/project";
+
+    #[test]
+    fn keys_that_can_sign_lines_lists_keys_without_control_chars() {
+        let keys = vec!["key1".to_string(), "ke\x1by2".to_string()];
+        assert_eq!(
+            keys_that_can_sign_lines(&keys, Style::new()),
+            vec!["Keys that can still sign", "  key1", "  key2"]
+        );
+    }
 
     fn pending_path() -> String {
         format!("{PROJECT_ID}/{PENDING_SIGNERS_DIR}/{SIGNERS_FILE}")

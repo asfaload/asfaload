@@ -372,9 +372,12 @@ tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download artifact with 1 of 2 signatures" \
     cargo run --quiet -- download -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.1)
 
-# The index is not complete yet: its status must still be pending.
+# The index is not complete yet: its status must still be pending, and the
+# keys that did not sign yet (key0 and key1) can still sign.
+pk0="$(pubkey_of "$KEY_0")"
+pk1="$(pubkey_of "$KEY_1")"
 run_step_json "Check signature status for v0.1 index (pending)" \
-    '.is_complete == false' \
+    ".is_complete == false and (.required_signers | length == 2 and any(. == \"$pk0\") and any(. == \"$pk1\"))" \
     cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
 # Registration records the submitter's signature, so the registrant (key2)
@@ -408,7 +411,7 @@ assert_release_index_active "0.1"
 assert_release_index_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2"
 
 run_step_json "Check signature status for v0.1 index (complete)" \
-    '.is_complete == true' \
+    '.is_complete == true and (.required_signers | length == 0)' \
     cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
 expect_fail "Sign release index with key2 (already completed)" \

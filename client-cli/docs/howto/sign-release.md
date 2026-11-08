@@ -72,6 +72,10 @@ asfaload-cli signature-status --secret-key ~/.asfaload/mykey \
 
 ```
 https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json: pending
+
+Keys that can still sign
+  <base64 public key>
+  <base64 public key>
 ```
 
 or

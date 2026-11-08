@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
+use crate::cli::DEFAULT_BACKEND;
 use crate::commands::revocation_output::revocation_note;
+use crate::commands::signature_status::signature_status_hint;
 use crate::commands::signers_submission_output::{print_activation_next_step, release_example_for};
 use crate::error::Result;
+use crate::utils::executable_name;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
@@ -147,6 +150,12 @@ pub async fn handle_sign_pending_sec_key(
         if let Some(note) = revocation_note {
             println!("{note}");
         }
+        let non_default_backend = (backend_url != DEFAULT_BACKEND).then_some(backend_url);
+        println!();
+        print!(
+            "{}",
+            signature_status_hint(&file_path, non_default_backend, &executable_name())
+        );
     }
 
     Ok(response)

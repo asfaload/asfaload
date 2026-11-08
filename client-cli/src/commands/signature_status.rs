@@ -1,4 +1,6 @@
-use crate::commands::signers_submission_output::{BOLD, keys_that_can_sign_lines};
+use crate::commands::signers_submission_output::{
+    BOLD, command_tail, is_safe_project_id, keys_that_can_sign_lines,
+};
 use crate::error::Result;
 use crate::utils::strip_control_chars;
 use anstyle::Style;
@@ -47,9 +49,65 @@ pub async fn handle_signature_status_command(
     Ok(())
 }
 
+/// Build the hint, shown after a signature, about how to follow the status
+/// of the signature. The command is shown only when `file_path` is safe to
+/// put in a shell command.
+///
+/// `backend_url` is `Some` only when the user did not use the default backend.
+pub fn signature_status_hint(
+    file_path: &str,
+    backend_url: Option<&str>,
+    executable: &str,
+) -> String {
+    if !is_safe_project_id(file_path) {
+        return "To follow the status of the signature, use the signature-status command.\n"
+            .to_string();
+    }
+    let mut lines = vec![
+        "To follow the status of the signature, run this command:".to_string(),
+        String::new(),
+        format!("     {executable} signature-status \\"),
+        format!("       {file_path} \\"),
+    ];
+    lines.extend(command_tail(backend_url));
+    let mut output = lines.join("\n");
+    output.push('\n');
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_hint_with_default_backend() {
+        assert_eq!(
+            signature_status_hint("project/asfaload.index.json", None, "asfaload"),
+            "To follow the status of the signature, run this command:\n\
+             \n     asfaload signature-status \\\n       project/asfaload.index.json \\\n       --secret-key <secret-key>\n"
+        );
+    }
+
+    #[test]
+    fn status_hint_with_other_backend() {
+        let hint = signature_status_hint(
+            "project/asfaload.index.json",
+            Some("https://asfaload.example.com"),
+            "asfaload",
+        );
+        assert!(hint.contains("       --backend-url https://asfaload.example.com \\\n"));
+        assert!(hint.ends_with("       --secret-key <secret-key>\n"));
+    }
+
+    #[test]
+    fn status_hint_without_command_for_unsafe_path() {
+        for path in ["../project/file", "project/a b", "pro\x1bject"] {
+            assert_eq!(
+                signature_status_hint(path, None, "asfaload"),
+                "To follow the status of the signature, use the signature-status command.\n"
+            );
+        }
+    }
 
     fn response(is_complete: bool, required_signers: &[&str]) -> GetSignatureStatusResponse {
         GetSignatureStatusResponse {

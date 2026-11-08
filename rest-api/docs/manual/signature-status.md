@@ -27,13 +27,15 @@ Standard Asfaload authentication headers, signed by the caller's secret key:
 
     {
       "file_path": "https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json",
-      "is_complete": false
+      "is_complete": false,
+      "required_signers": ["<base64 public key>", "..."]
     }
 
 Fields:
 
 - `file_path` — normalized mirror-relative path to the file.
 - `is_complete` — `true` once the aggregate signature threshold has been met; `false` while signatures are still being collected.
+- `required_signers` — base64 public keys that can still sign, sorted. Empty when the aggregate signature is complete. A key is in the list when it has no valid signature yet; the list does not tell how many signatures are still necessary.
 
 ## Errors
 
@@ -53,7 +55,7 @@ Fields:
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>'
 
-    {"file_path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json","is_complete":false}
+    {"file_path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json","is_complete":false,"required_signers":["<base64 public key>","..."]}
 
 ### Caller not an authorized signer
 

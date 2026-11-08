@@ -707,6 +707,64 @@ pub mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_signature_status_required_signers() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use rest_api_test_helpers::{TestSetup, TestSetupBuilder};
+        use rest_api_types::GetSignatureStatusResponse;
+
+        async fn signature_status(setup: &TestSetup) -> anyhow::Result<GetSignatureStatusResponse> {
+            let auth =
+                create_auth_headers_with_key(setup.test_keys().sec_key(0).unwrap(), "").await;
+            let response = reqwest::Client::new()
+                .get(format!(
+                    "http://127.0.0.1:{}/v1/signatures/{}",
+                    setup.port(),
+                    setup.artifact_path()
+                ))
+                .header(HEADER_TIMESTAMP, &auth.timestamp)
+                .header(HEADER_NONCE, &auth.nonce)
+                .header(HEADER_SIGNATURE, &auth.signature)
+                .header(HEADER_PUBLIC_KEY, &auth.public_key)
+                .send()
+                .await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            Ok(response.json().await?)
+        }
+
+        let setup = TestSetupBuilder::new()
+            .with_keys(3)
+            .with_threshold(2)
+            .with_artifact("releases/data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
+        let sorted_keys = |indices: &[usize]| {
+            let mut keys: Vec<String> = indices
+                .iter()
+                .map(|i| setup.test_keys().pub_key(*i).unwrap().to_base64())
+                .collect();
+            keys.sort();
+            keys
+        };
+
+        let status = signature_status(&setup).await?;
+        assert!(!status.is_complete);
+        assert_eq!(status.required_signers, sorted_keys(&[0, 1, 2]));
+
+        setup.submit_signature_and_wait(0).await?;
+        let status = signature_status(&setup).await?;
+        assert!(!status.is_complete);
+        assert_eq!(status.required_signers, sorted_keys(&[1, 2]));
+
+        setup.submit_signature_and_wait(1).await?;
+        let status = signature_status(&setup).await?;
+        assert!(status.is_complete);
+        assert!(status.required_signers.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_get_signature_status_rejects_unauthenticated() -> Result<(), anyhow::Error> {
         use rest_api_test_helpers::TestSetupBuilder;
 

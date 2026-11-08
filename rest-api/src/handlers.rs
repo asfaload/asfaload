@@ -634,6 +634,7 @@ pub async fn get_signature_status_handler(
     Ok(Json(GetSignatureStatusResponse {
         file_path: file_path.relative_path().display().to_string(),
         is_complete: status.is_complete,
+        required_signers: status.required_signers,
     }))
 }
 

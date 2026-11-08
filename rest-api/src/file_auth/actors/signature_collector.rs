@@ -60,6 +60,9 @@ pub struct GetSignatureStatusRequest {
 pub struct SignatureStatus {
     /// Whether the aggregate signature is complete
     pub is_complete: bool,
+    /// Base64 public keys that can still sign, sorted. Empty when the
+    /// aggregate signature is complete.
+    pub required_signers: Vec<String>,
 }
 
 /// Request to revoke a signed file.
@@ -368,7 +371,33 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 
         let is_complete = signature_with_state.is_complete();
 
-        Ok(SignatureStatus { is_complete })
+        // A complete signers file is not in the pending directory anymore, so
+        // the missing signers are only computed for a pending signature.
+        let required_signers = if is_complete {
+            Vec::new()
+        } else {
+            let missing =
+                missing_signers(msg.file_path.absolute_path().to_path_buf(), &msg.request_id)
+                    .await?;
+            // An empty list would be reported to the client as a complete signature.
+            if missing.is_empty() {
+                tracing::error!(
+                    actor = ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    file_path = %msg.file_path.absolute_path().display(),
+                    "Signature is pending, but no signer can still sign"
+                );
+                return Err(ApiError::InternalServerError(
+                    "Signature is pending, but no signer can still sign".to_string(),
+                ));
+            }
+            missing
+        };
+
+        Ok(SignatureStatus {
+            is_complete,
+            required_signers,
+        })
     }
 }
 
@@ -463,8 +492,13 @@ impl Message<RevokeFileMessage> for SignatureCollector {
         let required_signers = if signature_with_state.is_complete() {
             Vec::new()
         } else {
-            let missing =
-                missing_revocation_signers(abs_path.to_path_buf(), &msg.request_id).await?;
+            let pending_revocation_path = pending_revocation_path_for(abs_path).map_err(|e| {
+                ApiError::InternalServerError(format!(
+                    "Failed to compute pending revocation path: {}",
+                    e
+                ))
+            })?;
+            let missing = missing_signers(pending_revocation_path, &msg.request_id).await?;
             // An empty list would be reported to the client as a complete revocation.
             if missing.is_empty() {
                 tracing::error!(
@@ -492,17 +526,11 @@ impl Message<RevokeFileMessage> for SignatureCollector {
     }
 }
 
-/// Base64 public keys that can still sign the pending revocation of
-/// `signed_file_path`, sorted to give a stable output.
-async fn missing_revocation_signers(
-    signed_file_path: PathBuf,
-    request_id: &str,
-) -> Result<Vec<String>, ApiError> {
-    let pending_revocation_path = pending_revocation_path_for(&signed_file_path).map_err(|e| {
-        ApiError::InternalServerError(format!("Failed to compute pending revocation path: {}", e))
-    })?;
+/// Base64 public keys that can still sign `file_path`, sorted to give a
+/// stable output.
+async fn missing_signers(file_path: PathBuf, request_id: &str) -> Result<Vec<String>, ApiError> {
     let mut required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
-        features_lib::aggregate_signature_helpers::get_missing_signers(&pending_revocation_path)
+        features_lib::aggregate_signature_helpers::get_missing_signers(&file_path)
     })
     .await?
     .map_err(|e| {
@@ -510,12 +538,9 @@ async fn missing_revocation_signers(
             actor = ACTOR_NAME,
             request_id = %request_id,
             error = %e,
-            "Failed to compute missing revocation signers"
+            "Failed to compute missing signers"
         );
-        ApiError::ActorOperationFailed(format!(
-            "Failed to compute missing revocation signers: {}",
-            e
-        ))
+        ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
     })?
     .into_iter()
     .map(|key| key.to_base64())

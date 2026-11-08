@@ -1,10 +1,11 @@
 use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
 use common::errors::{AggregateSignatureError, SignersFileError};
-use common::fs::names::signatures_path_for;
+use common::fs::names::{pending_revocation_path_for, signatures_path_for};
 use constants::SIGNERS_DIR;
 use features_lib::{
-    AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState, SignedFileLoader, sha512_for_file,
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState,
+    SignedFileLoader, sha512_for_file,
 };
 use kameo::actor::ActorRef;
 use kameo::message::Context;
@@ -76,7 +77,11 @@ pub struct RevokeFileMessage {
 
 /// Result of a revocation operation.
 #[derive(Debug, Clone)]
-pub struct RevokeFileResult();
+pub struct RevokeFileResult {
+    /// Base64 public keys that can still sign the revocation, sorted.
+    /// Empty when the revocation is complete.
+    pub required_signers: Vec<String>,
+}
 
 /// Actor responsible for collecting individual signatures for aggregate signatures.
 ///
@@ -430,7 +435,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
         }
 
         // Delegate to core revocation logic (validates signature, authorization, creates files)
-        aggregate_signature::revocation::revoke_signed_file(
+        let signature_with_state = aggregate_signature::revocation::revoke_signed_file(
             &abs_path,
             &msg.revocation_json,
             &msg.signature,
@@ -453,15 +458,71 @@ impl Message<RevokeFileMessage> for SignatureCollector {
             map_to_user_error(e, "Failed to commit revocation changes")
         })?;
 
+        // When the initiator signature completed the revocation, the pending
+        // revocation file does not exist anymore: no signer is missing.
+        let required_signers = if signature_with_state.is_complete() {
+            Vec::new()
+        } else {
+            let missing =
+                missing_revocation_signers(abs_path.to_path_buf(), &msg.request_id).await?;
+            // An empty list would be reported to the client as a complete revocation.
+            if missing.is_empty() {
+                tracing::error!(
+                    actor = ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    file_path = %msg.file_path.absolute_path().display(),
+                    "Revocation is pending, but no revocation signer can still sign"
+                );
+                return Err(ApiError::InternalServerError(
+                    "Revocation is pending, but no revocation signer can still sign".to_string(),
+                ));
+            }
+            missing
+        };
+
         tracing::info!(
             actor = ACTOR_NAME,
             request_id = %msg.request_id,
             file_path = %msg.file_path.absolute_path().display(),
-            "Successfully revoked signed file"
+            revocation_complete = required_signers.is_empty(),
+            "Successfully processed revocation request"
         );
 
-        Ok(RevokeFileResult())
+        Ok(RevokeFileResult { required_signers })
     }
+}
+
+/// Base64 public keys that can still sign the pending revocation of
+/// `signed_file_path`, sorted to give a stable output.
+async fn missing_revocation_signers(
+    signed_file_path: PathBuf,
+    request_id: &str,
+) -> Result<Vec<String>, ApiError> {
+    let pending_revocation_path = pending_revocation_path_for(&signed_file_path).map_err(|e| {
+        ApiError::InternalServerError(format!("Failed to compute pending revocation path: {}", e))
+    })?;
+    let mut required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
+        features_lib::aggregate_signature_helpers::get_missing_signers(&pending_revocation_path)
+    })
+    .await?
+    .map_err(|e| {
+        tracing::error!(
+            actor = ACTOR_NAME,
+            request_id = %request_id,
+            error = %e,
+            "Failed to compute missing revocation signers"
+        );
+        ApiError::ActorOperationFailed(format!(
+            "Failed to compute missing revocation signers: {}",
+            e
+        ))
+    })?
+    .into_iter()
+    .map(|key| key.to_base64())
+    .collect();
+    // Sorted to give a stable output, as the missing signers are a set.
+    required_signers.sort_unstable();
+    Ok(required_signers)
 }
 
 /// Map a `SignersFileError` to the appropriate `ApiError`, preserving the same

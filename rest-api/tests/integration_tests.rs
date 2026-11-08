@@ -15,6 +15,29 @@ pub fn signature_for_sha(
     Ok(secret_key.sign(&digest)?.to_base64())
 }
 
+/// Send an authenticated signature status request for `file_path`, made with
+/// `secret_key`.
+pub async fn get_signature_status(
+    port: u16,
+    file_path: &str,
+    secret_key: &features_lib::AsfaloadSecretKeys,
+) -> Result<reqwest::Response> {
+    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
+
+    let auth = rest_api_test_helpers::create_auth_headers_with_key(secret_key, "").await;
+    Ok(reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{}/v1/signatures/{}",
+            port, file_path
+        ))
+        .header(HEADER_TIMESTAMP, &auth.timestamp)
+        .header(HEADER_NONCE, &auth.nonce)
+        .header(HEADER_SIGNATURE, &auth.signature)
+        .header(HEADER_PUBLIC_KEY, &auth.public_key)
+        .send()
+        .await?)
+}
+
 /// Build the base64-encoded metadata and its base64-encoded signature the
 /// same way the admin client does, so the backend validation accepts them.
 ///
@@ -3145,6 +3168,21 @@ pub mod test_utils_tests {
             message.to_lowercase().contains("revoked"),
             "Expected a revoked file error, got: {}",
             body
+        );
+
+        // The revocation file alone must make the status report a revoked file,
+        // also when the signatures file of the artifact is still present.
+        let signatures_path = common::fs::names::signatures_path_for(&artifact_file)?;
+        let revoked_signatures_path =
+            common::fs::names::revoked_signatures_path_for(&artifact_file)?;
+        std::fs::copy(&revoked_signatures_path, &signatures_path)?;
+        let response =
+            crate::get_signature_status(setup.port(), setup.artifact_path(), secret_key).await?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: serde_json::Value = response.json().await?;
+        assert_eq!(
+            body["error"],
+            format!("File is revoked: {}", setup.artifact_path())
         );
 
         Ok(())

@@ -1,7 +1,7 @@
 use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
 use common::errors::{AggregateSignatureError, SignersFileError};
-use common::fs::names::{pending_revocation_path_for, signatures_path_for};
+use common::fs::names::{has_revocation_file, pending_revocation_path_for, signatures_path_for};
 use constants::SIGNERS_DIR;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState,
@@ -357,6 +357,17 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
             "received status request"
         );
 
+        // A revoked file has no signature status. This check runs in the actor,
+        // so a revocation cannot complete between the check and the status.
+        let is_revoked = has_revocation_file(msg.file_path.absolute_path()).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to compute revocation path: {}", e))
+        })?;
+        if is_revoked {
+            return Err(ApiError::FileRevoked(
+                msg.file_path.relative_path().display().to_string(),
+            ));
+        }
+
         // Load the aggregate signature
         let signature_with_state =
             SignatureWithState::load_for_file(&msg.file_path).map_err(|e| {
@@ -533,20 +544,24 @@ async fn missing_signers(file_path: PathBuf, request_id: &str) -> Result<Vec<Str
         features_lib::aggregate_signature_helpers::get_missing_signers(&file_path)
     })
     .await?
-    .map_err(|e| {
-        tracing::error!(
-            actor = ACTOR_NAME,
-            request_id = %request_id,
-            error = %e,
-            "Failed to compute missing signers"
-        );
-        match e {
-            AggregateSignatureError::FileRevoked => {
-                ApiError::FileRevoked("File is revoked".to_string())
-            }
-            _ => {
-                ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
-            }
+    .map_err(|e| match e {
+        // A revoked file is a client error, not a server error.
+        AggregateSignatureError::FileRevoked => {
+            tracing::warn!(
+                actor = ACTOR_NAME,
+                request_id = %request_id,
+                "Missing signers requested for a revoked file"
+            );
+            ApiError::FileRevoked("cannot compute the missing signers".to_string())
+        }
+        _ => {
+            tracing::error!(
+                actor = ACTOR_NAME,
+                request_id = %request_id,
+                error = %e,
+                "Failed to compute missing signers"
+            );
+            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
         }
     })?
     .into_iter()

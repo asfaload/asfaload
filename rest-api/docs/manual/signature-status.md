@@ -40,7 +40,7 @@ Fields:
 ## Errors
 
 - `400 Bad Request` — path is empty.
-- `400 Bad Request` — "File is revoked": a revocation of the file is complete.
+- `400 Bad Request` — "File is revoked: <file_path>": a revocation of the file is complete.
 - `401 Unauthorized` — missing or invalid authentication headers.
 - `403 Forbidden` — caller's public key is not in the file's current signers file.
 - `404 Not Found` — no file exists at the given path, or no signers file could be located for it.

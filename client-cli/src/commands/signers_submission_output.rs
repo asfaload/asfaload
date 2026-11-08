@@ -6,15 +6,9 @@ use forge_url::{ForgeInfo, ForgeTrait};
 use rest_api_types::RegisterRepoResponse;
 
 use crate::cli::DEFAULT_BACKEND;
-use crate::utils::program_name;
+use crate::utils::{program_name, strip_control_chars};
 
 pub(crate) const BOLD: Style = Style::new().bold();
-
-/// Removes control characters, so that text from the backend cannot
-/// use terminal escape sequences to hide or change the output.
-pub(crate) fn strip_control_chars(text: &str) -> String {
-    text.chars().filter(|c| !c.is_control()).collect()
-}
 
 /// A project ID is safe in a shell command when it has only ASCII letters, digits
 /// and `/`, `.`, `-`, `_`, and when no path segment is empty, `.` or `..`.
@@ -479,11 +473,6 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(is_safe_project_id(input), expected, "input {input:?}");
         }
-    }
-
-    #[test]
-    fn strip_control_chars_removes_only_control_chars() {
-        assert_eq!(strip_control_chars("a\x1b[2Kb\nc\u{7}"), "a[2Kbc");
     }
 
     fn metadata(kind: Forge, retrieval_url: &str) -> SignersConfigMetadata {

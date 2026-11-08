@@ -74,7 +74,15 @@ asfaload-cli sign-pending --secret-key ~/.asfaload/revoke-key-2 \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending
 ```
 
-Once the threshold is met, the revocation is finalized.
+When the threshold is met, the revocation is complete:
+
+```
+Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
+
+The revocation is complete. Downloads of this file now fail.
+```
+
+If more signatures are still necessary, the last line is `Users can still download the file until the revocation is complete.`
 
 ![Demo: co-sign a revocation](demos/revoke-release-cosign.gif)
 

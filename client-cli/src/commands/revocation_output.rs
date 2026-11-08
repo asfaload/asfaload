@@ -1,6 +1,6 @@
 use anstyle::Style;
 use common::AsfaloadHashes;
-use common::fs::names::pending_revocation_path_for;
+use common::fs::names::{is_pending_revocation_file_path, pending_revocation_path_for};
 use rest_api_types::RevokeFileResponse;
 
 use crate::cli::DEFAULT_BACKEND;
@@ -8,6 +8,23 @@ use crate::commands::signers_submission_output::{
     BOLD, SignaturesToCollect, is_safe_project_id, signatures_to_collect_lines, strip_control_chars,
 };
 use crate::utils::program_name;
+
+/// Shown when the revocation is complete.
+pub const REVOCATION_COMPLETE_MESSAGE: &str =
+    "The revocation is complete. Downloads of this file now fail.";
+/// Shown when the revocation is pending.
+pub const REVOCATION_PENDING_MESSAGE: &str =
+    "Users can still download the file until the revocation is complete.";
+
+/// The note to show after a signature of `file_path`. `None` when the file is
+/// not a pending revocation.
+pub fn revocation_note(file_path: &str, is_complete: bool) -> Option<&'static str> {
+    is_pending_revocation_file_path(file_path).then_some(if is_complete {
+        REVOCATION_COMPLETE_MESSAGE
+    } else {
+        REVOCATION_PENDING_MESSAGE
+    })
+}
 
 /// The path of the pending revocation file that the other signers must
 /// sign. `None` when the path is not safe to put in a command for them.
@@ -69,9 +86,7 @@ pub fn revocation_overview(
         "Your signature is included.".to_string(),
     ];
     if !is_complete {
-        lines.push(
-            "Users can still download the file until the revocation is complete.".to_string(),
-        );
+        lines.push(REVOCATION_PENDING_MESSAGE.to_string());
     }
     lines.push(String::new());
     let pending_revocation_path = safe_pending_revocation_path(file_path);
@@ -80,7 +95,7 @@ pub fn revocation_overview(
             required_signers: &response.required_signers,
             file_path: pending_revocation_path.as_deref(),
             digest,
-            complete_message: "The revocation is complete. Downloads of this file now fail.",
+            complete_message: REVOCATION_COMPLETE_MESSAGE,
             unexpected_data_warning: "The path of the revoked file contains unexpected characters.",
         },
         backend_url,
@@ -95,7 +110,7 @@ pub fn revocation_overview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use features_lib::constants::PENDING_REVOCATION_SUFFIX;
+    use features_lib::constants::{PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, SIGNERS_FILE};
 
     const FILE_PATH: &str = "https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json";
 
@@ -203,5 +218,21 @@ mod tests {
             output.starts_with("File revoked: releases/a[31mb.json\n"),
             "unexpected output:\n{output}"
         );
+    }
+
+    #[test]
+    fn revocation_note_for_revocation_and_other_files() {
+        let revocation = format!("{FILE_PATH}.{PENDING_REVOCATION_SUFFIX}");
+        assert_eq!(
+            revocation_note(&revocation, true),
+            Some(REVOCATION_COMPLETE_MESSAGE)
+        );
+        assert_eq!(
+            revocation_note(&revocation, false),
+            Some(REVOCATION_PENDING_MESSAGE)
+        );
+        assert_eq!(revocation_note(FILE_PATH, true), None);
+        let signers = format!("project/{PENDING_SIGNERS_DIR}/{SIGNERS_FILE}");
+        assert_eq!(revocation_note(&signers, false), None);
     }
 }

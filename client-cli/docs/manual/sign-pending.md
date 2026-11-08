@@ -103,6 +103,17 @@ When other signers must still provide their signatures:
 
     Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
 
+When you sign a pending revocation, the output also tells if downloads of the file now fail. When your signature completes the revocation:
+
+    Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
+
+    The revocation is complete. Downloads of this file now fail.
+
+When the revocation is still pending:
+
+    Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
+    Users can still download the file until the revocation is complete.
+
 JSON (with `--json`):
 
     {"is_complete":true}

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::commands::revocation_output::revocation_note;
 use crate::commands::signers_submission_output::{print_activation_next_step, release_example_for};
 use crate::error::Result;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
@@ -122,6 +123,7 @@ pub async fn handle_sign_pending_sec_key(
         .map_err(|e| crate::error::submit_signature_error(e, &file_path))?;
 
     // Display result
+    let revocation_note = revocation_note(&file_path, response.is_complete);
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.is_complete {
@@ -134,10 +136,17 @@ pub async fn handle_sign_pending_sec_key(
             println!();
             print_activation_next_step(&release_example_for(metadata), backend_url);
         }
+        if let Some(note) = revocation_note {
+            println!();
+            println!("{note}");
+        }
     } else {
         println!(
             "Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures."
         );
+        if let Some(note) = revocation_note {
+            println!("{note}");
+        }
     }
 
     Ok(response)

@@ -552,6 +552,9 @@ pub mod models {
     pub struct RevokeFileResponse {
         pub success: bool,
         pub message: String,
+        /// Base64 public keys that can still sign the revocation.
+        /// Empty when the initiator signature completed the revocation.
+        pub required_signers: Vec<String>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

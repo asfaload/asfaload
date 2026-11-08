@@ -566,8 +566,11 @@ assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 expect_fail "revoke index file for v0.1, not authorized" \
     cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
 
-run_step "initiate revoke index file for v0.1" \
-    cargo run -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
+pk5="$(pubkey_of "$KEY_5")"
+pk6="$(pubkey_of "$KEY_6")"
+run_step_json "initiate revoke index file for v0.1 (pending, KEY_5 and KEY_6 can still sign)" \
+    ".required_signers | length == 2 and any(. == \"$pk5\") and any(. == \"$pk6\")" \
+    cargo run --quiet -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
 
 expect_fail "revoke index file for v0.1 again (already pending)" \
     cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)

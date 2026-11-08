@@ -28,6 +28,7 @@ pub mod ping;
 pub mod register_assets;
 pub mod register_repo;
 pub mod release_registration_output;
+pub mod revocation_output;
 pub mod revoke;
 pub mod signers_submission_output;
 pub mod update_signers;

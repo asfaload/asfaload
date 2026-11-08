@@ -5,7 +5,7 @@
 
 Revoke a previously signed file on the mirror. The command fetches the file from the backend, builds a revocation document (timestamped, with the initiator's public key and the file's SHA-512 digest), signs it, and submits it.
 
-Once revoked, clients that [`download`](download.md) the file will see a revocation warning.
+The revocation becomes active when enough revocation keys have signed it. If the revocation threshold is 1, your signature completes the revocation. If the threshold is more than 1, the revocation stays pending: other revocation signers must sign it with [`sign-pending`](sign-pending.md). Until the revocation is complete, users can still [`download`](download.md) the file. When the revocation is complete, a download of the file fails.
 
 ## Arguments
 
@@ -52,13 +52,38 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default):
+Human-readable (default), when more revocation signatures are necessary:
 
-    Success! File revoked: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
+    Revocation started: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
+    Your signature is included.
+    Users can still download the file until the revocation is complete.
 
-JSON (with `--json`):
+    Keys that can still sign
+      asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
 
-    {"success":true,"message":""}
+    Next step
+      Send this command to the signers. Each signer replaces <secret-key>
+      with their secret key file:
+
+         asfaload-cli sign-pending \
+           --digest sha512:2e2fde4e... \
+           https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json.revocation.json.pending \
+           --secret-key <secret-key>
+
+When you use a backend other than the default one, the command also contains `--backend-url`.
+
+If the file path contains unexpected characters, a warning replaces the command. The other revocation signers can then find the pending revocation with [`list-pending`](list-pending.md).
+
+Human-readable (default), when your signature completes the revocation:
+
+    File revoked: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
+    Your signature is included.
+
+    The revocation is complete. Downloads of this file now fail.
+
+JSON (with `--json`). `required_signers` contains the keys that can still sign. It is empty when the revocation is complete:
+
+    {"success":true,"message":"Revocation started, more signatures are necessary","required_signers":["asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"]}
 
 ## Examples
 
@@ -68,5 +93,5 @@ JSON (with `--json`):
 
 ## Exit codes
 
-- `0` — file revoked.
-- non-zero — error (authentication failure, file not found, not authorized, network error).
+- `0` — revocation started or completed.
+- non-zero — error (authentication failure, file not found, not authorized, revocation already pending, network error, backend reports a failed revocation).

@@ -3015,6 +3015,71 @@ pub mod test_utils_tests {
         let revoke_body: RevokeFileResponse = response.json().await?;
         assert!(revoke_body.success);
         assert_eq!(revoke_body.message, "File revoked successfully");
+        assert!(
+            revoke_body.required_signers.is_empty(),
+            "threshold 1: the initiator signature completes the revocation"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_revoke_with_threshold_two_reports_missing_signers() -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content, sha512_for_file,
+        };
+        use rest_api_test_helpers::{TestSetupBuilder, send_authenticated_request_with_key};
+        use rest_api_types::RevokeFileResponse;
+
+        // No revocation group in the signers file: the revocation keys fall back
+        // to the artifact signers (3 keys, threshold 2).
+        let setup = TestSetupBuilder::new()
+            .with_keys(3)
+            .with_threshold(2)
+            .with_artifact("releases/release.txt")
+            .build_and_sign()
+            .await?;
+
+        let artifact_file = setup.repo_path().join(setup.artifact_path());
+        let subject_digest = sha512_for_file(&artifact_file)?;
+        let public_key = setup.test_keys().pub_key(0).unwrap();
+        let secret_key = setup.test_keys().sec_key(0).unwrap();
+
+        let revocation = signers_file_types::revocation::RevocationInfo {
+            timestamp: chrono::Utc::now(),
+            subject_digest,
+            initiator: public_key.clone(),
+        };
+        let revocation_json = serde_json::to_string_pretty(&revocation)?;
+        let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let revoke_signature = secret_key.sign(&revocation_hash)?;
+
+        let revoke_payload = json!({
+            "file_path": "releases/release.txt",
+            "revocation_json": revocation_json,
+            "signature": revoke_signature.to_base64(),
+            "public_key": public_key.to_base64(),
+        });
+
+        let client = reqwest::Client::new();
+        let response =
+            send_authenticated_request_with_key(&client, setup.port(), secret_key, &revoke_payload)
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let revoke_body: RevokeFileResponse = response.json().await?;
+        assert!(revoke_body.success);
+        assert_eq!(
+            revoke_body.message,
+            "Revocation started, more signatures are necessary"
+        );
+        let mut expected = vec![
+            setup.test_keys().pub_key(1).unwrap().to_base64(),
+            setup.test_keys().pub_key(2).unwrap().to_base64(),
+        ];
+        expected.sort_unstable();
+        assert_eq!(revoke_body.required_signers, expected);
 
         Ok(())
     }

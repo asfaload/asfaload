@@ -73,6 +73,9 @@ pub enum ClientCliError {
         "The aggregate signature for {0} is already complete. It does not accept more signatures."
     )]
     SignatureAlreadyComplete(String),
+
+    #[error("Revocation failed: {0}")]
+    RevocationFailed(String),
 }
 
 /// Report unparsable signers metadata as corrupted backend data.

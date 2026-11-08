@@ -18,13 +18,34 @@ asfaload-cli revoke \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 
-On success:
+If the revocation threshold is 1, your signature completes the revocation:
 
 ```
-Success! File revoked: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+File revoked: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+Your signature is included.
+
+The revocation is complete. Downloads of this file now fail.
 ```
 
-If the revocation threshold is 1, the file is revoked immediately. If the threshold is higher, the revocation enters a **pending** state and more revocation signers must co-sign.
+If the threshold is higher, the revocation enters a **pending** state. Users can still download the file until more revocation signers co-sign. The output shows the keys that can still sign and the command to send to them:
+
+```
+Revocation started: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+Your signature is included.
+Users can still download the file until the revocation is complete.
+
+Keys that can still sign
+  asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+
+Next step
+  Send this command to the signers. Each signer replaces <secret-key>
+  with their secret key file:
+
+     asfaload-cli sign-pending \
+       --digest sha512:2e2fde4e... \
+       https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending \
+       --secret-key <secret-key>
+```
 
 ![Demo: initiate a revocation](demos/revoke-release-initiate.gif)
 

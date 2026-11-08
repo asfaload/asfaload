@@ -87,12 +87,28 @@ mkdir -p "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
 SIGNERS_FILE_NAME="signers_file_ssh.json"
 SIGNERS_FILE_ON_FS="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE_NAME"
 
-run_step "Create signers file with 2 SSH ed25519 artifact signers (threshold 2)" \
-    cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
-        --artifact-signers-file "$SSH_KEY_1.pub" \
-        --artifact-signers-file "$SSH_KEY_2.pub" \
+# Without -o, the --json output holds the signers file content and its digest.
+# The digest is used for register-repo below, so a mismatch between the content
+# and the digest makes the registration fail.
+NEW_SIGNERS_JSON="$SSH_KEYS_DIR/new_signers_file.json"
+run_step "Create signers file JSON with 2 SSH ed25519 artifact signers (threshold 2)" \
+    bash -c "cargo run --quiet --manifest-path '$base_dir/client-cli/Cargo.toml' -- new-signers-file \
+        --artifact-signers-file '$SSH_KEY_1.pub' \
+        --artifact-signers-file '$SSH_KEY_2.pub' \
         -A 2 \
-        -o "$SIGNERS_FILE_ON_FS"
+        --json > '$NEW_SIGNERS_JSON'"
+
+run_step "Signers file JSON reports no output file" \
+    bash -c "jq -e '.output_file == null' '$NEW_SIGNERS_JSON' > /dev/null"
+
+# jq -j and not jq -r: signers_config already ends with a newline, and jq -r
+# adds one more, which changes the digest of the file.
+run_step "Write signers_config from JSON to the file server tree" \
+    bash -c "jq -j '.signers_config' '$NEW_SIGNERS_JSON' > '$SIGNERS_FILE_ON_FS'"
+
+NEW_SIGNERS_DIGEST=$(jq -r '.digest' "$NEW_SIGNERS_JSON")
+run_step "JSON digest matches the sha512 of the written signers file" \
+    bash -c "[[ '$NEW_SIGNERS_DIGEST' == \"sha512:\$(sha512sum '$SIGNERS_FILE_ON_FS' | cut -d' ' -f1)\" ]]"
 
 run_step "Signers file exists" \
     bash -c "[[ -f '$SIGNERS_FILE_ON_FS' ]]"
@@ -212,14 +228,25 @@ SIGNERS_FILE_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/${HIDDEN_SIGNERS_DIR}/${
 cd "$base_dir/client-cli/"
 
 # register-repo needs the digest of the signers file served at the URL.
-# Compute it from the URL itself with get-digest.
+# Use the digest from the new-signers-file --json output, and check that it
+# is the same as the digest get-digest computes from the URL.
 DIGEST=$(cargo run --quiet -- get-digest --json "$SIGNERS_FILE_URL" | jq -r .digest)
-run_step_json "Register repo with SSH key 1 (submitter)" \
-    '.success == true' \
-    cargo run --quiet -- register-repo \
-        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
-        --digest "$DIGEST" \
-        "$SIGNERS_FILE_URL"
+run_step "new-signers-file JSON digest matches get-digest of the served file" \
+    bash -c "[[ '$NEW_SIGNERS_DIGEST' == '$DIGEST' ]]"
+# Keep the JSON output: signers use its signers_file_path with sign-pending.
+REGISTER_JSON="$SSH_KEYS_DIR/register_repo.json"
+run_step "Register repo with SSH key 1 (submitter)" \
+    bash -c "cargo run --quiet -- register-repo \
+        --secret-key '$SSH_KEY_1' -u '$backend' --password '$key_password' \
+        --digest '$NEW_SIGNERS_DIGEST' \
+        '$SIGNERS_FILE_URL' --json > '$REGISTER_JSON'"
+
+run_step "Register repo response reports success" \
+    bash -c "jq -e '.success == true' '$REGISTER_JSON' > /dev/null"
+
+REGISTERED_SIGNERS_FILE_PATH=$(jq -r '.signers_file_path' "$REGISTER_JSON")
+run_step "Register repo response gives the pending signers file path" \
+    bash -c "[[ '$REGISTERED_SIGNERS_FILE_PATH' == '$PROJECT_DIR_OVERRIDE/$PENDING_SIGNERS_DIR/$SIGNERS_FILE' ]]"
 
 # Backend: the submitter's SSH signature is recorded at registration
 assert_pending_signers_exist
@@ -239,7 +266,9 @@ run_step "Pending signers contains SSH pubkey 2" \
 section "Activate pending signers (both SSH keys sign)"
 ################################################################################
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$SSH_KEY_2" "$backend" "$key_password")
+# Use the path from the register-repo response and the digest of the
+# published signers file, as the register-repo output tells signers to do.
+SIGNERS_SIGN_ARGS="$REGISTERED_SIGNERS_FILE_PATH --digest $NEW_SIGNERS_DIGEST"
 
 # SSH key 1 (the submitter) already signed the pending signers file and
 # metadata at registration.

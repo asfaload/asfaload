@@ -130,55 +130,71 @@ fn stdout_has_single_trailing_newline() {
     );
 }
 
-/// `--json` without `-o` must be rejected at parse time by clap's
-/// `required_if_eq("json", "true")` guard on `output_file`
-/// (client-cli/src/cli.rs:165). Exit code 2 is clap's parse-failure
-/// code. This confirms the `(None, true)` handler arm in
-/// signers_file.rs
+/// `--json` without `-o` must not write a file, but print the JSON
+/// overview. In this overview, `output_file` is null and `digest` is the
+/// sha512 of the `signers_config` content.
 #[test]
-fn json_without_output_file_rejected_by_clap() {
+fn json_without_output_file_prints_signers_config() {
     let pub_key = fixtures_pub_key(0);
+    let temp_dir = TempDir::new().unwrap();
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("new-signers-file")
+    cmd.current_dir(temp_dir.path())
+        .arg("new-signers-file")
         .arg("--artifact-signers-file")
         .arg(&pub_key)
         .arg("-A")
         .arg("1")
         .arg("--json");
     let output = cmd.output().unwrap();
-
-    // clap parse failure exits with code 2
     assert!(
-        !output.status.success(),
-        "command should have failed, but succeeded. stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&output.stdout),
+        output.status.success(),
+        "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let code = output.status.code().unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+
+    assert!(
+        json["output_file"].is_null(),
+        "output_file should be null without -o, got: {}",
+        json["output_file"]
+    );
+
+    let signers_config = json["signers_config"]
+        .as_str()
+        .expect("signers_config field should be a string");
+    let parsed: serde_json::Value =
+        serde_json::from_str(signers_config).expect("signers_config should hold valid JSON");
+    assert!(
+        parsed.is_object(),
+        "signers_config should hold a JSON object, got: {}",
+        parsed
+    );
+
+    let expected_digest = format!(
+        "sha512:{}",
+        hex::encode(Sha512::digest(signers_config.as_bytes()))
+    );
     assert_eq!(
-        code, 2,
-        "expected clap parse-failure exit code 2, got {}",
-        code
+        json["digest"].as_str(),
+        Some(expected_digest.as_str()),
+        "digest should be the sha512 of signers_config"
     );
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let written_files: Vec<_> = fs::read_dir(temp_dir.path()).unwrap().collect();
     assert!(
-        stderr.contains("--output-file"),
-        "clap error should mention --output-file, got stderr: {}",
-        stderr
-    );
-
-    // stdout must be empty (nothing printed before the parse error)
-    assert!(
-        output.stdout.is_empty(),
-        "stdout should be empty on parse failure, got: {}",
-        String::from_utf8_lossy(&output.stdout)
+        written_files.is_empty(),
+        "no file should be written without -o, found: {:?}",
+        written_files
     );
 }
 
-/// With `-o` and no `--json`, the human output must include a "Generated
-/// file's digest:" line whose value is the sha512 of the written file.
+/// With `-o` and no `--json`, the human output must show the sha512 of the
+/// written file under the "Digest" heading, and use it in the suggested
+/// register-repo command, together with the required secret key flag.
 #[test]
 fn digest_printed_and_correct_in_human_output() {
     let pub_key = fixtures_pub_key(0);
@@ -203,19 +219,23 @@ fn digest_printed_and_correct_in_human_output() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
 
-    assert!(
-        stdout.contains("Generated file's digest:"),
-        "stdout should contain 'Generated file's digest:', got: {}",
-        stdout
-    );
-
     let file_bytes = fs::read(&output_file).unwrap();
     let hash = Sha512::digest(&file_bytes);
     let expected = format!("sha512:{}", hex::encode(hash));
     assert!(
-        stdout.contains(&expected),
-        "stdout should contain the sha512 digest '{}', got: {}",
+        stdout.contains(&format!("Digest\n  {expected}\n")),
+        "stdout should contain the sha512 digest '{}' under the Digest heading, got: {}",
         expected,
+        stdout
+    );
+    // Long flags only, and the parts to fill in at the end.
+    let expected_hint = format!(
+        " register-repo \\\n       --digest {expected} \\\n       --secret-key <secret-key> <url>\n"
+    );
+    assert!(
+        stdout.contains(&expected_hint),
+        "stdout should contain the register-repo hint '{}', got: {}",
+        expected_hint,
         stdout
     );
 }

@@ -15,7 +15,7 @@ pub struct ShareKeyOutput {
 
 #[derive(Debug, Serialize)]
 pub struct NewSignersFileOutput {
-    pub output_file: String,
+    pub output_file: Option<String>,
     pub artifact_signers_count: usize,
     pub artifact_threshold: u32,
     pub admin_keys_count: usize,
@@ -25,7 +25,7 @@ pub struct NewSignersFileOutput {
     pub revocation_keys_count: usize,
     pub revocation_threshold: Option<u32>,
     pub digest: String,
-    pub bishop_art: String,
+    pub signers_config: String,
 }
 
 #[derive(Debug, Serialize)]

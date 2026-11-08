@@ -3,6 +3,8 @@ use common::AsfaloadHashes;
 use features_lib::SignersConfigMetadata;
 use features_lib::errors::AggregateSignatureError;
 use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
+use rest_api_types::errors::ApiError;
+use rest_api_types::models::ErrorResponse;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -63,6 +65,14 @@ pub enum ClientCliError {
 
     #[error("Backend data error: {0}")]
     BackendDataError(String),
+
+    #[error("Your signature for {0} was already collected. You do not need to sign it again.")]
+    SignatureAlreadyCollected(String),
+
+    #[error(
+        "The aggregate signature for {0} is already complete. It does not accept more signatures."
+    )]
+    SignatureAlreadyComplete(String),
 }
 
 /// Report unparsable signers metadata as corrupted backend data.
@@ -130,6 +140,43 @@ pub(crate) fn signers_metadata_verification_error(
         }
         _ => ClientCliError::ClientLib(error),
     }
+}
+
+/// Translate a refused signature submission into a CLI error.
+///
+/// The backend refuses a signature that it already has, and a signature for
+/// an aggregate signature that is already complete. Both refusals are normal
+/// situations for the user, so they get a plain message that names the file.
+/// Any other error is passed through as an `AdminLib` error.
+pub(crate) fn submit_signature_error(
+    error: admin_lib::AdminLibError,
+    file_path: &str,
+) -> ClientCliError {
+    if let admin_lib::AdminLibError::RequestFailed(message) = &error {
+        if is_refusal_with(message, &ApiError::SignatureAlreadyCollected(String::new())) {
+            return ClientCliError::SignatureAlreadyCollected(file_path.to_string());
+        }
+        if is_refusal_with(message, &ApiError::SignatureAlreadyComplete(String::new())) {
+            return ClientCliError::SignatureAlreadyComplete(file_path.to_string());
+        }
+    }
+    ClientCliError::AdminLib(error)
+}
+
+/// Tell if a failed request message reports the error `expected` sent by the
+/// backend.
+///
+/// The status and the message prefix come from `ApiError`, so the check
+/// follows the backend if its messages change. The message is expected in the
+/// format `admin_lib` uses for failed requests: the status, then the body.
+fn is_refusal_with(message: &str, expected: &ApiError) -> bool {
+    let status_prefix = format!("{}: ", expected.to_http_status());
+    // An error built with an empty detail displays only its prefix.
+    let error_prefix = expected.to_string();
+    message
+        .strip_prefix(&status_prefix)
+        .and_then(|body| serde_json::from_str::<ErrorResponse>(body).ok())
+        .is_some_and(|response| response.error.starts_with(&error_prefix))
 }
 
 // FIXME: remove this, creates more confusion than necessary
@@ -243,6 +290,99 @@ mod tests {
                 assert_eq!(message, "backend down");
             }
             other => panic!("Expected ClientLib passthrough but got {other}"),
+        }
+    }
+
+    type ErrorCheck = fn(&ClientCliError) -> bool;
+
+    /// Build a failed request message in the format `admin_lib` uses.
+    fn refusal_message(api_error: &ApiError) -> String {
+        let body = serde_json::to_string(&ErrorResponse {
+            error: api_error.to_string(),
+        })
+        .unwrap();
+        format!("{}: {}", api_error.to_http_status(), body)
+    }
+
+    #[test]
+    fn submit_signature_error_cases() {
+        let file_path = "github.com/acme/tool/releases/v1/asfaload.index.json";
+        let collected = ApiError::SignatureAlreadyCollected(
+            "Signature already collected for this key".to_string(),
+        );
+        let complete =
+            ApiError::SignatureAlreadyComplete("Cannot accept additional signatures".to_string());
+        let other_conflict = ApiError::FileNotFullySigned("not signed".to_string());
+        let collected_body = serde_json::to_string(&ErrorResponse {
+            error: collected.to_string(),
+        })
+        .unwrap();
+
+        // (description, failed request message, expected error)
+        let cases: Vec<(&str, String, ErrorCheck)> = vec![
+            ("already collected", refusal_message(&collected), |e| {
+                matches!(e, ClientCliError::SignatureAlreadyCollected(_))
+            }),
+            (
+                "already added",
+                refusal_message(&ApiError::SignatureAlreadyCollected(
+                    "Signature already added".to_string(),
+                )),
+                |e| matches!(e, ClientCliError::SignatureAlreadyCollected(_)),
+            ),
+            ("already complete", refusal_message(&complete), |e| {
+                matches!(e, ClientCliError::SignatureAlreadyComplete(_))
+            }),
+            ("other conflict", refusal_message(&other_conflict), |e| {
+                matches!(e, ClientCliError::AdminLib(_))
+            }),
+            (
+                "wrong status",
+                format!("400 Bad Request: {collected_body}"),
+                |e| matches!(e, ClientCliError::AdminLib(_)),
+            ),
+            (
+                "body is not json",
+                format!("{}: {}", collected.to_http_status(), collected),
+                |e| matches!(e, ClientCliError::AdminLib(_)),
+            ),
+        ];
+
+        for (description, message, is_expected) in cases {
+            let error =
+                submit_signature_error(admin_lib::AdminLibError::RequestFailed(message), file_path);
+            assert!(
+                is_expected(&error),
+                "{description}: unexpected error {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn submit_signature_error_names_file() {
+        let file_path = "github.com/acme/tool/releases/v1/asfaload.index.json";
+        let message = refusal_message(&ApiError::SignatureAlreadyCollected(
+            "Signature already collected for this key".to_string(),
+        ));
+
+        let error =
+            submit_signature_error(admin_lib::AdminLibError::RequestFailed(message), file_path);
+
+        assert!(error.to_string().contains(file_path), "message: {error}");
+    }
+
+    #[test]
+    fn submit_signature_error_passes_other_errors_through() {
+        let error = submit_signature_error(
+            admin_lib::AdminLibError::InvalidInput("bad".to_string()),
+            "some/file",
+        );
+
+        match error {
+            ClientCliError::AdminLib(admin_lib::AdminLibError::InvalidInput(msg)) => {
+                assert_eq!(msg, "bad")
+            }
+            other => panic!("Expected AdminLib InvalidInput passthrough but got {other}"),
         }
     }
 }

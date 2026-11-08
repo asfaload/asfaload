@@ -450,6 +450,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_signer_workflow() {
+        use client_cli::error::ClientCliError;
+
         let state = test_harness::initialize().await;
         let guard = state.lock().await;
         let git_repo_path = guard.server.git_repo_path();
@@ -596,6 +598,21 @@ mod tests {
             "Should not be complete after 1 of 2 required signatures"
         );
 
+        // sign again with key[0]: refused, the signature is already collected
+        let duplicate = client_cli::commands::sign_pending::handle_sign_pending_command(
+            artifact_client_file.clone(),
+            &backend_url,
+            &key_paths[0],
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await;
+        match duplicate {
+            Err(ClientCliError::SignatureAlreadyCollected(path)) => assert_eq!(path, artifact_path),
+            Err(e) => panic!("Expected SignatureAlreadyCollected but got {e}"),
+            Ok(_) => panic!("Expected SignatureAlreadyCollected, got Ok"),
+        }
+
         // sign with key[1]: 2 of 2, complete
         let r4 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
@@ -620,7 +637,11 @@ mod tests {
             false,
         )
         .await;
-        assert!(r5.is_err(), "Signing after completion should fail");
+        match r5 {
+            Err(ClientCliError::SignatureAlreadyComplete(path)) => assert_eq!(path, artifact_path),
+            Err(e) => panic!("Expected SignatureAlreadyComplete but got {e}"),
+            Ok(_) => panic!("Signing after completion should fail, got Ok"),
+        }
     }
 
     // ========================================

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::commands::signers_submission_output::{print_activation_next_step, release_example_for};
 use crate::error::Result;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
@@ -61,7 +62,7 @@ pub async fn handle_sign_pending_sec_key(
     // config that differs from the one the forge URL serves. The source is
     // fetched from the retrieval URL recorded in the metadata and compared by
     // SHA-512.
-    if is_pending_signers_file_path(pending_file.path()) {
+    let signers_metadata = if is_pending_signers_file_path(pending_file.path()) {
         let metadata_key = metadata_path_for(pending_file.path())?
             .to_string_lossy()
             .to_string();
@@ -90,7 +91,10 @@ pub async fn handle_sign_pending_sec_key(
         )
         .await
         .map_err(|e| crate::error::signers_metadata_verification_error(&metadata, e))?;
-    }
+        Some(metadata)
+    } else {
+        None
+    };
 
     // Sign each file
     let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();
@@ -111,9 +115,11 @@ pub async fn handle_sign_pending_sec_key(
     }
 
     // Submit all signatures to backend
+    let file_path = pending_file.path().to_string();
     let response = client
         .submit_signatures(pending_file, &public_key, &signatures, secret_key)
-        .await?;
+        .await
+        .map_err(|e| crate::error::submit_signature_error(e, &file_path))?;
 
     // Display result
     if json {
@@ -122,6 +128,12 @@ pub async fn handle_sign_pending_sec_key(
         println!(
             "Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature."
         );
+        // A complete pending signers file is now the active signers file, so
+        // releases can be registered.
+        if let Some(metadata) = &signers_metadata {
+            println!();
+            print_activation_next_step(&release_example_for(metadata), backend_url);
+        }
     } else {
         println!(
             "Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures."

@@ -1,4 +1,5 @@
 use crate::commands::prepare_signed_submission;
+use crate::commands::signers_submission_output::print_submission_overview;
 use crate::error::Result;
 use common::AsfaloadHashes;
 
@@ -26,14 +27,12 @@ pub async fn handle_register_repo_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.success {
-        println!("Repository registered successfully!");
-        println!("Project ID: {}", response.project_id);
-        println!(
-            "Required signers ({}): {}",
-            response.required_signers.len(),
-            response.required_signers.join(", ")
+        print_submission_overview(
+            "Repository registered",
+            &response,
+            expected_digest,
+            backend_url,
         );
-        println!("Success! {}", response.message);
     } else {
         println!("Repository registration failed: {}", response.message);
     }

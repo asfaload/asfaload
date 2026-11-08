@@ -21,11 +21,23 @@ asfaload-cli register-assets \
 On success:
 
 ```
-Assets registered successfully! You have also signed it!
-Index file path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+Release registered: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+Your signature is included.
+
+Keys that can still sign
+  asfaload-pub:bob-key
+
+Next step
+  Send this command to the signers. Each signer replaces <secret-key>
+  with their secret key file:
+
+     asfaload-cli sign-pending \
+       --digest sha512:2e2fde4e... \
+       https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json \
+       --secret-key <secret-key>
 ```
 
-The CLI derives the index from the release metadata and signs it. The backend verifies the signature and the index, then waits for signatures.
+The CLI derives the index from the release metadata and signs it. The backend verifies the signature and the index, then waits for signatures. Send the `sign-pending` command to the other artifact signers. If your signature is sufficient, the output says that the release is fully signed and shows no command.
 
 ![Demo: register a release](demos/register-release.gif)
 

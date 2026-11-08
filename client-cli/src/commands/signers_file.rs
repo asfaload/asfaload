@@ -4,11 +4,28 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
-use crate::utils::{bishop_art, bishop_plain, ensure_dir_exists, validate_threshold};
+use crate::utils::{ensure_dir_exists, executable_name, validate_threshold};
+use anstyle::Style;
+use common::sha512_for_content;
 use features_lib::{
     ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
     sha512_for_file,
 };
+
+const BOLD: Style = Style::new().bold();
+const DIM: Style = Style::new().dimmed();
+
+/// Describe a signer group for the human overview, e.g. "2 of 3 keys must sign".
+/// Returns None when the group has no keys.
+fn group_summary(keys_count: usize, threshold: Option<u32>) -> Option<String> {
+    match threshold {
+        Some(threshold) if keys_count > 0 => {
+            let noun = if keys_count == 1 { "key" } else { "keys" };
+            Some(format!("{threshold} of {keys_count} {noun} must sign"))
+        }
+        _ => None,
+    }
+}
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
@@ -158,54 +175,74 @@ pub fn handle_new_signers_file_command(
         // We have posix json content, with trailing \n, so no println!
         print!("{}", signers_file_content);
     };
-    // Print the --json flag output
-    let print_json_output =
-        |signers_file_destination| -> std::result::Result<(), crate::error::ClientCliError> {
-            let digest = sha512_for_file(&signers_file_destination)?;
-            let bishop_art = bishop_plain(&digest);
-            let output = crate::output::NewSignersFileOutput {
-                output_file: signers_file_destination,
-                artifact_signers_count: all_artifact_signers_count,
-                artifact_threshold,
-                admin_keys_count: all_admin_keys_count,
-                admin_threshold,
-                master_keys_count: all_master_keys_count,
-                master_threshold,
-                revocation_keys_count: all_revocation_keys_count,
-                revocation_threshold,
-                digest: digest.into(),
-                bishop_art,
-            };
-            println!("{}", serde_json::to_string(&output)?);
-            Ok(())
+    // Print the --json flag output when the --output-file is also present
+    let print_json_output_for_file = |signers_file_destination,
+                                      file_content: String|
+     -> std::result::Result<(), crate::error::ClientCliError> {
+        let digest = sha512_for_content(file_content.as_bytes())?;
+        let output = crate::output::NewSignersFileOutput {
+            output_file: signers_file_destination,
+            artifact_signers_count: all_artifact_signers_count,
+            artifact_threshold,
+            admin_keys_count: all_admin_keys_count,
+            admin_threshold,
+            master_keys_count: all_master_keys_count,
+            master_threshold,
+            revocation_keys_count: all_revocation_keys_count,
+            revocation_threshold,
+            digest: digest.into(),
+            signers_config: file_content,
         };
+        println!("{}", serde_json::to_string(&output)?);
+        Ok(())
+    };
 
     // Print a human overview of the file written to disk
     let print_human_overview =
         |p: &PathBuf| -> std::result::Result<(), crate::error::ClientCliError> {
             let digest = sha512_for_file(p)?;
-            println!("Signers file created successfully at: {}", p.display());
-            println!(
-                "Artifact signers: {} (threshold: {})",
-                all_artifact_signers_count, artifact_threshold
-            );
-            println!(
-                "Admin keys: {} (threshold: {})",
-                all_admin_keys_count,
-                admin_threshold.map_or("none".to_string(), |t| t.to_string())
-            );
-            println!(
-                "Master keys: {} (threshold: {})",
-                all_master_keys_count,
-                master_threshold.map_or("none".to_string(), |t| t.to_string())
-            );
-            println!(
-                "Revocation keys: {} (threshold: {})",
-                all_revocation_keys_count,
-                revocation_threshold.map_or("none".to_string(), |t| t.to_string())
-            );
-            println!("Generated file's digest: {}", digest);
-            println!("{}", bishop_art(&digest));
+            let executable = executable_name();
+            let groups = [
+                (
+                    "Artifact signers",
+                    group_summary(all_artifact_signers_count, Some(artifact_threshold)),
+                ),
+                (
+                    "Admin keys",
+                    group_summary(all_admin_keys_count, admin_threshold),
+                ),
+                (
+                    "Master keys",
+                    group_summary(all_master_keys_count, master_threshold),
+                ),
+                (
+                    "Revocation keys",
+                    group_summary(all_revocation_keys_count, revocation_threshold),
+                ),
+            ];
+
+            // anstream removes the styles when stdout is not a terminal.
+            anstream::println!("{BOLD}Signers file created:{BOLD:#} {}", p.display());
+            anstream::println!();
+            anstream::println!("{BOLD}Signer groups{BOLD:#}");
+            for (label, summary) in groups {
+                match summary {
+                    Some(summary) => anstream::println!("  {label:<18} {summary}"),
+                    None => anstream::println!("  {label:<18} {DIM}none{DIM:#}"),
+                }
+            }
+            anstream::println!();
+            anstream::println!("{BOLD}Digest{BOLD:#}");
+            anstream::println!("  {digest}");
+            anstream::println!();
+            anstream::println!("{BOLD}Next steps{BOLD:#}");
+            anstream::println!("  1. Commit this file to your git repository and publish it.");
+            anstream::println!("  2. Register your repository. Replace <url> with the URL of the");
+            anstream::println!("     published file and <secret-key> with your secret key file:");
+            anstream::println!();
+            anstream::println!("     {executable} register-repo \\");
+            anstream::println!("       --digest {digest} \\");
+            anstream::println!("       --secret-key <secret-key> <url>");
             Ok(())
         };
 
@@ -213,7 +250,10 @@ pub fn handle_new_signers_file_command(
         // -o and --json
         (Some(p), true) => {
             write_signers_file(p)?;
-            print_json_output(p.to_string_lossy().to_string())?;
+            print_json_output_for_file(
+                Some(p.to_string_lossy().to_string()),
+                signers_file_content,
+            )?;
         }
         // -o, no --json
         (Some(p), false) => {
@@ -222,9 +262,7 @@ pub fn handle_new_signers_file_command(
         }
         // no -o, --json
         (None, true) => {
-            return Err(crate::error::ClientCliError::InvalidInput(
-                "Cannot output to stdout with --json flag".to_string(),
-            ));
+            print_json_output_for_file(None, signers_file_content)?;
         }
         // no -o, no --json
         (None, false) => print_signers_file_content(),
@@ -313,6 +351,23 @@ mod tests {
 
     // A valid public key base64 string (from fixtures key_0)
     const VALID_PUBKEY_B64: &str = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8";
+
+    #[test]
+    fn group_summary_cases() {
+        let cases = [
+            (3, Some(2), Some("2 of 3 keys must sign")),
+            (1, Some(1), Some("1 of 1 key must sign")),
+            (0, None, None),
+            (0, Some(1), None),
+        ];
+        for (keys_count, threshold, expected) in cases {
+            assert_eq!(
+                group_summary(keys_count, threshold).as_deref(),
+                expected,
+                "unexpected summary for {keys_count} keys and threshold {threshold:?}"
+            );
+        }
+    }
 
     #[test]
     fn combine_key_sources_empty_inputs() {

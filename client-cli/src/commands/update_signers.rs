@@ -1,5 +1,6 @@
 use common::AsfaloadHashes;
 
+use crate::commands::signers_submission_output::print_submission_overview;
 use crate::error::Result;
 
 use super::prepare_signed_submission;
@@ -27,14 +28,12 @@ pub async fn handle_update_signers_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.success {
-        println!("Signers update proposed successfully!");
-        println!("Project ID: {}", response.project_id);
-        println!(
-            "Required signers ({}): {}",
-            response.required_signers.len(),
-            response.required_signers.join(", ")
+        print_submission_overview(
+            "Signers update proposed",
+            &response,
+            expected_digest,
+            backend_url,
         );
-        println!("Success: {}", response.message);
     } else {
         println!("Signers update failed: {}", response.message);
     }

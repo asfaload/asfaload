@@ -8,6 +8,7 @@ use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
 use bishop::BishopArt;
+use clap::CommandFactory;
 use colored::Colorize;
 use common::{AsfaloadHashes, sha512_for_file};
 use features_lib::HashAlgorithm;
@@ -36,6 +37,26 @@ pub fn validate_threshold(threshold: u32, key_count: usize) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Name of the program as defined in the command line parser.
+/// Use it in hints that other people run. Use `executable_name()` in hints
+/// that the same user runs.
+pub fn program_name() -> String {
+    crate::cli::Cli::command().get_name().to_string()
+}
+
+/// Name of the executable as started by the user, like `$0` in a shell.
+/// Use it in command hints, so that the user can copy them.
+pub fn executable_name() -> String {
+    executable_name_from(std::env::args_os().next())
+}
+
+/// Uses the clap command name when `argv[0]` is missing or empty.
+fn executable_name_from(arg0: Option<std::ffi::OsString>) -> String {
+    arg0.filter(|a| !a.is_empty())
+        .map(|a| a.to_string_lossy().into_owned())
+        .unwrap_or_else(program_name)
 }
 
 /// Reads password from a file
@@ -423,6 +444,33 @@ mod tests {
             strip_ansi(&colored),
             "plain art must be the colored art without ANSI codes"
         );
+    }
+
+    #[test]
+    fn program_name_is_the_clap_command_name() {
+        assert_eq!(program_name(), "asfaload-cli");
+    }
+
+    #[test]
+    fn executable_name_from_cases() {
+        use std::ffi::OsString;
+
+        let clap_name = crate::cli::Cli::command().get_name().to_string();
+        let cases = [
+            (
+                Some(OsString::from("./target/debug/asfaload-cli")),
+                "./target/debug/asfaload-cli".to_string(),
+            ),
+            (None, clap_name.clone()),
+            (Some(OsString::new()), clap_name),
+        ];
+        for (arg0, expected) in cases {
+            assert_eq!(
+                executable_name_from(arg0.clone()),
+                expected,
+                "unexpected executable name for argv[0] {arg0:?}"
+            );
+        }
     }
 
     // test expected_digest

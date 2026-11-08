@@ -62,10 +62,22 @@ One of `--digest` or `--local-copy` is required. Update-signers fetches the file
 On success:
 
 ```
-Signers update proposed successfully!
-Project ID: abc123
-Required signers (4): alice, bob, carol, dave
-Success: Signers update proposed successfully. Collect signatures to activate.
+Signers update proposed: https/github.com/443/acme/tool
+
+Keys that can still sign
+  asfaload-pub:alice-key
+  asfaload-pub:bob-key
+  asfaload-pub:carol-key
+  asfaload-pub:dave-key
+
+Next step
+  Send this command to the signers. Each signer replaces <secret-key>
+  with their secret key file:
+
+     asfaload-cli sign-pending \
+       --digest sha512:2e2fde4e... \
+       https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+       --secret-key <secret-key>
 ```
 
 ![Demo: propose a signers update](demos/update-signers-file.gif)
@@ -74,16 +86,22 @@ Success: Signers update proposed successfully. Collect signatures to activate.
 
 Just like initial activation, **every** signer listed in the **new** signers file must sign before the update takes effect. This includes both existing and newly added signers.
 
-Each signer runs:
+The `update-signers` output gives the ready `sign-pending` command with the digest and the path. Send it to the signers. Each signer runs:
+
+```sh
+asfaload-cli sign-pending \
+    --digest sha512:2e2fde4e... \
+    https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+    --secret-key ~/.asfaload/mykey
+```
+
+A signer can also use `list-pending` to find the digest and the path:
 
 ```sh
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
-asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
-    --digest sha512:2e2fde4e... \
-    https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
 
-The digest is taken from the `list-pending` output. See [Activate a signers file](activate-signers-file.md) for the full signing flow.
+See [Activate a signers file](activate-signers-file.md) for the full signing flow.
 
 ## What about existing releases?
 

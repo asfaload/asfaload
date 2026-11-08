@@ -51,19 +51,28 @@ asfaload-cli register-repo \
 On success, when the submitter's signature completes the required signers:
 
 ```
-Repository registered successfully!
-Project ID: abc123
-Required signers (0):
-Success! Project registered successfully, and signers file activated.
+Repository registered: https/github.com/443/acme/tool
+
+The signers file is active. No more signatures are necessary.
 ```
 
-When more signatures are necessary:
+When more signatures are necessary, the output shows the keys that can still sign. It also shows the command that the signers run:
 
 ```
-Repository registered successfully!
-Project ID: abc123
-Required signers (2): bob, carol
-Success! Project registered successfully. Collect signatures to activate.
+Repository registered: https/github.com/443/acme/tool
+
+Keys that can still sign
+  asfaload-pub:bob-key
+  asfaload-pub:carol-key
+
+Next step
+  Send this command to the signers. Each signer replaces <secret-key>
+  with their secret key file:
+
+     asfaload-cli sign-pending \
+       --digest sha512:2e2fde4e... \
+       https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+       --secret-key <secret-key>
 ```
 
 The CLI signs the signers file and the metadata with your key. The backend records these signatures. If they complete the required signers, the project is active at once. Otherwise the backend creates a pending signers entry and waits for the remaining signers before the project becomes active.

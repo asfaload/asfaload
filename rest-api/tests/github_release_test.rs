@@ -129,6 +129,13 @@ pub mod tests {
             response_json["index_file_path"].is_string(),
             "Expected index_file_path to be a string"
         );
+        // With the threshold at 2, only the key that did not register the
+        // release can still sign.
+        assert_eq!(
+            response_json["required_signers"],
+            serde_json::json!([test_keys.pub_key(1).unwrap().to_base64()]),
+            "Expected the second key as the only required signer"
+        );
 
         // Verify index file exists and get its path from response
         let index_path_str = response_json["index_file_path"]
@@ -159,6 +166,16 @@ pub mod tests {
             common::string_from_base64(payload["GithubRelease"]["index"].as_str().unwrap())
                 .expect("the payload index is base64-encoded index json"),
             "the persisted index must be exactly the bytes the client signed"
+        );
+        // The digest in the response is the digest of the index the client
+        // signed, so that the client can compare it with its own.
+        let client_index =
+            common::string_from_base64(payload["GithubRelease"]["index"].as_str().unwrap())
+                .expect("the payload index is base64-encoded index json");
+        assert_eq!(
+            response_json["index_digest"],
+            common::sha512_for_content(client_index.as_bytes())?.to_string(),
+            "the response digest must be the digest of the signed index"
         );
         let index = rest_api_test_helpers::read_on_disk_index(&index_path)?;
         assert_eq!(index.version, 1);

@@ -68,16 +68,32 @@ These variables provide fallbacks for the matching options. Password sources are
 
 Human-readable (default), when more signatures are necessary:
 
-    Repository registered successfully!
-    Project ID: abc123
-    Required signers (2): alice, bob
-    Success! Project registered successfully. Collect signatures to activate.
+    Repository registered: https/github.com/443/acme/tool
 
-When your signature completes the required signers, `Required signers` is empty and the last line reports the activation.
+    Keys that can still sign
+      asfaload-pub:alice-key
+      asfaload-pub:bob-key
+
+    Next step
+      Send this command to the signers. Each signer replaces <secret-key>
+      with their secret key file:
+
+         asfaload-cli sign-pending \
+           --digest sha512:2e2fde4e... \
+           https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+           --secret-key <secret-key>
+
+Send the `sign-pending` command to the signers. Each signer replaces `<secret-key>` with their secret key file. When you use a backend other than the default, the command contains `--backend-url`. If the backend returns an unexpected project ID or signers file path, a warning replaces the command.
+
+When your signature completes the required signers, the output says that the signers file is active:
+
+    Repository registered: https/github.com/443/acme/tool
+
+    The signers file is active. No more signatures are necessary.
 
 JSON (with `--json`):
 
-    {"success":true,"project_id":"abc123","message":"Project registered successfully. Collect signatures to activate.","required_signers":["alice","bob"],"signature_submission_url":"/v1/signatures"}
+    {"success":true,"project_id":"https/github.com/443/acme/tool","message":"Project registered successfully. Collect signatures to activate.","required_signers":["asfaload-pub:alice-key","asfaload-pub:bob-key"],"signature_submission_url":"/v1/signatures","signers_file_path":"https/github.com/443/acme/tool/asfaload.signers.pending/index.json"}
 
 ## Examples
 

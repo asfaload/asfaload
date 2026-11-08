@@ -1,7 +1,10 @@
 use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
 use common::errors::{AggregateSignatureError, SignersFileError};
-use common::fs::names::{has_revocation_file, pending_revocation_path_for, signatures_path_for};
+use common::fs::names::{
+    completed_path_for_pending, has_revocation_file, pending_revocation_path_for,
+    signatures_path_for,
+};
 use constants::SIGNERS_DIR;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState,
@@ -58,6 +61,9 @@ pub struct GetSignatureStatusRequest {
 /// Status of signature collection for a file.
 #[derive(Debug, Clone)]
 pub struct SignatureStatus {
+    /// The file that the status is for. When the requested pending file was
+    /// moved because its signature is complete, this is the moved file.
+    pub file_path: NormalisedPaths,
     /// Whether the aggregate signature is complete
     pub is_complete: bool,
     /// Base64 public keys that can still sign, sorted. Empty when the
@@ -357,28 +363,38 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
             "received status request"
         );
 
+        // This runs in the actor, so a signature cannot complete and move the
+        // pending file between this call and the status.
+        let file_path = signature_status_subject(&msg.file_path)
+            .await?
+            .ok_or_else(|| {
+                ApiError::FileNotFound(format!(
+                    "File not found: {}",
+                    msg.file_path.relative_path().display()
+                ))
+            })?;
+
         // A revoked file has no signature status. This check runs in the actor,
         // so a revocation cannot complete between the check and the status.
-        let is_revoked = has_revocation_file(msg.file_path.absolute_path()).map_err(|e| {
+        let is_revoked = has_revocation_file(file_path.absolute_path()).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to compute revocation path: {}", e))
         })?;
         if is_revoked {
             return Err(ApiError::FileRevoked(
-                msg.file_path.relative_path().display().to_string(),
+                file_path.relative_path().display().to_string(),
             ));
         }
 
         // Load the aggregate signature
-        let signature_with_state =
-            SignatureWithState::load_for_file(&msg.file_path).map_err(|e| {
-                tracing::error!(
-                    actor = ACTOR_NAME,
-                    request_id = %msg.request_id,
-                    error = %e,
-                    "failed to load aggregate signature"
-                );
-                ApiError::InternalServerError("Failed to load aggregate signature".to_string())
-            })?;
+        let signature_with_state = SignatureWithState::load_for_file(&file_path).map_err(|e| {
+            tracing::error!(
+                actor = ACTOR_NAME,
+                request_id = %msg.request_id,
+                error = %e,
+                "failed to load aggregate signature"
+            );
+            ApiError::InternalServerError("Failed to load aggregate signature".to_string())
+        })?;
 
         let is_complete = signature_with_state.is_complete();
 
@@ -388,14 +404,13 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
             Vec::new()
         } else {
             let missing =
-                missing_signers(msg.file_path.absolute_path().to_path_buf(), &msg.request_id)
-                    .await?;
+                missing_signers(file_path.absolute_path().to_path_buf(), &msg.request_id).await?;
             // An empty list would be reported to the client as a complete signature.
             if missing.is_empty() {
                 tracing::error!(
                     actor = ACTOR_NAME,
                     request_id = %msg.request_id,
-                    file_path = %msg.file_path.absolute_path().display(),
+                    file_path = %file_path.absolute_path().display(),
                     "Signature is pending, but no signer can still sign"
                 );
                 return Err(ApiError::InternalServerError(
@@ -406,6 +421,7 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
         };
 
         Ok(SignatureStatus {
+            file_path,
             is_complete,
             required_signers,
         })
@@ -535,6 +551,27 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
         Ok(RevokeFileResult { required_signers })
     }
+}
+
+/// The file to report the signature status of: `file_path` if it exists, else
+/// the completed location of a pending signers file or pending revocation file,
+/// if it exists. A pending file is moved when its signature is complete, so the
+/// path of the pending file stays usable to follow the status.
+/// Returns `None` if no file exists.
+pub async fn signature_status_subject(
+    file_path: &NormalisedPaths,
+) -> Result<Option<NormalisedPaths>, ApiError> {
+    if file_path.absolute_path().exists() {
+        return Ok(Some(file_path.clone()));
+    }
+    let Some(completed_path) = completed_path_for_pending(file_path.relative_path()) else {
+        return Ok(None);
+    };
+    let completed_path = NormalisedPaths::new(file_path.base_dir(), completed_path).await?;
+    Ok(completed_path
+        .absolute_path()
+        .exists()
+        .then_some(completed_path))
 }
 
 /// Base64 public keys that can still sign `file_path`, sorted to give a

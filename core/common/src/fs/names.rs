@@ -161,6 +161,23 @@ pub fn is_pending_revocation_file_path<P: AsRef<Path>>(path_in: P) -> bool {
         .is_some_and(|subject| !subject.is_empty())
 }
 
+/// Returns the path that a pending file gets when its signature is complete:
+/// the active signers file for a pending signers file, and the revocation file
+/// for a pending revocation file. Returns `None` for other paths. No IO is done.
+pub fn completed_path_for_pending<P: AsRef<Path>>(path_in: P) -> Option<PathBuf> {
+    let path = path_in.as_ref();
+    if is_pending_signers_file_path(path) {
+        let project_dir = path.parent()?.parent()?;
+        Some(project_dir.join(SIGNERS_DIR).join(SIGNERS_FILE))
+    } else if is_pending_revocation_file_path(path) {
+        let suffix = format!(".{}", PENDING_SUFFIX);
+        let completed_name = path.file_name()?.to_str()?.strip_suffix(&suffix)?;
+        Some(path.with_file_name(completed_name))
+    } else {
+        None
+    }
+}
+
 pub fn subject_path_from_pending_signatures<P: AsRef<Path>>(
     path_in: P,
 ) -> std::io::Result<PathBuf> {
@@ -381,6 +398,56 @@ mod asfaload_index_tests {
         for (input, expected) in cases {
             assert_eq!(
                 is_pending_revocation_file_path(&input),
+                expected,
+                "unexpected result for path {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_completed_path_for_pending() {
+        let cases = vec![
+            (
+                PathBuf::from("project")
+                    .join(PENDING_SIGNERS_DIR)
+                    .join(SIGNERS_FILE),
+                Some(
+                    PathBuf::from("project")
+                        .join(SIGNERS_DIR)
+                        .join(SIGNERS_FILE),
+                ),
+            ),
+            (
+                PathBuf::from(PENDING_SIGNERS_DIR).join(SIGNERS_FILE),
+                Some(PathBuf::from(SIGNERS_DIR).join(SIGNERS_FILE)),
+            ),
+            (
+                PathBuf::from(format!("project/a.bin.{}", PENDING_REVOCATION_SUFFIX)),
+                Some(PathBuf::from(format!(
+                    "project/a.bin.{}",
+                    REVOCATION_SUFFIX
+                ))),
+            ),
+            (
+                PathBuf::from("project")
+                    .join(SIGNERS_DIR)
+                    .join(SIGNERS_FILE),
+                None,
+            ),
+            (
+                PathBuf::from(format!("project/a.bin.{}", REVOCATION_SUFFIX)),
+                None,
+            ),
+            (
+                PathBuf::from(format!("project/a.bin.{}", PENDING_SIGNATURES_SUFFIX)),
+                None,
+            ),
+            (PathBuf::from("project/a.bin"), None),
+            (PathBuf::new(), None),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                completed_path_for_pending(&input),
                 expected,
                 "unexpected result for path {input:?}"
             );

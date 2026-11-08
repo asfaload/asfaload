@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use constants::{
-    METADATA_SUFFIX, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
-    REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
-    SIGNERS_HISTORY_FILE, SIGNERS_SUFFIX,
+    METADATA_SUFFIX, PENDING_REVOCATION_SUFFIX, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR,
+    PENDING_SUFFIX, REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR,
+    SIGNERS_FILE, SIGNERS_HISTORY_FILE, SIGNERS_SUFFIX,
 };
 
 /// Find the active signers file by traversing parent directories
@@ -147,6 +147,18 @@ pub fn is_pending_signers_file_path<P: AsRef<Path>>(path_in: P) -> bool {
     } else {
         false
     }
+}
+
+/// Returns true if the path passed in corresponds to a pending revocation file, checking the
+/// file name only. No IO is done.
+pub fn is_pending_revocation_file_path<P: AsRef<Path>>(path_in: P) -> bool {
+    let suffix = format!(".{}", PENDING_REVOCATION_SUFFIX);
+    path_in
+        .as_ref()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(&suffix))
+        .is_some_and(|subject| !subject.is_empty())
 }
 
 pub fn subject_path_from_pending_signatures<P: AsRef<Path>>(
@@ -321,6 +333,54 @@ mod asfaload_index_tests {
         for (input, expected) in cases {
             assert_eq!(
                 is_pending_signers_file_path(&input),
+                expected,
+                "unexpected result for path {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_pending_revocation_file_path() {
+        let cases = vec![
+            (
+                PathBuf::from(format!("project/index.json.{}", PENDING_REVOCATION_SUFFIX)),
+                true,
+            ),
+            (
+                PathBuf::from(format!("/abs/project/a.bin.{}", PENDING_REVOCATION_SUFFIX)),
+                true,
+            ),
+            (
+                PathBuf::from(format!("a.{}", PENDING_REVOCATION_SUFFIX)),
+                true,
+            ),
+            (
+                PathBuf::from(format!(".{}", PENDING_REVOCATION_SUFFIX)),
+                false,
+            ),
+            (PathBuf::from(PENDING_REVOCATION_SUFFIX), false),
+            (
+                PathBuf::from(format!("project/index.json.{}", REVOCATION_SUFFIX)),
+                false,
+            ),
+            (
+                PathBuf::from(format!(
+                    "project/index.json.{}.{}",
+                    PENDING_REVOCATION_SUFFIX, SIGNATURES_SUFFIX
+                )),
+                false,
+            ),
+            (
+                PathBuf::from("project")
+                    .join(PENDING_SIGNERS_DIR)
+                    .join(SIGNERS_FILE),
+                false,
+            ),
+            (PathBuf::new(), false),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                is_pending_revocation_file_path(&input),
                 expected,
                 "unexpected result for path {input:?}"
             );

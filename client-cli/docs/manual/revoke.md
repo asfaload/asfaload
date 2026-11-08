@@ -72,6 +72,8 @@ Human-readable (default), when more revocation signatures are necessary:
 
 When you use a backend other than the default one, the command also contains `--backend-url`.
 
+If the file path contains unexpected characters, a warning replaces the command. The other revocation signers can then find the pending revocation with [`list-pending`](list-pending.md).
+
 Human-readable (default), when your signature completes the revocation:
 
     File revoked: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json

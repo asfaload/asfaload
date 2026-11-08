@@ -109,7 +109,7 @@ When other signers must still provide their signatures:
            <file_path> \
            --secret-key <secret-key>
 
-When you use a backend that is not the default one, the command also contains `--backend-url`. When the path contains unexpected characters, the output only tells to use the signature-status command.
+When you use a backend that is not the default one, the command also contains `--backend-url`. When the path contains unexpected characters, the output tells you to use the signature-status command, but does not show the command.
 
 When you sign a pending revocation, the output also tells if downloads of the file now fail. When your signature completes the revocation:
 

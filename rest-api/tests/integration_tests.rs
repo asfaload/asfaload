@@ -3082,6 +3082,75 @@ pub mod test_utils_tests {
     }
 
     #[tokio::test]
+    async fn test_get_signature_status_reports_revoked_file() -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content, sha512_for_file,
+        };
+        use rest_api_test_helpers::{TestSetupBuilder, send_authenticated_request_with_key};
+        use rest_api_types::RevokeFileResponse;
+
+        let setup = TestSetupBuilder::new()
+            .with_artifact("releases/release.txt")
+            .build_and_sign()
+            .await?;
+
+        let artifact_file = setup.repo_path().join(setup.artifact_path());
+        let public_key = setup.test_keys().pub_key(0).unwrap();
+        let secret_key = setup.test_keys().sec_key(0).unwrap();
+
+        let revocation = signers_file_types::revocation::RevocationInfo {
+            timestamp: chrono::Utc::now(),
+            subject_digest: sha512_for_file(&artifact_file)?,
+            initiator: public_key.clone(),
+        };
+        let revocation_json = serde_json::to_string_pretty(&revocation)?;
+        let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let revoke_signature = secret_key.sign(&revocation_hash)?;
+
+        let revoke_payload = json!({
+            "file_path": "releases/release.txt",
+            "revocation_json": revocation_json,
+            "signature": revoke_signature.to_base64(),
+            "public_key": public_key.to_base64(),
+        });
+        let client = reqwest::Client::new();
+        let response =
+            send_authenticated_request_with_key(&client, setup.port(), secret_key, &revoke_payload)
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let revoke_body: RevokeFileResponse = response.json().await?;
+        assert!(
+            revoke_body.required_signers.is_empty(),
+            "threshold 1: the revocation is complete"
+        );
+
+        let auth = create_auth_headers_with_key(secret_key, "").await;
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: serde_json::Value = response.json().await?;
+        let message = body["error"].as_str().unwrap_or_default();
+        assert!(
+            message.to_lowercase().contains("revoked"),
+            "Expected a revoked file error, got: {}",
+            body
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_revoke_with_threshold_two_reports_missing_signers() -> Result<(), anyhow::Error> {
         use features_lib::{
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,

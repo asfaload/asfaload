@@ -540,7 +540,14 @@ async fn missing_signers(file_path: PathBuf, request_id: &str) -> Result<Vec<Str
             error = %e,
             "Failed to compute missing signers"
         );
-        ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+        match e {
+            AggregateSignatureError::FileRevoked => {
+                ApiError::FileRevoked("File is revoked".to_string())
+            }
+            _ => {
+                ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+            }
+        }
     })?
     .into_iter()
     .map(|key| key.to_base64())

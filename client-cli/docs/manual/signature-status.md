@@ -86,4 +86,4 @@ JSON (with `--json`):
 ## Exit codes
 
 - `0` — query succeeded.
-- non-zero — error (authentication failure, not authorized, file not found, network error).
+- non-zero — error (authentication failure, not authorized, file not found, revoked file, network error).

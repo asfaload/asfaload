@@ -31,7 +31,9 @@ use crate::{SignatureWithState, can_revoke};
 /// * `pubkey` - Public key of the revoker
 ///
 /// # Returns
-/// * `Ok(())` if revocation was successful
+/// * `Ok(SignatureWithState)` with the aggregate signature of the revocation:
+///   `Complete` when the initiator signature met the threshold and the
+///   revocation is final, `Pending` when other revocation signers must sign
 /// * `Err(RevocationError)` if there was an error validating, signing, or writing files
 pub fn revoke_signed_file<P>(
     signed_file_path: P,

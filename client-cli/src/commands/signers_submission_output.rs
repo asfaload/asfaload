@@ -12,8 +12,10 @@ pub(crate) const BOLD: Style = Style::new().bold();
 
 /// A project ID is safe in a shell command when it has only ASCII letters, digits
 /// and `/`, `.`, `-`, `_`, and when no path segment is empty, `.` or `..`.
+/// It must not start with `-`, because the command would read it as an option.
 pub(crate) fn is_safe_project_id(project_id: &str) -> bool {
     !project_id.is_empty()
+        && !project_id.starts_with('-')
         && project_id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_'))
@@ -482,6 +484,9 @@ mod tests {
             ("a;b", false),
             ("a\x1b", false),
             ("é/a", false),
+            ("-a/b", false),
+            ("--help", false),
+            ("a/-b", true),
         ];
         for (input, expected) in cases {
             assert_eq!(is_safe_project_id(input), expected, "input {input:?}");

@@ -76,6 +76,30 @@ pub enum ClientCliError {
 
     #[error("Revocation failed: {0}")]
     RevocationFailed(String),
+
+    #[error("Asset registration failed: {0}")]
+    AssetRegistrationFailed(String),
+
+    #[error("Repository registration failed: {0}")]
+    RepoRegistrationFailed(String),
+
+    #[error("Signers update failed: {0}")]
+    SignersUpdateFailed(String),
+}
+
+/// Return the error built by `failure` with the backend message when the
+/// backend reports a failed operation, so that the process exits with a
+/// non-zero code and prints nothing on stdout.
+pub(crate) fn ensure_backend_success(
+    success: bool,
+    message: &str,
+    failure: fn(String) -> ClientCliError,
+) -> Result<()> {
+    if success {
+        Ok(())
+    } else {
+        Err(failure(message.to_string()))
+    }
 }
 
 /// Report unparsable signers metadata as corrupted backend data.
@@ -293,6 +317,38 @@ mod tests {
                 assert_eq!(message, "backend down");
             }
             other => panic!("Expected ClientLib passthrough but got {other}"),
+        }
+    }
+
+    type FailureVariant = fn(String) -> ClientCliError;
+
+    #[test]
+    fn ensure_backend_success_cases() {
+        // (failure variant, expected message of the error)
+        let cases: Vec<(FailureVariant, &str)> = vec![
+            (
+                ClientCliError::RevocationFailed,
+                "Revocation failed: backend refused",
+            ),
+            (
+                ClientCliError::AssetRegistrationFailed,
+                "Asset registration failed: backend refused",
+            ),
+            (
+                ClientCliError::RepoRegistrationFailed,
+                "Repository registration failed: backend refused",
+            ),
+            (
+                ClientCliError::SignersUpdateFailed,
+                "Signers update failed: backend refused",
+            ),
+        ];
+        for (failure, expected_message) in cases {
+            assert!(ensure_backend_success(true, "unused", failure).is_ok());
+            match ensure_backend_success(false, "backend refused", failure) {
+                Err(e) => assert_eq!(e.to_string(), expected_message),
+                Ok(()) => panic!("expected an error for {expected_message:?}, got Ok"),
+            }
         }
     }
 

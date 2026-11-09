@@ -339,3 +339,49 @@ fn test_register_repo_wrong_password_fails_before_fetch() {
         .stderr(predicate::str::contains("Digest mismatch").not());
     m.assert();
 }
+
+// A backend that answers with `success: false` must give a non-zero exit code
+// and no output on stdout, in the human and in the JSON output.
+#[test]
+fn test_register_repo_failed_backend_response_is_an_error() {
+    let mut server = mockito::Server::new();
+    let _signers_mock = server
+        .mock("GET", "/owner/repo/main/signers.json")
+        .with_status(200)
+        .with_body(SIGNERS_CONTENT)
+        .create();
+    let url = format!("{}/owner/repo/main/signers.json", server.url());
+    let digest = expected_sha512(SIGNERS_CONTENT);
+
+    let mut backend = mockito::Server::new();
+    let _backend_mock = backend
+        .mock("POST", mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{"success":false,"project_id":"owner/repo","message":"backend refused","required_signers":[],"signature_submission_url":"","signers_file_path":""}"#,
+        )
+        .create();
+
+    let key = test_helpers::fixtures_sec_key(0);
+    for json_flag in [None, Some("--json")] {
+        let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+        cmd.arg("register-repo")
+            .arg(url.as_str())
+            .arg("--digest")
+            .arg(digest.as_str())
+            .arg("-K")
+            .arg(&key)
+            .arg("-p")
+            .arg(FIXTURE_PASSWORD)
+            .arg("-u")
+            .arg(backend.url())
+            .args(json_flag);
+        cmd.assert()
+            .failure()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains(
+                "Repository registration failed: backend refused",
+            ));
+    }
+}

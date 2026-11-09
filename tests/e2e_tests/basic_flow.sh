@@ -183,7 +183,10 @@ run_step_json "Sign signers file with key2 (completes signature)" \
 assert_signers_active
 assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
 
-expect_fail "Sign signers file with key0 (already completed)" \
+# The signers file is active and has the signature of key0, so signing its
+# pending path again reports the collected signature.
+run_step_json "Sign signers file with key0 (already activated)" \
+    '.is_complete == true' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 ################################################################################

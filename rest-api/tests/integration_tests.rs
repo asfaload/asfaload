@@ -38,6 +38,29 @@ pub async fn get_signature_status(
         .await?)
 }
 
+/// Send an authenticated files-to-sign request for `file_path`, made with
+/// `secret_key`.
+pub async fn get_files_to_sign(
+    port: u16,
+    file_path: &str,
+    secret_key: &features_lib::AsfaloadSecretKeys,
+) -> Result<reqwest::Response> {
+    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
+
+    let auth = rest_api_test_helpers::create_auth_headers_with_key(secret_key, "").await;
+    Ok(reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{}/v1/files-to-sign/{}",
+            port, file_path
+        ))
+        .header(HEADER_TIMESTAMP, &auth.timestamp)
+        .header(HEADER_NONCE, &auth.nonce)
+        .header(HEADER_SIGNATURE, &auth.signature)
+        .header(HEADER_PUBLIC_KEY, &auth.public_key)
+        .send()
+        .await?)
+}
+
 /// Build the base64-encoded metadata and its base64-encoded signature the
 /// same way the admin client does, so the backend validation accepts them.
 ///
@@ -1211,6 +1234,21 @@ pub mod test_utils_tests {
             )
         );
 
+        // The project has no active signers file yet. The signers of the
+        // pending signers file can follow its status.
+        for status_secret_key in [secret_key, test_keys.sec_key(1).unwrap()] {
+            let response = crate::get_signature_status(
+                port,
+                &response_body.signers_file_path,
+                status_secret_key,
+            )
+            .await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            let status: rest_api_types::GetSignatureStatusResponse = response.json().await?;
+            assert!(!status.is_complete);
+            assert_eq!(status.required_signers, vec![public_key_2.to_base64()]);
+        }
+
         mock.assert();
         server_handle.abort();
 
@@ -2013,9 +2051,15 @@ pub mod test_utils_tests {
         assert!(!status.is_complete);
         assert_eq!(status.required_signers, vec![added_public_key.to_base64()]);
 
+        // The added signer is not in the active signers file, but must sign
+        // the update, so it can follow its status.
+        let added_secret_key = test_keys.sec_key(1).unwrap();
+        let response =
+            crate::get_signature_status(port, &pending_signers, added_secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+
         // The signature of the added signer completes the update, and the
         // pending signers file is moved to the active signers directory.
-        let added_secret_key = test_keys.sec_key(1).unwrap();
         let pending_signers_file = git_repo_path.join(&pending_signers);
         let digest = sha512_for_file(&pending_signers_file)?;
         let metadata_digest = sha512_for_file(metadata_path_for(&pending_signers_file)?)?;
@@ -2171,6 +2215,83 @@ pub mod test_utils_tests {
         update_mock.assert_calls(1);
         server_handle.abort();
 
+        Ok(())
+    }
+
+    /// When a pending signers file was activated, only a key that signed the
+    /// activated file learns about it. All other keys get a 404, as for a path
+    /// that never existed.
+    #[tokio::test]
+    async fn test_files_to_sign_for_activated_signers_file() -> Result<(), anyhow::Error> {
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        use rest_api_types::models::ErrorResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let test_keys = test_helpers::TestKeys::new(3);
+        let signer_public_key = test_keys.pub_key(0).unwrap();
+        let signer_secret_key = test_keys.sec_key(0).unwrap();
+        // In the signers config, but has no signature on the activated file.
+        let other_signer_public_key = test_keys.pub_key(1).unwrap();
+        let other_signer_secret_key = test_keys.sec_key(1).unwrap();
+        // Not in the signers config.
+        let outsider_secret_key = test_keys.sec_key(2).unwrap();
+
+        let config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (
+                vec![signer_public_key.clone(), other_signer_public_key.clone()],
+                1,
+            ),
+            Some((vec![signer_public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = "http/127.0.0.1/8080/owner/repo";
+        // The activated signers file has only the signature of key 0.
+        seed_active_project(
+            &git_repo_path,
+            project_id,
+            &config,
+            signer_public_key,
+            signer_secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        let pending_signers = format!("{}/{}/{}", project_id, PENDING_SIGNERS_DIR, SIGNERS_FILE);
+
+        // The key that signed the activated file gets a conflict.
+        let response = crate::get_files_to_sign(port, &pending_signers, signer_secret_key).await?;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body: ErrorResponse = response.json().await?;
+        assert_eq!(
+            body.error,
+            format!("Signature already collected: {}", pending_signers)
+        );
+
+        // A signer without a signature, and a key that is not a signer, get no
+        // information about the activated file.
+        for secret_key in [other_signer_secret_key, outsider_secret_key] {
+            let response = crate::get_files_to_sign(port, &pending_signers, secret_key).await?;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            let body: ErrorResponse = response.json().await?;
+            assert_eq!(body.error, format!("File not found: {}", pending_signers));
+        }
+
+        // A project without an activated signers file gives a 404.
+        let unknown_pending_signers = format!(
+            "http/127.0.0.1/8080/owner/unknown/{}/{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE
+        );
+        let response =
+            crate::get_files_to_sign(port, &unknown_pending_signers, signer_secret_key).await?;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        server_handle.abort();
         Ok(())
     }
 

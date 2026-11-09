@@ -639,3 +639,78 @@ fn sign_pending_complete_release_index_shows_download_command() {
     );
     assert!(stdout.contains("asfald"), "stdout: {stdout}");
 }
+
+// ---------------------------------------------------------------------------
+// A pending signers file that was activated with the signature of the user.
+// ---------------------------------------------------------------------------
+
+/// Mock a files-to-sign response that reports an activated signers file, and
+/// run sign-pending on its pending path with `extra_args`.
+fn run_sign_pending_on_activated_signers(extra_args: &[&str]) -> std::process::Output {
+    let pending_signers = "http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json";
+    let body = serde_json::to_string(&rest_api_types::models::ErrorResponse {
+        error: rest_api_types::errors::ApiError::SignatureAlreadyCollected(
+            pending_signers.to_string(),
+        )
+        .to_string(),
+    })
+    .unwrap();
+
+    let mut server = mockito::Server::new();
+    let _files_mock = server
+        .mock(
+            "GET",
+            format!("/v1/files-to-sign/{pending_signers}").as_str(),
+        )
+        .with_status(409)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create();
+    // No signature is submitted.
+    let signatures_mock = server.mock("POST", "/v1/signatures").expect(0).create();
+
+    let output = assert_cmd::cargo_bin_cmd!("asfaload-cli")
+        .arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg(pending_signers)
+        .arg("--digest")
+        .arg(DIGEST_A)
+        .args(extra_args)
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD)
+        .output()
+        .unwrap();
+    signatures_mock.assert();
+    output
+}
+
+#[test]
+fn sign_pending_activated_signers_file_reports_collected_signature() {
+    let output = run_sign_pending_on_activated_signers(&[]);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "The signers file http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json was activated. Your signature was collected. You do not need to sign it again.\n"
+    );
+}
+
+#[test]
+fn sign_pending_activated_signers_file_json_reports_complete() {
+    let output = run_sign_pending_on_activated_signers(&["--json"]);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "{\"is_complete\":true}\n");
+}

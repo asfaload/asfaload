@@ -73,6 +73,12 @@ Next step
        --digest sha512:2e2fde4e... \
        https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
        --secret-key <secret-key>
+
+  To follow the status of the signature, run this command:
+
+     asfaload-cli signature-status \
+       https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+       --secret-key <secret-key>
 ```
 
 The CLI signs the signers file and the metadata with your key. The backend records these signatures. If they complete the required signers, the project is active at once. Otherwise the backend creates a pending signers entry and waits for the remaining signers before the project becomes active.

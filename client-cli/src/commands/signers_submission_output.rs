@@ -6,6 +6,7 @@ use forge_url::{ForgeInfo, ForgeTrait};
 use rest_api_types::RegisterRepoResponse;
 
 use crate::cli::DEFAULT_BACKEND;
+use crate::commands::signature_status::signature_status_command_lines;
 use crate::utils::{program_name, strip_control_chars};
 
 pub(crate) const BOLD: Style = Style::new().bold();
@@ -79,19 +80,20 @@ pub fn submission_overview(
     ];
     let file_path =
         is_safe_to_show_command(response).then_some(response.signers_file_path.as_str());
+    let to_collect = SignaturesToCollect {
+        required_signers: &response.required_signers,
+        file_path,
+        digest,
+        complete_message: "The signers file is active. No more signatures are necessary.",
+        unexpected_data_warning: "The backend returned an unexpected project ID or signers file path.",
+    };
     lines.extend(signatures_to_collect_lines(
-        &SignaturesToCollect {
-            required_signers: &response.required_signers,
-            file_path,
-            digest,
-            complete_message: "The signers file is active. No more signatures are necessary.",
-            unexpected_data_warning:
-                "The backend returned an unexpected project ID or signers file path.",
-        },
+        &to_collect,
         backend_url,
         executable,
         bold,
     ));
+    lines.extend(follow_status_lines(&to_collect, backend_url, executable));
     let mut output = lines.join("\n");
     output.push('\n');
     output
@@ -157,6 +159,34 @@ pub(crate) fn signatures_to_collect_lines(
         }
     }
     lines
+}
+
+/// Build the lines that tell the submitter how to follow the status of the
+/// signature. Empty when no signature is missing, or when the path is not
+/// safe to put in a command.
+///
+/// `backend_url` is `Some` only when the user did not use the default backend.
+pub(crate) fn follow_status_lines(
+    to_collect: &SignaturesToCollect,
+    backend_url: Option<&str>,
+    executable: &str,
+) -> Vec<String> {
+    match to_collect.file_path {
+        Some(file_path) if !to_collect.required_signers.is_empty() => {
+            let mut lines = vec![
+                String::new(),
+                "  To follow the status of the signature, run this command:".to_string(),
+                String::new(),
+            ];
+            lines.extend(signature_status_command_lines(
+                file_path,
+                backend_url,
+                executable,
+            ));
+            lines
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The last lines of a command to copy: the backend URL when it is not the
@@ -336,8 +366,15 @@ mod tests {
              asfaload-cli sign-pending \\\n       \
              --digest {} \\\n       \
              {} \\\n       \
+             --secret-key <secret-key>\n\
+             \n  \
+             To follow the status of the signature, run this command:\n\
+             \n     \
+             asfaload-cli signature-status \\\n       \
+             {} \\\n       \
              --secret-key <secret-key>\n",
             digest(),
+            pending_path(),
             pending_path()
         );
         assert_eq!(output, expected);
@@ -376,6 +413,13 @@ mod tests {
                 "       --backend-url http://localhost:3000 \\\n       --secret-key <secret-key>\n"
             ),
             "backend URL must come just before the secret key placeholder, got: {output}"
+        );
+        assert_eq!(
+            output
+                .matches("--backend-url http://localhost:3000")
+                .count(),
+            2,
+            "both the sign-pending and the signature-status commands need the backend URL, got: {output}"
         );
         assert!(output.starts_with("Signers update proposed: "));
     }
@@ -427,6 +471,10 @@ mod tests {
         assert!(
             !output.contains("sign-pending"),
             "command must not be shown, got: {output}"
+        );
+        assert!(
+            !output.contains("signature-status"),
+            "status command must not be shown, got: {output}"
         );
         assert!(output.contains("Warning"), "warning missing, got: {output}");
         assert!(output.contains("list-pending"), "got: {output}");

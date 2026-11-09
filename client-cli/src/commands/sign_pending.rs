@@ -7,7 +7,7 @@ use crate::commands::release_download_output::{
 use crate::commands::revocation_output::revocation_note;
 use crate::commands::signature_status::signature_status_hint;
 use crate::commands::signers_submission_output::{print_activation_next_step, release_example_for};
-use crate::error::Result;
+use crate::error::{Result, is_signature_already_collected};
 use crate::utils::executable_name;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
 use features_lib::{
@@ -59,9 +59,27 @@ pub async fn handle_sign_pending_sec_key(
     let client = admin_lib::v1::Client::new(backend_url);
 
     // Fetch all files that need signing
-    let files_to_sign = client
+    let files_to_sign = match client
         .fetch_files_to_sign(pending_file.path(), secret_key)
-        .await?;
+        .await
+    {
+        Ok(files) => files,
+        // The backend gives this refusal only for a pending signers file that was
+        // activated with a signature of this key.
+        Err(e) if is_signature_already_collected(&e) => {
+            let response = SubmitSignatureResponse { is_complete: true };
+            if json {
+                println!("{}", serde_json::to_string(&response)?);
+            } else {
+                println!(
+                    "The signers file {} was activated. Your signature was collected. You do not need to sign it again.",
+                    pending_file.path()
+                );
+            }
+            return Ok(response);
+        }
+        Err(e) => return Err(e.into()),
+    };
     check_files_to_sign_paths(pending_file.path(), &files_to_sign)?;
 
     // A pending signers file must be byte-identical to the forge source its

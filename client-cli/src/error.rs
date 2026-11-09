@@ -190,6 +190,16 @@ pub(crate) fn submit_signature_error(
     ClientCliError::AdminLib(error)
 }
 
+/// Tell if the backend refused the request because it already collected the
+/// signature of the key.
+pub(crate) fn is_signature_already_collected(error: &admin_lib::AdminLibError) -> bool {
+    matches!(
+        error,
+        admin_lib::AdminLibError::RequestFailed(message)
+            if is_refusal_with(message, &ApiError::SignatureAlreadyCollected(String::new()))
+    )
+}
+
 /// Tell if a failed request message reports the error `expected` sent by the
 /// backend.
 ///
@@ -442,6 +452,60 @@ mod tests {
                 assert_eq!(msg, "bad")
             }
             other => panic!("Expected AdminLib InvalidInput passthrough but got {other}"),
+        }
+    }
+
+    #[test]
+    fn is_signature_already_collected_cases() {
+        let collected = ApiError::SignatureAlreadyCollected("some/file".to_string());
+        let collected_body = serde_json::to_string(&ErrorResponse {
+            error: collected.to_string(),
+        })
+        .unwrap();
+
+        // (description, error, expected result)
+        let cases = vec![
+            (
+                "already collected",
+                admin_lib::AdminLibError::RequestFailed(refusal_message(&collected)),
+                true,
+            ),
+            (
+                "not found",
+                admin_lib::AdminLibError::RequestFailed(refusal_message(&ApiError::FileNotFound(
+                    "some/file".to_string(),
+                ))),
+                false,
+            ),
+            (
+                "wrong status",
+                admin_lib::AdminLibError::RequestFailed(format!(
+                    "400 Bad Request: {collected_body}"
+                )),
+                false,
+            ),
+            (
+                "body is not json",
+                admin_lib::AdminLibError::RequestFailed(format!(
+                    "{}: {}",
+                    collected.to_http_status(),
+                    collected
+                )),
+                false,
+            ),
+            (
+                "other error",
+                admin_lib::AdminLibError::InvalidInput("bad".to_string()),
+                false,
+            ),
+        ];
+
+        for (description, error, expected) in cases {
+            assert_eq!(
+                is_signature_already_collected(&error),
+                expected,
+                "{description}"
+            );
         }
     }
 }

@@ -5,7 +5,7 @@ use rest_api_types::RegisterAssetsResponse;
 
 use crate::cli::DEFAULT_BACKEND;
 use crate::commands::signers_submission_output::{
-    BOLD, SignaturesToCollect, is_safe_project_id, signatures_to_collect_lines,
+    BOLD, SignaturesToCollect, follow_status_lines, is_safe_project_id, signatures_to_collect_lines,
 };
 use crate::utils::{program_name, strip_control_chars};
 
@@ -63,18 +63,20 @@ pub fn registration_overview(
         .index_file_path
         .as_deref()
         .filter(|path| is_safe_index_file_path(path));
+    let to_collect = SignaturesToCollect {
+        required_signers: &response.required_signers,
+        file_path,
+        digest: index_digest,
+        complete_message: "The release is fully signed. No more signatures are necessary.",
+        unexpected_data_warning: "The backend returned an unexpected index file path.",
+    };
     lines.extend(signatures_to_collect_lines(
-        &SignaturesToCollect {
-            required_signers: &response.required_signers,
-            file_path,
-            digest: index_digest,
-            complete_message: "The release is fully signed. No more signatures are necessary.",
-            unexpected_data_warning: "The backend returned an unexpected index file path.",
-        },
+        &to_collect,
         backend_url,
         executable,
         bold,
     ));
+    lines.extend(follow_status_lines(&to_collect, backend_url, executable));
     let mut output = lines.join("\n");
     output.push('\n');
     output
@@ -122,6 +124,12 @@ mod tests {
              asfaload-cli sign-pending \\\n       \
              --digest {} \\\n       \
              {INDEX_PATH} \\\n       \
+             --secret-key <secret-key>\n\
+             \n  \
+             To follow the status of the signature, run this command:\n\
+             \n     \
+             asfaload-cli signature-status \\\n       \
+             {INDEX_PATH} \\\n       \
              --secret-key <secret-key>\n",
             digest()
         );
@@ -156,6 +164,13 @@ mod tests {
             ),
             "backend URL must come just before the secret key placeholder, got: {output}"
         );
+        assert_eq!(
+            output
+                .matches("--backend-url http://localhost:3000")
+                .count(),
+            2,
+            "both the sign-pending and the signature-status commands need the backend URL, got: {output}"
+        );
     }
 
     #[test]
@@ -173,6 +188,10 @@ mod tests {
             assert!(
                 !output.contains("sign-pending"),
                 "{index_file_path:?}: command must not be shown, got: {output}"
+            );
+            assert!(
+                !output.contains("signature-status"),
+                "{index_file_path:?}: status command must not be shown, got: {output}"
             );
             assert!(
                 output.contains("The backend returned an unexpected index file path."),

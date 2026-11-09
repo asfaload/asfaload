@@ -35,6 +35,12 @@ Next step
        --digest sha512:2e2fde4e... \
        https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json \
        --secret-key <secret-key>
+
+  To follow the status of the signature, run this command:
+
+     asfaload-cli signature-status \
+       https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json \
+       --secret-key <secret-key>
 ```
 
 The CLI derives the index from the release metadata and signs it. The backend verifies the signature and the index, then waits for signatures. Send the `sign-pending` command to the other artifact signers. If your signature is sufficient, the output says that the release is fully signed and shows no command.

@@ -2,6 +2,7 @@ use crate::error::ForgeUrlError;
 use crate::github::GITHUB_HOSTS;
 use crate::gitlab::GITLAB_HOSTS;
 use crate::traits::ForgesPathMethods;
+use constants::INDEX_FILE;
 use url::Url;
 
 pub struct GithubForge;
@@ -9,6 +10,10 @@ pub struct GithubForge;
 impl ForgesPathMethods for GithubForge {
     fn translate_download_to_release_path(&self, path: &str) -> String {
         path.replace("/releases/download/", "/releases/tag/")
+    }
+
+    fn translate_release_to_download_path(&self, path: &str) -> String {
+        path.replace("/releases/tag/", "/releases/download/")
     }
 }
 
@@ -21,12 +26,20 @@ impl ForgesPathMethods for GitlabForge {
         // GitLab stores at /-/releases/tag/ which matches the URL structure.
         path.to_string()
     }
+
+    fn translate_release_to_download_path(&self, path: &str) -> String {
+        path.to_string()
+    }
 }
 
 pub struct FileServerForge;
 
 impl ForgesPathMethods for FileServerForge {
     fn translate_download_to_release_path(&self, path: &str) -> String {
+        path.to_string()
+    }
+
+    fn translate_release_to_download_path(&self, path: &str) -> String {
         path.to_string()
     }
 }
@@ -66,6 +79,14 @@ impl ForgesPathMethods for Forges {
             Self::FileServer(f) => f.translate_download_to_release_path(path),
         }
     }
+
+    fn translate_release_to_download_path(&self, path: &str) -> String {
+        match self {
+            Self::Github(f) => f.translate_release_to_download_path(path),
+            Self::Gitlab(f) => f.translate_release_to_download_path(path),
+            Self::FileServer(f) => f.translate_release_to_download_path(path),
+        }
+    }
 }
 
 pub fn get_forge(file_url: &Url) -> Result<Forges, ForgeUrlError> {
@@ -75,10 +96,47 @@ pub fn get_forge(file_url: &Url) -> Result<Forges, ForgeUrlError> {
     Forges::from_host(host)
 }
 
+/// The URL of the directory that holds the artifacts of a release, built from
+/// the repository path of its index, for example
+/// `https/github.com/443/owner/repo/releases/tag/v1.0/asfaload.index.json`
+/// gives `https://github.com/owner/repo/releases/download/v1.0/`.
+///
+/// It is the reverse of `construct_index_file_path`. The result is accepted
+/// only if an artifact URL in the directory gives `index_path` again, so a
+/// path that `construct_index_file_path` cannot produce is an error.
+pub fn artifacts_url_prefix_for_index_path(index_path: &str) -> Result<Url, ForgeUrlError> {
+    let invalid = || ForgeUrlError::InvalidFormat(format!("Not an index file path: {index_path}"));
+    let dir_path = index_path
+        .strip_suffix(&format!("/{INDEX_FILE}"))
+        .ok_or_else(invalid)?;
+    let mut parts = dir_path.splitn(4, '/');
+    let (scheme, host, port, release_path) =
+        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(scheme), Some(host), Some(port), Some(release_path)) => {
+                (scheme, host, port, release_path)
+            }
+            _ => return Err(invalid()),
+        };
+    let port: u16 = port.parse().map_err(|_| invalid())?;
+    let mut url = Url::parse(&format!("{scheme}://{host}:{port}/")).map_err(|_| invalid())?;
+    let forge = Forges::from_host(host)?;
+    url.set_path(&format!(
+        "{}/",
+        forge.translate_release_to_download_path(release_path)
+    ));
+
+    // The URL parser normalises its input, so a path with unusual characters
+    // could give a URL for another location.
+    let artifact_url = url.join("artifact").map_err(|_| invalid())?;
+    if forge.construct_index_file_path(&artifact_url)? != index_path {
+        return Err(invalid());
+    }
+    Ok(url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use constants::INDEX_FILE;
 
     // --- translate (github) ---
     #[test]
@@ -259,5 +317,101 @@ mod tests {
                 .unwrap(),
             "https/gitlab.com/443/ns/project/-/releases/v1.0/downloads/asfaload.index.json"
         );
+    }
+
+    // --- translate back (download path from release path) ---
+    #[test]
+    fn translate_release_to_download_path_cases() {
+        let cases: Vec<(Forges, &str, &str)> = vec![
+            (
+                Forges::Github(GithubForge),
+                "owner/repo/releases/tag/v1.0",
+                "owner/repo/releases/download/v1.0",
+            ),
+            (
+                Forges::Github(GithubForge),
+                "owner/repo/some/path",
+                "owner/repo/some/path",
+            ),
+            (
+                Forges::Gitlab(GitlabForge),
+                "ns/project/-/releases/v1.0/downloads",
+                "ns/project/-/releases/v1.0/downloads",
+            ),
+            (
+                Forges::FileServer(FileServerForge),
+                "public/releases/v1.0",
+                "public/releases/v1.0",
+            ),
+        ];
+        for (forge, release_path, expected) in cases {
+            assert_eq!(
+                forge.translate_release_to_download_path(release_path),
+                expected,
+                "release path {release_path:?}"
+            );
+        }
+    }
+
+    // --- artifacts_url_prefix_for_index_path ---
+    #[test]
+    fn artifacts_url_prefix_reverses_construct_index_file_path() {
+        // (artifact URL, expected prefix)
+        let cases = [
+            (
+                "https://github.com/owner/repo/releases/download/v1.0/file.tar.gz",
+                "https://github.com/owner/repo/releases/download/v1.0/",
+            ),
+            (
+                "https://gitlab.com/ns/project/-/releases/v1.0/downloads/file.tar.gz",
+                "https://gitlab.com/ns/project/-/releases/v1.0/downloads/",
+            ),
+            (
+                "https://files.example.com/public/releases/v1.0/installer.tar.gz",
+                "https://files.example.com/public/releases/v1.0/",
+            ),
+            (
+                "http://localhost:8080/releases/v1.0/installer.tar.gz",
+                "http://localhost:8080/releases/v1.0/",
+            ),
+            (
+                "https://example.com/installer.tar.gz",
+                "https://example.com/",
+            ),
+        ];
+        for (artifact_url, expected_prefix) in cases {
+            let artifact_url = Url::parse(artifact_url).unwrap();
+            let index_path = get_forge(&artifact_url)
+                .unwrap()
+                .construct_index_file_path(&artifact_url)
+                .unwrap();
+
+            let prefix = artifacts_url_prefix_for_index_path(&index_path).unwrap();
+
+            assert_eq!(prefix.as_str(), expected_prefix, "index path {index_path}");
+        }
+    }
+
+    #[test]
+    fn artifacts_url_prefix_rejects_invalid_index_paths() {
+        let cases = [
+            "https/github.com/443/owner/repo/releases/tag/v1.0/other.json",
+            "https/github.com/443/asfaload.index.json",
+            "https/github.com/asfaload.index.json",
+            "ftp/example.com/21/releases/asfaload.index.json",
+            "https/example.com/no-port/releases/asfaload.index.json",
+            "https/example.com/99999/releases/asfaload.index.json",
+            "https/user@example.com/443/releases/asfaload.index.json",
+            "https/example.com/443/a/../b/asfaload.index.json",
+            "https/example.com/443/a b/asfaload.index.json",
+            "https/example.com/443/releases?x=1/asfaload.index.json",
+            "",
+        ];
+        for index_path in cases {
+            assert!(
+                artifacts_url_prefix_for_index_path(index_path).is_err(),
+                "index path {index_path:?} should be rejected"
+            );
+        }
     }
 }

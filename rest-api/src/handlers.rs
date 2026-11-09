@@ -1,7 +1,7 @@
 use common::fs::names::{
-    find_global_signers_for, is_pending_signers_file_path, revocation_path_for,
-    revocation_signatures_path_for, revocation_signers_path_for,
-    subject_path_from_pending_signatures,
+    completed_path_for_pending, find_global_signers_for, is_pending_signers_file_path,
+    revocation_path_for, revocation_signatures_path_for, revocation_signers_path_for,
+    signatures_path_for, subject_path_from_pending_signatures,
 };
 use common::{sha512_for_file, string_from_base64};
 use constants::SIGNERS_DIR;
@@ -23,7 +23,7 @@ use rest_api_types::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 use url::Url;
@@ -859,6 +859,20 @@ pub async fn get_file_handler(
     Ok((axum::http::StatusCode::OK, headers, content))
 }
 
+/// Tell if `public_key` has a signature in the complete aggregate signature of
+/// `signed_file`.
+fn key_signed(signed_file: &Path, public_key: &AsfaloadPublicKeys) -> Result<bool, ApiError> {
+    let signatures_path = signatures_path_for(signed_file).map_err(|e| {
+        ApiError::InternalServerError(format!("Failed to compute signatures path: {}", e))
+    })?;
+    let signatures =
+        features_lib::aggregate_signature_helpers::get_individual_signatures(&signatures_path)
+            .map_err(|e| {
+                ApiError::InternalServerError(format!("Failed to load signatures: {}", e))
+            })?;
+    Ok(signatures.contains_key(public_key))
+}
+
 /// Handler to return all files that need to be signed for a given file path.
 ///
 /// For signers files, this includes both the signers file itself and
@@ -875,7 +889,8 @@ pub async fn get_file_handler(
 /// # Errors
 /// Returns `ApiError` if:
 /// - File path is invalid
-/// - File does not exist
+/// - File does not exist. For a pending signers file that was activated, a key
+///   with a signature in the activated file gets `SignatureAlreadyCollected`
 /// - File cannot be read
 pub async fn get_files_to_sign_handler(
     State(state): State<AppState>,
@@ -891,15 +906,23 @@ pub async fn get_files_to_sign_handler(
 
     let absolute_path = normalised_paths.absolute_path();
 
-    if !absolute_path.exists() || !absolute_path.is_file() {
-        return Err(ApiError::FileNotFound(format!(
-            "File not found: {}",
-            file_path
-        )));
-    }
-
     // Extract and validate the signer's public key from auth headers
-    let _public_key = extract_public_key_from_headers(&headers)?;
+    let public_key = extract_public_key_from_headers(&headers)?;
+
+    if !absolute_path.exists() {
+        // An activated pending signers file is moved, report it if
+        // the requesting key has signed it.
+        if let Some(active) = completed_path_for_pending(&absolute_path)
+            && is_pending_signers_file_path(&absolute_path)
+            && key_signed(&active, &public_key)?
+        {
+            return Err(ApiError::SignatureAlreadyCollected(file_path));
+        }
+        return Err(ApiError::FileNotFound(file_path));
+    }
+    if !absolute_path.is_file() {
+        return Err(ApiError::FileNotFound(file_path));
+    }
 
     let mut files = HashMap::new();
 

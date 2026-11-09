@@ -1,5 +1,5 @@
 use crate::commands::revocation_output::print_revocation_overview;
-use crate::error::{ClientCliError, Result};
+use crate::error::{ClientCliError, Result, ensure_backend_success};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
     sha512_for_content,
@@ -62,7 +62,11 @@ pub async fn handle_revoke_command(
         )
         .await?;
 
-    ensure_revocation_succeeded(&response)?;
+    ensure_backend_success(
+        response.success,
+        &response.message,
+        ClientCliError::RevocationFailed,
+    )?;
 
     // Display result
     if json {
@@ -74,22 +78,9 @@ pub async fn handle_revoke_command(
     Ok(response)
 }
 
-/// Return an error when the backend reports a failed revocation, so that the
-/// process exits with a non-zero code.
-fn ensure_revocation_succeeded(response: &RevokeFileResponse) -> Result<()> {
-    if response.success {
-        Ok(())
-    } else {
-        Err(ClientCliError::RevocationFailed(response.message.clone()))
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::ensure_revocation_succeeded;
-    use crate::error::ClientCliError;
     use features_lib::{sha512_for_content, to_posix_json};
-    use rest_api_types::RevokeFileResponse;
     use signers_file_types::revocation::RevocationInfo;
     use test_helpers::TestKeys;
 
@@ -111,30 +102,5 @@ mod tests {
             !json.ends_with("\n\n"),
             "revocation JSON must not end with double newline"
         );
-    }
-
-    #[test]
-    fn failed_revocation_response_is_an_error() {
-        let response = RevokeFileResponse {
-            success: false,
-            message: "backend refused".to_string(),
-            required_signers: vec![],
-        };
-        match ensure_revocation_succeeded(&response) {
-            Err(ClientCliError::RevocationFailed(message)) => {
-                assert_eq!(message, "backend refused")
-            }
-            other => panic!("expected RevocationFailed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn successful_revocation_response_is_ok() {
-        let response = RevokeFileResponse {
-            success: true,
-            message: "unused".to_string(),
-            required_signers: vec![],
-        };
-        assert!(ensure_revocation_succeeded(&response).is_ok());
     }
 }

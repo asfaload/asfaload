@@ -111,4 +111,4 @@ JSON (with `--json`):
 ## Exit codes
 
 - `0` — repository registered.
-- non-zero — error (authentication failure, digest mismatch, invalid signers file URL, network error).
+- non-zero — error (authentication failure, digest mismatch, invalid signers file URL, network error, backend reports a failure).

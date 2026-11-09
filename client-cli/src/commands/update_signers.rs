@@ -1,7 +1,7 @@
 use common::AsfaloadHashes;
 
 use crate::commands::signers_submission_output::print_submission_overview;
-use crate::error::Result;
+use crate::error::{ClientCliError, Result, ensure_backend_success};
 
 use super::prepare_signed_submission;
 
@@ -25,17 +25,21 @@ pub async fn handle_update_signers_command(
         )
         .await?;
 
+    ensure_backend_success(
+        response.success,
+        &response.message,
+        ClientCliError::SignersUpdateFailed,
+    )?;
+
     if json {
         println!("{}", serde_json::to_string(&response)?);
-    } else if response.success {
+    } else {
         print_submission_overview(
             "Signers update proposed",
             &response,
             expected_digest,
             backend_url,
         );
-    } else {
-        println!("Signers update failed: {}", response.message);
     }
 
     Ok(())

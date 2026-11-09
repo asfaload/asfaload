@@ -1,6 +1,6 @@
 use crate::commands::prepare_signed_submission;
 use crate::commands::signers_submission_output::print_submission_overview;
-use crate::error::Result;
+use crate::error::{ClientCliError, Result, ensure_backend_success};
 use common::AsfaloadHashes;
 
 pub async fn handle_register_repo_command(
@@ -24,17 +24,21 @@ pub async fn handle_register_repo_command(
         )
         .await?;
 
+    ensure_backend_success(
+        response.success,
+        &response.message,
+        ClientCliError::RepoRegistrationFailed,
+    )?;
+
     if json {
         println!("{}", serde_json::to_string(&response)?);
-    } else if response.success {
+    } else {
         print_submission_overview(
             "Repository registered",
             &response,
             expected_digest,
             backend_url,
         );
-    } else {
-        println!("Repository registration failed: {}", response.message);
     }
 
     Ok(())

@@ -111,7 +111,7 @@ The release is registered when this check occurs. If you register the release ag
 ## Exit codes
 
 - `0` — assets registered.
-- non-zero — error (authentication failure, invalid URL, mutually exclusive flags, network error, stored index not the same as the signed index).
+- non-zero — error (authentication failure, invalid URL, mutually exclusive flags, network error, stored index not the same as the signed index, backend reports a failure).
 
 ## Errors
 

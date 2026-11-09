@@ -1,5 +1,5 @@
 use crate::commands::release_registration_output::print_registration_overview;
-use crate::error::Result;
+use crate::error::{ClientCliError, Result, ensure_backend_success};
 use admin_lib::v1::RegistrationMode;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
@@ -18,12 +18,16 @@ pub async fn handle_register_assets_command(
     let registered = client.register_assets(&mode, &secret_key).await?;
     let response = registered.response;
 
+    ensure_backend_success(
+        response.success,
+        &response.message,
+        ClientCliError::AssetRegistrationFailed,
+    )?;
+
     if json {
         println!("{}", serde_json::to_string(&response)?);
-    } else if response.success {
-        print_registration_overview(&response, &registered.index_digest, backend_url);
     } else {
-        println!("Asset registration failed: {}", response.message);
+        print_registration_overview(&response, &registered.index_digest, backend_url);
     }
 
     Ok(())

@@ -110,4 +110,4 @@ JSON (with `--json`):
 ## Exit codes
 
 - `0` — update proposed.
-- non-zero — error (authentication failure, digest mismatch, invalid signers file, network error).
+- non-zero — error (authentication failure, digest mismatch, invalid signers file, network error, backend reports a failure).

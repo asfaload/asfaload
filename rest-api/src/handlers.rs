@@ -1,6 +1,7 @@
 use common::fs::names::{
-    find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
-    revocation_signers_path_for, subject_path_from_pending_signatures,
+    find_global_signers_for, is_pending_signers_file_path, revocation_path_for,
+    revocation_signatures_path_for, revocation_signers_path_for,
+    subject_path_from_pending_signatures,
 };
 use common::{sha512_for_file, string_from_base64};
 use constants::SIGNERS_DIR;
@@ -20,7 +21,11 @@ use rest_api_types::{
     PingAuthStatus, PingResponse, RegisterAssetsPayload, RegisterRepoRequest, RegisterRepoResponse,
     RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    str::FromStr,
+};
 use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
@@ -530,6 +535,38 @@ pub async fn submit_signature_handler(
     }))
 }
 
+/// The keys that can query the signature status of `file_path`.
+fn signature_status_authorized_keys(
+    file_path: &NormalisedPaths,
+    request_id: &str,
+) -> Result<HashSet<AsfaloadPublicKeys>, ApiError> {
+    let absolute_path = file_path.absolute_path();
+    let global_config = find_global_signers_for(&absolute_path)
+        .ok()
+        .map(SignersConfig::from_file)
+        .transpose()?;
+    let pending_config = (is_pending_signers_file_path(&absolute_path) && absolute_path.exists())
+        .then(|| SignersConfig::from_file(&absolute_path))
+        .transpose()?;
+    match (global_config, pending_config) {
+        // Signers update
+        (Some(global), Some(pending)) => {
+            let mut keys = global.all_signer_keys();
+            keys.extend(pending.all_signer_keys());
+            Ok(keys)
+        }
+        // Artifact signature | signers file init
+        (Some(config), None) | (None, Some(config)) => Ok(config.all_signer_keys()),
+        (None, None) => {
+            tracing::error!(request_id = %request_id, "No signers file found");
+            Err(ApiError::FileNotFound(format!(
+                "No signers file found for: {}",
+                file_path.relative_path().display()
+            )))
+        }
+    }
+}
+
 /// Query the current signature status for a specific file.
 ///
 /// Returns information about the aggregate signature for a file, including
@@ -592,30 +629,16 @@ pub async fn get_signature_status_handler(
     // situation where a key that signed the file can't check its status. This seems sensible, as
     // the key might have been removed for security reasons.
     let public_key = extract_public_key_from_headers(&headers)?;
-    let signers_config = tokio::task::spawn_blocking({
+    let authorized_keys = tokio::task::spawn_blocking({
         let file_path = file_path.clone();
         let request_id = request_id.to_string();
-        move || -> Result<SignersConfig, ApiError> {
-            let signers_path =
-                find_global_signers_for(&file_path.absolute_path()).map_err(|e| {
-                    tracing::error!(
-                        request_id = %request_id,
-                        error = %e,
-                        "No signers file found"
-                    );
-                    ApiError::FileNotFound(format!(
-                        "No signers file found for: {}",
-                        file_path.relative_path().display()
-                    ))
-                })?;
-            Ok(SignersConfig::from_file(&signers_path)?)
-        }
+        move || signature_status_authorized_keys(&file_path, &request_id)
     })
     .await
     // First '?': JoinError (mapped above)
     // Second '?': ApiError returned from the closure
     .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
-    if !signers_config.all_signer_keys().contains(&public_key) {
+    if !authorized_keys.contains(&public_key) {
         return Err(ApiError::NotAuthorized(format!(
             "caller is not an authorized signer for {}",
             file_path.relative_path().display()

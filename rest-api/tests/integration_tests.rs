@@ -1211,6 +1211,21 @@ pub mod test_utils_tests {
             )
         );
 
+        // The project has no active signers file yet. The signers of the
+        // pending signers file can follow its status.
+        for status_secret_key in [secret_key, test_keys.sec_key(1).unwrap()] {
+            let response = crate::get_signature_status(
+                port,
+                &response_body.signers_file_path,
+                status_secret_key,
+            )
+            .await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            let status: rest_api_types::GetSignatureStatusResponse = response.json().await?;
+            assert!(!status.is_complete);
+            assert_eq!(status.required_signers, vec![public_key_2.to_base64()]);
+        }
+
         mock.assert();
         server_handle.abort();
 
@@ -2013,9 +2028,15 @@ pub mod test_utils_tests {
         assert!(!status.is_complete);
         assert_eq!(status.required_signers, vec![added_public_key.to_base64()]);
 
+        // The added signer is not in the active signers file, but must sign
+        // the update, so it can follow its status.
+        let added_secret_key = test_keys.sec_key(1).unwrap();
+        let response =
+            crate::get_signature_status(port, &pending_signers, added_secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+
         // The signature of the added signer completes the update, and the
         // pending signers file is moved to the active signers directory.
-        let added_secret_key = test_keys.sec_key(1).unwrap();
         let pending_signers_file = git_repo_path.join(&pending_signers);
         let digest = sha512_for_file(&pending_signers_file)?;
         let metadata_digest = sha512_for_file(metadata_path_for(&pending_signers_file)?)?;

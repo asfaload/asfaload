@@ -78,6 +78,12 @@ Next step
        --digest sha512:2e2fde4e... \
        https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
        --secret-key <secret-key>
+
+  To follow the status of the signature, run this command:
+
+     asfaload-cli signature-status \
+       https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+       --secret-key <secret-key>
 ```
 
 ![Demo: propose a signers update](demos/update-signers-file.gif)

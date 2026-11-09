@@ -66,13 +66,32 @@ pub fn signature_status_hint(
     let mut lines = vec![
         "To follow the status of the signature, run this command:".to_string(),
         String::new(),
+    ];
+    lines.extend(signature_status_command_lines(
+        file_path,
+        backend_url,
+        executable,
+    ));
+    let mut output = lines.join("\n");
+    output.push('\n');
+    output
+}
+
+/// The signature-status command for `file_path`, as shown in a hint.
+/// `file_path` must be safe to put in a shell command.
+///
+/// `backend_url` is `Some` only when the user did not use the default backend.
+pub(crate) fn signature_status_command_lines(
+    file_path: &str,
+    backend_url: Option<&str>,
+    executable: &str,
+) -> Vec<String> {
+    let mut lines = vec![
         format!("     {executable} signature-status \\"),
         format!("       {file_path} \\"),
     ];
     lines.extend(command_tail(backend_url));
-    let mut output = lines.join("\n");
-    output.push('\n');
-    output
+    lines
 }
 
 #[cfg(test)]

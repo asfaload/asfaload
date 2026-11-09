@@ -83,7 +83,13 @@ Human-readable (default), when more signatures are necessary:
            https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
            --secret-key <secret-key>
 
-Send the `sign-pending` command to the signers. Each signer replaces `<secret-key>` with their secret key file. When you use a backend other than the default, the command contains `--backend-url`. If the backend returns an unexpected project ID or signers file path, a warning replaces the command.
+      To follow the status of the signature, run this command:
+
+         asfaload-cli signature-status \
+           https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+           --secret-key <secret-key>
+
+Send the `sign-pending` command to the signers. Each signer replaces `<secret-key>` with their secret key file. Run the `signature-status` command with your secret key file to see which keys can still sign. When you use a backend other than the default, the commands contain `--backend-url`. If the backend returns an unexpected project ID or signers file path, a warning replaces the commands.
 
 When your signature completes the required signers, the output says that the signers file is active:
 

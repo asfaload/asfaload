@@ -63,6 +63,17 @@ When the threshold is met:
 
 ```
 Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
+
+Next step
+  The release is now signed. Users can download its artifacts with
+  signature verification. Example:
+
+     asfaload-cli download \
+       https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
+
+  The artifacts of this release are at
+  https://github.com/acme/tool/releases/download/v1.0/
+  You can also download them with asfald, our dedicated download tool.
 ```
 
 ![Demo: sign a release](demos/sign-release.gif)

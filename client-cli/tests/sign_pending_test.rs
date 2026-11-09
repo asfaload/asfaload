@@ -584,3 +584,58 @@ fn sign_pending_rejects_metadata_that_is_also_an_index() {
         .stderr(predicate::str::contains("Backend data error"));
     submit.assert();
 }
+
+// ---------------------------------------------------------------------------
+// A complete release index shows how to download its artifacts.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sign_pending_complete_release_index_shows_download_command() {
+    let index_path = "https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json";
+    let index_content = br#"{"mirroredOn":"2026-01-01T00:00:00Z","publishedOn":"2026-01-01T00:00:00Z","version":1,"publishedFiles":[{"fileName":"tool-linux-amd64.tar.gz","algo":"Sha256","source":"https://api.github.com/repos/acme/tool/releases/1","sourceFormat":"GithubRelease","hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}"#;
+
+    let mut server = mockito::Server::new();
+    let _files_mock = server
+        .mock("GET", format!("/v1/files-to-sign/{index_path}").as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[(index_path, index_content)]))
+        .create();
+    let _signatures_mock = server
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":true}"#)
+        .create();
+
+    let output = assert_cmd::cargo_bin_cmd!("asfaload-cli")
+        .arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg(index_path)
+        .arg("--digest")
+        .arg(sha512_digest_str(index_content))
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains(&format!("--backend-url {} \\\n", server.url())),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "       https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz\n"
+        ),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("asfald"), "stdout: {stdout}");
+}

@@ -61,4 +61,6 @@ pub trait ForgesPathMethods {
     }
 
     fn translate_download_to_release_path(&self, path: &str) -> String;
+
+    fn translate_release_to_download_path(&self, path: &str) -> String;
 }

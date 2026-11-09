@@ -10,6 +10,6 @@ pub mod url_info;
 
 pub use error::ForgeUrlError;
 pub use forge_info::ForgeInfo;
-pub use forges::{Forges, get_forge};
+pub use forges::{Forges, artifacts_url_prefix_for_index_path, get_forge};
 pub use origin::path_prefix_from_url;
 pub use traits::{ForgeTrait, ForgesPathMethods, UrlInfoTrait};

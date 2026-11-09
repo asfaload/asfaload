@@ -645,8 +645,9 @@ fn sign_pending_complete_release_index_shows_download_command() {
 // ---------------------------------------------------------------------------
 
 /// Mock a files-to-sign response that reports an activated signers file, and
-/// run sign-pending on its pending path with `extra_args`.
-fn run_sign_pending_on_activated_signers(extra_args: &[&str]) -> std::process::Output {
+/// run sign-pending on its pending path with `extra_args`. Returns the output
+/// and the URL of the mock backend.
+fn run_sign_pending_on_activated_signers(extra_args: &[&str]) -> (std::process::Output, String) {
     let pending_signers = "http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json";
     let body = serde_json::to_string(&rest_api_types::models::ErrorResponse {
         error: rest_api_types::errors::ApiError::SignatureAlreadyCollected(
@@ -683,12 +684,12 @@ fn run_sign_pending_on_activated_signers(extra_args: &[&str]) -> std::process::O
         .output()
         .unwrap();
     signatures_mock.assert();
-    output
+    (output, server.url())
 }
 
 #[test]
 fn sign_pending_activated_signers_file_reports_collected_signature() {
-    let output = run_sign_pending_on_activated_signers(&[]);
+    let (output, server_url) = run_sign_pending_on_activated_signers(&[]);
 
     assert!(
         output.status.success(),
@@ -698,13 +699,27 @@ fn sign_pending_activated_signers_file_reports_collected_signature() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
         stdout,
-        "The signers file http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json was activated. Your signature was collected. You do not need to sign it again.\n"
+        format!(
+            "The signers file http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json was activated. Your signature was collected. You do not need to sign it again.\n\
+             \n\
+             Next step\n  \
+             The signers file is now active. An artifact signer can register a release\n  \
+             with its checksums files. Replace <checksums-file-url> and <secret-key>:\n\
+             \n     \
+             asfaload-cli register-assets \\\n       \
+             --csum-file <checksums-file-url> \\\n       \
+             --backend-url {} \\\n       \
+             --secret-key <secret-key>\n\
+             \n  \
+             --csum-file can be repeated. For a GitHub release, use --github-release-url.\n",
+            server_url
+        )
     );
 }
 
 #[test]
 fn sign_pending_activated_signers_file_json_reports_complete() {
-    let output = run_sign_pending_on_activated_signers(&["--json"]);
+    let (output, _) = run_sign_pending_on_activated_signers(&["--json"]);
 
     assert!(
         output.status.success(),

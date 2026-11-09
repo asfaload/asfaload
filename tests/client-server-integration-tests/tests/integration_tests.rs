@@ -191,6 +191,42 @@ mod tests {
             "Signers file should be complete with 1 of 1 signer"
         );
 
+        // The signers file is now active. Signing its pending path again
+        // reports that the signature was collected.
+        let again = client_cli::commands::sign_pending::handle_sign_pending_command(
+            signers_pending_path.unseal(),
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("sign-pending on the activated signers file should succeed");
+        assert!(
+            again.is_complete,
+            "The activated signers file should be reported as complete"
+        );
+
+        // A key that is not a signer gets no information about the activated
+        // signers file.
+        let outsider_key_path = state.lock().await.secret_key_paths[1].clone();
+        let outsider = client_cli::commands::sign_pending::handle_sign_pending_command(
+            signers_pending_path.unseal(),
+            &backend_url,
+            &outsider_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await;
+        match outsider {
+            Err(client_cli::error::ClientCliError::AdminLib(e)) => assert!(
+                e.to_string().contains("404 Not Found"),
+                "Expected a not found error, got: {e}"
+            ),
+            Err(e) => panic!("Expected a not found error, got: {e}"),
+            Ok(_) => panic!("Expected a not found error, got Ok"),
+        }
+
         // Now create the artifact file. It nests inside the forge project, so
         // the activated signers file is found as its global signers file.
         let file_path = format!("{}/test_file.txt", signers_project.project_dir_path);

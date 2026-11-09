@@ -6,7 +6,9 @@ use crate::commands::release_download_output::{
 };
 use crate::commands::revocation_output::revocation_note;
 use crate::commands::signature_status::signature_status_hint;
-use crate::commands::signers_submission_output::{print_activation_next_step, release_example_for};
+use crate::commands::signers_submission_output::{
+    ReleaseExample, print_activation_next_step, release_example_for,
+};
 use crate::error::{Result, is_signature_already_collected};
 use crate::utils::executable_name;
 use common::fs::names::{is_pending_signers_file_path, metadata_path_for};
@@ -75,6 +77,11 @@ pub async fn handle_sign_pending_sec_key(
                     "The signers file {} was activated. Your signature was collected. You do not need to sign it again.",
                     pending_file.path()
                 );
+                // The backend does not give the metadata of an activated
+                // signers file, so the forge is not known. The checksums files
+                // example applies to all forges.
+                println!();
+                print_activation_next_step(&ReleaseExample::ChecksumsFiles, backend_url);
             }
             return Ok(response);
         }

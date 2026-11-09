@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
 use crate::cli::DEFAULT_BACKEND;
+use crate::commands::release_download_output::{
+    is_release_index_path, print_release_download_next_step,
+};
 use crate::commands::revocation_output::revocation_note;
 use crate::commands::signature_status::signature_status_hint;
 use crate::commands::signers_submission_output::{print_activation_next_step, release_example_for};
@@ -138,6 +141,16 @@ pub async fn handle_sign_pending_sec_key(
         if let Some(metadata) = &signers_metadata {
             println!();
             print_activation_next_step(&release_example_for(metadata), backend_url);
+        }
+        // A complete release index lets users download the artifacts with
+        // verification.
+        if is_release_index_path(&file_path) {
+            println!();
+            print_release_download_next_step(
+                &file_path,
+                files_to_sign.get(&file_path).map(Vec::as_slice),
+                backend_url,
+            );
         }
         if let Some(note) = revocation_note {
             println!();

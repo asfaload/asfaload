@@ -99,6 +99,21 @@ For a project on another forge or on a file server, the example uses checksums f
 
 When you use a backend that is not the default one, the command also contains `--backend-url`.
 
+When your signature completes a release index, the output also shows how users can download the artifacts of the release with verification. The example uses the first artifact listed in the index. The URL of the artifact directory comes from the index path:
+
+    Next step
+      The release is now signed. Users can download its artifacts with
+      signature verification. Example:
+
+         asfaload-cli download \
+           https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
+
+      The artifacts of this release are at
+      https://github.com/acme/tool/releases/download/v1.0/
+      You can also download them with asfald, our dedicated download tool.
+
+When the name of the artifact cannot be used in a command (the index has no artifact, or the name contains characters that are not safe in a shell), the command contains `<download-url>`, and the output gives the start of the artifact URLs. When the URL of the artifact directory also cannot be used, the output only tells you to replace `<download-url>` with the URL of an artifact of the release. When you use a backend that is not the default one, the command also contains `--backend-url`.
+
 When other signers must still provide their signatures:
 
     Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.

@@ -27,6 +27,7 @@ pub mod get_digest;
 pub mod ping;
 pub mod register_assets;
 pub mod register_repo;
+pub mod release_download_output;
 pub mod release_registration_output;
 pub mod revocation_output;
 pub mod revoke;

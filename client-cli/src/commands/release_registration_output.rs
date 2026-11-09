@@ -5,9 +5,9 @@ use rest_api_types::RegisterAssetsResponse;
 
 use crate::cli::DEFAULT_BACKEND;
 use crate::commands::signers_submission_output::{
-    BOLD, SignaturesToCollect, is_safe_project_id, signatures_to_collect_lines, strip_control_chars,
+    BOLD, SignaturesToCollect, is_safe_project_id, signatures_to_collect_lines,
 };
-use crate::utils::program_name;
+use crate::utils::{program_name, strip_control_chars};
 
 /// True when the index file path from the backend is safe to put in a
 /// command for the signers.

@@ -406,10 +406,12 @@ pub mod models {
     /// # Fields
     /// * `file_path` - Path to the file
     /// * `is_complete` - Whether the aggregate signature is complete
-    /// * `collected_count` - Number of individual signatures collected so far
+    /// * `required_signers` - Base64 public keys that can still sign, sorted.
+    ///   Empty when the aggregate signature is complete.
     pub struct GetSignatureStatusResponse {
         pub file_path: String,
         pub is_complete: bool,
+        pub required_signers: Vec<String>,
     }
 
     // This struct can be initialised by the client without access to the file on disk, but it has

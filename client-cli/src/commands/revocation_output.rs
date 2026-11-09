@@ -5,9 +5,9 @@ use rest_api_types::RevokeFileResponse;
 
 use crate::cli::DEFAULT_BACKEND;
 use crate::commands::signers_submission_output::{
-    BOLD, SignaturesToCollect, is_safe_project_id, signatures_to_collect_lines, strip_control_chars,
+    BOLD, SignaturesToCollect, is_safe_project_id, signatures_to_collect_lines,
 };
-use crate::utils::program_name;
+use crate::utils::{program_name, strip_control_chars};
 
 /// Shown when the revocation is complete.
 pub const REVOCATION_COMPLETE_MESSAGE: &str =

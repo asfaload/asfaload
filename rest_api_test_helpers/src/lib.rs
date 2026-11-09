@@ -578,6 +578,17 @@ impl TestSetup {
 
     /// Submit a signature for the artifact using the key at the given index.
     pub async fn submit_signature(&self, key_index: usize) -> Result<SubmitSignatureResponse> {
+        self.submit_signature_for_file(&self.artifact_path, key_index)
+            .await
+    }
+
+    /// Submit a signature for the file at `file_path`, relative to the
+    /// repository root, using the key at the given index.
+    pub async fn submit_signature_for_file(
+        &self,
+        file_path: &str,
+        key_index: usize,
+    ) -> Result<SubmitSignatureResponse> {
         let public_key = self
             .test_keys
             .pub_key(key_index)
@@ -587,17 +598,17 @@ impl TestSetup {
             .sec_key(key_index)
             .ok_or_else(|| anyhow::anyhow!("key index {} out of range", key_index))?;
 
-        let artifact_abs = self.repo_path.join(&self.artifact_path);
-        let content = fs::read(&artifact_abs)?;
+        let file_abs = self.repo_path.join(file_path);
+        let content = fs::read(&file_abs)?;
         let hash = sha512_for_content(content)?;
         let sig = secret_key.sign(&hash)?;
 
         let mut signatures = std::collections::HashMap::new();
-        signatures.insert(self.artifact_path.clone(), sig.to_base64());
+        signatures.insert(file_path.to_string(), sig.to_base64());
 
         let submit_payload = serde_json::json!({
             "pending_file": {
-                "path": self.artifact_path,
+                "path": file_path,
                 "digest": hash.to_string(),
             },
             "public_key": public_key.to_base64(),

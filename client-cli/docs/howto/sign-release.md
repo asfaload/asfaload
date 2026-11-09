@@ -51,6 +51,12 @@ If more signatures are needed:
 
 ```
 Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
+
+To follow the status of the signature, run this command:
+
+     asfaload-cli signature-status \
+       https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json \
+       --secret-key <secret-key>
 ```
 
 When the threshold is met:
@@ -72,6 +78,10 @@ asfaload-cli signature-status --secret-key ~/.asfaload/mykey \
 
 ```
 https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json: pending
+
+Keys that can still sign
+  <base64 public key>
+  <base64 public key>
 ```
 
 or

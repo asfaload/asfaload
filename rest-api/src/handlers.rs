@@ -25,6 +25,7 @@ use url::Url;
 
 use crate::auth_middleware::{AuthOutcome, validate_auth};
 use crate::file_auth::actors::forge_signers_validator::{MetadataInfo, ProjectSignersProposal};
+use crate::file_auth::actors::signature_collector::signature_status_subject;
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
@@ -576,7 +577,9 @@ pub async fn get_signature_status_handler(
     )
     .await?;
 
-    if !file_path.absolute_path().exists() {
+    // The path of a pending file stays valid after its signature completes and
+    // the file is moved. The authorization below uses the requested path.
+    if signature_status_subject(&file_path).await?.is_none() {
         return Err(ApiError::FileNotFound(format!(
             "File not found: {}",
             file_path.relative_path().to_string_lossy()
@@ -632,8 +635,9 @@ pub async fn get_signature_status_handler(
         .map_err(|e| map_to_user_error(e, "Signature status query failed"))?;
 
     Ok(Json(GetSignatureStatusResponse {
-        file_path: file_path.relative_path().display().to_string(),
+        file_path: status.file_path.relative_path().display().to_string(),
         is_complete: status.is_complete,
+        required_signers: status.required_signers,
     }))
 }
 

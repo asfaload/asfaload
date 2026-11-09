@@ -12,6 +12,8 @@ Query the backend for the signature collection status of a file. The caller must
 
 Mirror-relative path to the file to query, for example `https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json`.
 
+You can also give the path of a pending signers file or a pending revocation file after its signature is complete and the backend moved the file. The output then shows the path of the moved file as complete.
+
 ## Options
 
 ### `-K --secret-key <PATH>`
@@ -55,13 +57,19 @@ Human-readable (default):
 
     <file_path>: pending
 
+    Keys that can still sign
+      <base64 public key>
+      <base64 public key>
+
+A key is in the list when it has no valid signature yet. The list does not tell how many signatures are still necessary.
+
 or
 
     <file_path>: complete
 
 JSON (with `--json`):
 
-    {"file_path":"<file_path>","is_complete":false}
+    {"file_path":"<file_path>","is_complete":false,"required_signers":["<base64 public key>","<base64 public key>"]}
 
 ## Examples
 
@@ -80,4 +88,4 @@ JSON (with `--json`):
 ## Exit codes
 
 - `0` — query succeeded.
-- non-zero — error (authentication failure, not authorized, file not found, network error).
+- non-zero — error (authentication failure, not authorized, file not found, revoked file, network error).

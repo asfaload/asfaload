@@ -15,6 +15,29 @@ pub fn signature_for_sha(
     Ok(secret_key.sign(&digest)?.to_base64())
 }
 
+/// Send an authenticated signature status request for `file_path`, made with
+/// `secret_key`.
+pub async fn get_signature_status(
+    port: u16,
+    file_path: &str,
+    secret_key: &features_lib::AsfaloadSecretKeys,
+) -> Result<reqwest::Response> {
+    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
+
+    let auth = rest_api_test_helpers::create_auth_headers_with_key(secret_key, "").await;
+    Ok(reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{}/v1/signatures/{}",
+            port, file_path
+        ))
+        .header(HEADER_TIMESTAMP, &auth.timestamp)
+        .header(HEADER_NONCE, &auth.nonce)
+        .header(HEADER_SIGNATURE, &auth.signature)
+        .header(HEADER_PUBLIC_KEY, &auth.public_key)
+        .send()
+        .await?)
+}
+
 /// Build the base64-encoded metadata and its base64-encoded signature the
 /// same way the admin client does, so the backend validation accepts them.
 ///
@@ -702,6 +725,64 @@ pub mod tests {
 
         assert_eq!(status_body.file_path, "data.txt");
         assert!(!status_body.is_complete);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_signature_status_required_signers() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use rest_api_test_helpers::{TestSetup, TestSetupBuilder};
+        use rest_api_types::GetSignatureStatusResponse;
+
+        async fn signature_status(setup: &TestSetup) -> anyhow::Result<GetSignatureStatusResponse> {
+            let auth =
+                create_auth_headers_with_key(setup.test_keys().sec_key(0).unwrap(), "").await;
+            let response = reqwest::Client::new()
+                .get(format!(
+                    "http://127.0.0.1:{}/v1/signatures/{}",
+                    setup.port(),
+                    setup.artifact_path()
+                ))
+                .header(HEADER_TIMESTAMP, &auth.timestamp)
+                .header(HEADER_NONCE, &auth.nonce)
+                .header(HEADER_SIGNATURE, &auth.signature)
+                .header(HEADER_PUBLIC_KEY, &auth.public_key)
+                .send()
+                .await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            Ok(response.json().await?)
+        }
+
+        let setup = TestSetupBuilder::new()
+            .with_keys(3)
+            .with_threshold(2)
+            .with_artifact("releases/data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
+        let sorted_keys = |indices: &[usize]| {
+            let mut keys: Vec<String> = indices
+                .iter()
+                .map(|i| setup.test_keys().pub_key(*i).unwrap().to_base64())
+                .collect();
+            keys.sort();
+            keys
+        };
+
+        let status = signature_status(&setup).await?;
+        assert!(!status.is_complete);
+        assert_eq!(status.required_signers, sorted_keys(&[0, 1, 2]));
+
+        setup.submit_signature_and_wait(0).await?;
+        let status = signature_status(&setup).await?;
+        assert!(!status.is_complete);
+        assert_eq!(status.required_signers, sorted_keys(&[1, 2]));
+
+        setup.submit_signature_and_wait(1).await?;
+        let status = signature_status(&setup).await?;
+        assert!(status.is_complete);
+        assert!(status.required_signers.is_empty());
 
         Ok(())
     }
@@ -1845,6 +1926,142 @@ pub mod test_utils_tests {
         update_mock.assert_calls(1);
         server_handle.abort();
 
+        Ok(())
+    }
+
+    /// While a signers update is pending, the status of the pending signers file
+    /// lists the keys that can still sign. When the update is complete, the path
+    /// of the pending signers file reports the active signers file.
+    #[tokio::test]
+    async fn test_get_signature_status_for_pending_signers_update() -> Result<(), anyhow::Error> {
+        use common::fs::names::metadata_path_for;
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
+        };
+        use httpmock::Method;
+        use rest_api_types::models::ClientPendingFile;
+        use rest_api_types::{
+            GetSignatureStatusResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+        };
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let added_public_key = test_keys.pub_key(1).unwrap();
+
+        let initial_config = signers_file_types::SignersConfig::with_keys(
+            1,
+            (vec![public_key.clone()], 1),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        seed_active_project(
+            &git_repo_path,
+            &project_id,
+            &initial_config,
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+
+        let (port, server_handle) = start_test_server(&git_repo_path).await?;
+
+        // The update adds an artifact signer, with a threshold of 2.
+        let updated_config = signers_file_types::SignersConfig::with_keys(
+            2,
+            (vec![public_key.clone(), added_public_key.clone()], 2),
+            Some((vec![public_key.clone()], 1)),
+            None,
+            None,
+        )?;
+        let updated_signers_json = updated_config.to_json()?;
+        let updated_json_clone = updated_signers_json.clone();
+        mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(updated_json_clone);
+        });
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let (response, _sent_metadata) = post_update_signers(
+            port,
+            &signers_url,
+            &updated_signers_json,
+            chrono::Utc::now(),
+            &public_key,
+            &secret_key,
+        )
+        .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // The submitter signed with the proposal: only the added signer is missing.
+        let pending_signers = format!("{}/{}/{}", project_id, PENDING_SIGNERS_DIR, SIGNERS_FILE);
+        let response = crate::get_signature_status(port, &pending_signers, secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: GetSignatureStatusResponse = response.json().await?;
+        assert_eq!(status.file_path, pending_signers);
+        assert!(!status.is_complete);
+        assert_eq!(status.required_signers, vec![added_public_key.to_base64()]);
+
+        // The signature of the added signer completes the update, and the
+        // pending signers file is moved to the active signers directory.
+        let added_secret_key = test_keys.sec_key(1).unwrap();
+        let pending_signers_file = git_repo_path.join(&pending_signers);
+        let digest = sha512_for_file(&pending_signers_file)?;
+        let metadata_digest = sha512_for_file(metadata_path_for(&pending_signers_file)?)?;
+        let pending_metadata = metadata_path_for(&pending_signers)?
+            .to_string_lossy()
+            .to_string();
+        let signatures = std::collections::HashMap::from([
+            (
+                pending_signers.clone(),
+                added_secret_key.sign(&digest)?.to_base64(),
+            ),
+            (
+                pending_metadata,
+                added_secret_key.sign(&metadata_digest)?.to_base64(),
+            ),
+        ]);
+        let payload = json!(&SubmitSignatureRequest {
+            pending_file: ClientPendingFile::new(pending_signers.clone(), digest),
+            public_key: added_public_key.to_base64(),
+            signatures,
+        });
+        let auth = create_auth_headers_with_key(added_secret_key, &payload.to_string()).await;
+        let response = reqwest::Client::new()
+            .post(url_for("signatures", port))
+            .header(HEADER_TIMESTAMP, auth.timestamp)
+            .header(HEADER_NONCE, auth.nonce)
+            .header(HEADER_SIGNATURE, auth.signature)
+            .header(HEADER_PUBLIC_KEY, auth.public_key)
+            .json(&payload)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let submitted: SubmitSignatureResponse = response.json().await?;
+        assert!(submitted.is_complete);
+
+        let response = crate::get_signature_status(port, &pending_signers, secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: GetSignatureStatusResponse = response.json().await?;
+        assert_eq!(
+            status.file_path,
+            format!("{}/{}/{}", project_id, SIGNERS_DIR, SIGNERS_FILE)
+        );
+        assert!(status.is_complete);
+        assert!(status.required_signers.is_empty());
+
+        server_handle.abort();
         Ok(())
     }
 
@@ -3024,6 +3241,90 @@ pub mod test_utils_tests {
     }
 
     #[tokio::test]
+    async fn test_get_signature_status_reports_revoked_file() -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content, sha512_for_file,
+        };
+        use rest_api_test_helpers::{TestSetupBuilder, send_authenticated_request_with_key};
+        use rest_api_types::RevokeFileResponse;
+
+        let setup = TestSetupBuilder::new()
+            .with_artifact("releases/release.txt")
+            .build_and_sign()
+            .await?;
+
+        let artifact_file = setup.repo_path().join(setup.artifact_path());
+        let public_key = setup.test_keys().pub_key(0).unwrap();
+        let secret_key = setup.test_keys().sec_key(0).unwrap();
+
+        let revocation = signers_file_types::revocation::RevocationInfo {
+            timestamp: chrono::Utc::now(),
+            subject_digest: sha512_for_file(&artifact_file)?,
+            initiator: public_key.clone(),
+        };
+        let revocation_json = serde_json::to_string_pretty(&revocation)?;
+        let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let revoke_signature = secret_key.sign(&revocation_hash)?;
+
+        let revoke_payload = json!({
+            "file_path": "releases/release.txt",
+            "revocation_json": revocation_json,
+            "signature": revoke_signature.to_base64(),
+            "public_key": public_key.to_base64(),
+        });
+        let client = reqwest::Client::new();
+        let response =
+            send_authenticated_request_with_key(&client, setup.port(), secret_key, &revoke_payload)
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let revoke_body: RevokeFileResponse = response.json().await?;
+        assert!(
+            revoke_body.required_signers.is_empty(),
+            "threshold 1: the revocation is complete"
+        );
+
+        let auth = create_auth_headers_with_key(secret_key, "").await;
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: serde_json::Value = response.json().await?;
+        let message = body["error"].as_str().unwrap_or_default();
+        assert!(
+            message.to_lowercase().contains("revoked"),
+            "Expected a revoked file error, got: {}",
+            body
+        );
+
+        // The revocation file alone must make the status report a revoked file,
+        // also when the signatures file of the artifact is still present.
+        let signatures_path = common::fs::names::signatures_path_for(&artifact_file)?;
+        let revoked_signatures_path =
+            common::fs::names::revoked_signatures_path_for(&artifact_file)?;
+        std::fs::copy(&revoked_signatures_path, &signatures_path)?;
+        let response =
+            crate::get_signature_status(setup.port(), setup.artifact_path(), secret_key).await?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: serde_json::Value = response.json().await?;
+        assert_eq!(
+            body["error"],
+            format!("File is revoked: {}", setup.artifact_path())
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_revoke_with_threshold_two_reports_missing_signers() -> Result<(), anyhow::Error> {
         use features_lib::{
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
@@ -3080,6 +3381,102 @@ pub mod test_utils_tests {
         ];
         expected.sort_unstable();
         assert_eq!(revoke_body.required_signers, expected);
+
+        Ok(())
+    }
+
+    /// While a revocation is pending, the status of the pending revocation file
+    /// lists the revocation signers that can still sign. The artifact stays
+    /// complete until the revocation is complete. When the revocation is
+    /// complete, the path of the pending revocation file reports the complete
+    /// revocation file.
+    #[tokio::test]
+    async fn test_get_signature_status_for_pending_revocation() -> Result<(), anyhow::Error> {
+        use common::fs::names::{pending_revocation_path_for, revocation_path_for};
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content, sha512_for_file,
+        };
+        use rest_api_test_helpers::{TestSetupBuilder, send_authenticated_request_with_key};
+        use rest_api_types::GetSignatureStatusResponse;
+
+        // No revocation group in the signers file: the revocation keys fall back
+        // to the artifact signers (3 keys, threshold 2).
+        let setup = TestSetupBuilder::new()
+            .with_keys(3)
+            .with_threshold(2)
+            .with_artifact("releases/release.txt")
+            .build_and_sign()
+            .await?;
+        let secret_key = setup.test_keys().sec_key(0).unwrap();
+
+        let artifact_file = setup.repo_path().join(setup.artifact_path());
+        let public_key = setup.test_keys().pub_key(0).unwrap();
+        let revocation = signers_file_types::revocation::RevocationInfo {
+            timestamp: chrono::Utc::now(),
+            subject_digest: sha512_for_file(&artifact_file)?,
+            initiator: public_key.clone(),
+        };
+        let revocation_json = serde_json::to_string_pretty(&revocation)?;
+        let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let revoke_payload = json!({
+            "file_path": setup.artifact_path(),
+            "revocation_json": revocation_json,
+            "signature": secret_key.sign(&revocation_hash)?.to_base64(),
+            "public_key": public_key.to_base64(),
+        });
+        let response = send_authenticated_request_with_key(
+            setup.client(),
+            setup.port(),
+            secret_key,
+            &revoke_payload,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let pending_revocation = pending_revocation_path_for(setup.artifact_path())?
+            .to_string_lossy()
+            .to_string();
+        let response =
+            crate::get_signature_status(setup.port(), &pending_revocation, secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: GetSignatureStatusResponse = response.json().await?;
+        assert_eq!(status.file_path, pending_revocation);
+        assert!(!status.is_complete);
+        let mut expected = vec![
+            setup.test_keys().pub_key(1).unwrap().to_base64(),
+            setup.test_keys().pub_key(2).unwrap().to_base64(),
+        ];
+        expected.sort_unstable();
+        assert_eq!(status.required_signers, expected);
+
+        let response =
+            crate::get_signature_status(setup.port(), setup.artifact_path(), secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: GetSignatureStatusResponse = response.json().await?;
+        assert!(status.is_complete, "a pending revocation does not revoke");
+
+        // The second revocation signature completes the revocation, and the
+        // pending revocation file is moved.
+        let submitted = setup
+            .submit_signature_for_file(&pending_revocation, 1)
+            .await?;
+        assert!(submitted.is_complete);
+
+        let response =
+            crate::get_signature_status(setup.port(), &pending_revocation, secret_key).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: GetSignatureStatusResponse = response.json().await?;
+        assert_eq!(
+            status.file_path,
+            revocation_path_for(setup.artifact_path())?.to_string_lossy()
+        );
+        assert!(status.is_complete);
+        assert!(status.required_signers.is_empty());
+
+        let response =
+            crate::get_signature_status(setup.port(), setup.artifact_path(), secret_key).await?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         Ok(())
     }

@@ -103,6 +103,14 @@ When other signers must still provide their signatures:
 
     Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
 
+    To follow the status of the signature, run this command:
+
+         asfaload-cli signature-status \
+           <file_path> \
+           --secret-key <secret-key>
+
+When you use a backend that is not the default one, the command also contains `--backend-url`. When the path contains unexpected characters, the output tells you to use the signature-status command, but does not show the command.
+
 When you sign a pending revocation, the output also tells if downloads of the file now fail. When your signature completes the revocation:
 
     Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
@@ -113,6 +121,12 @@ When the revocation is still pending:
 
     Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
     Users can still download the file until the revocation is complete.
+
+    To follow the status of the signature, run this command:
+
+         asfaload-cli signature-status \
+           <file_path> \
+           --secret-key <secret-key>
 
 JSON (with `--json`):
 

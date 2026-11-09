@@ -59,6 +59,12 @@ fn executable_name_from(arg0: Option<std::ffi::OsString>) -> String {
         .unwrap_or_else(program_name)
 }
 
+/// Removes control characters, so that text from the backend cannot
+/// use terminal escape sequences to hide or change the output.
+pub(crate) fn strip_control_chars(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).collect()
+}
+
 /// Reads password from a file
 pub fn read_password_from_file(file_path: &Path) -> Result<String> {
     let mut file = std::fs::File::open(file_path).map_err(ClientCliError::Io)?;
@@ -471,6 +477,11 @@ mod tests {
                 "unexpected executable name for argv[0] {arg0:?}"
             );
         }
+    }
+
+    #[test]
+    fn strip_control_chars_removes_only_control_chars() {
+        assert_eq!(strip_control_chars("a\x1b[2Kb\nc\u{7}"), "a[2Kbc");
     }
 
     // test expected_digest

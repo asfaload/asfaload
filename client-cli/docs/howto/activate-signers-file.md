@@ -53,6 +53,12 @@ If more signatures are needed:
 
 ```
 Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
+
+To follow the status of the signature, run this command:
+
+     asfaload-cli signature-status \
+       https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
+       --secret-key <secret-key>
 ```
 
 When your signature completes the required count (every signer must sign for an initial signers file):

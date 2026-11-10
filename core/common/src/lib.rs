@@ -175,6 +175,10 @@ pub fn base64_for_string<S: AsRef<str>>(s: S) -> String {
     STANDARD_NO_PAD.encode(input_string)
 }
 
+pub fn base64_for_vec_u8(data: &[u8]) -> String {
+    STANDARD_NO_PAD.encode(data)
+}
+
 pub fn string_from_base64<S: AsRef<str>>(s: S) -> Result<String, String> {
     // The client encodes the index bytes with the standard base64
     // alphabet without padding, but accept padded input too: the
@@ -1094,6 +1098,57 @@ mod asfaload_common_tests {
             base64_for_string(owned.as_str())
         );
         assert_eq!(base64_for_string("hello world"), base64_for_string(owned));
+    }
+
+    // --- base64_for_vec_u8 tests ---
+
+    #[test]
+    fn base64_for_vec_u8_known_values() {
+        let cases: Vec<(Vec<u8>, &str)> = vec![
+            (vec![], ""),
+            // Lengths 1 and 2 need padding under standard base64 ("YQ==", "YWI="),
+            // the padding must be dropped.
+            (b"a".to_vec(), "YQ"),
+            (b"ab".to_vec(), "YWI"),
+            (b"abc".to_vec(), "YWJj"),
+            (b"hello world".to_vec(), "aGVsbG8gd29ybGQ"),
+            // Bytes that are not valid UTF-8.
+            (vec![0xff, 0xfe, 0x00], "//4A"),
+            // Standard alphabet: '+' and '/', not the URL-safe '-' and '_'.
+            (vec![0xfb, 0xff], "+/8"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                base64_for_vec_u8(&input),
+                expected,
+                "unexpected encoding for bytes {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn base64_for_vec_u8_round_trips_all_byte_values() {
+        let input: Vec<u8> = (0..=255).collect();
+        let encoded = base64_for_vec_u8(&input);
+        assert!(
+            !encoded.contains('='),
+            "output must not contain base64 padding"
+        );
+        let decoded = STANDARD_NO_PAD
+            .decode(&encoded)
+            .expect("output must be valid unpadded base64");
+        assert_eq!(decoded, input);
+    }
+
+    #[test]
+    fn base64_for_vec_u8_matches_base64_for_string() {
+        for input in ["", "a", "hello world", "é"] {
+            assert_eq!(
+                base64_for_vec_u8(&input.as_bytes().to_vec()),
+                base64_for_string(input),
+                "unexpected encoding for {input:?}"
+            );
+        }
     }
 }
 

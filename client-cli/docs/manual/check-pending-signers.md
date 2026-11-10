@@ -31,15 +31,14 @@ The command is unauthenticated: no secret key or password is needed.
 
 ## Output
 
-Human-readable (default), with the bishop art rendering of the hash:
+Human-readable (default):
 
     ✓ Pending signers file matches the content published at https://raw.githubusercontent.com/acme/repo/main/asfaload.signers/index.json
     sha512:4a0f0c…2b9e
-    +--[sha512]--+ …
 
-JSON (with `--json`). Success is implied by exit code `0` — on failure the command exits non-zero and reports `{"error": "…"}` on stderr instead. The `hash` is the SHA-512 of the pending signers file as held by the mirror, and `bishop_art` is a plain-text rendering of that hash:
+JSON (with `--json`). Success is implied by exit code `0` — on failure the command exits non-zero and reports `{"error": "…"}` on stderr instead. The `hash` is the SHA-512 of the pending signers file as held by the mirror:
 
-    {"signers_path":"https/github.com/443/acme/repo/asfaload.signers.pending/index.json","retrieval_url":"https://raw.githubusercontent.com/acme/repo/main/asfaload.signers/index.json","hash":"sha512:4a0f0c…2b9e","bishop_art":"+--[sha512]--+ …"}
+    {"signers_path":"https/github.com/443/acme/repo/asfaload.signers.pending/index.json","retrieval_url":"https://raw.githubusercontent.com/acme/repo/main/asfaload.signers/index.json","hash":"sha512:4a0f0c…2b9e"}
 
 On failure, the error identifies the problem: a fetch error (unknown path, unreachable source), an unparseable metadata file, or a hash mismatch naming the retrieval URL of the diverging source.
 

@@ -17,24 +17,12 @@ Each signer performs steps 1–2 independently.
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
-If the signers file is waiting for your signature, you'll see its path, its digest, and a bishop art block (a small picture derived from the digest, acting as a visual fingerprint):
+If the signers file is waiting for your signature, you'll see its path and its digest:
 
 ```
 Files requiring your signature:
   - path: https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
-
-+----[SHA-512]----+
-|▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
-| ▎▁ ▁ E ▏▏▎▎▃▏▎▎▁|
-|▁ ▏▁ ▏   ▎▁▏ ▎▁▍▏|
-|▏▁  ▏  ▏ ▎▂▎▁▁▎▏▂|
-| ▏▏▁  ▏ S▎▎▎▃▏▏▍▏|
-|  ▏▁▁▏▁▏▎▎▁▂▏▁▏ ▏|
-|   ▁▎▏▁▎▂▎▏▏▏    |
-|   ▁▁▁▏▄▃▍▎▏     |
-|    ▁▁▎▍▅▋▍▏     |
-+---[2e2fde4e…]---+
 ```
 
 If nothing is pending for you, the output says `No pending signatures found.`
@@ -119,7 +107,7 @@ If several files are pending, `--digest-filter` (alias `--df`) restricts both `l
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey --df sha512:2e2fde4e...
 ```
 
-On an interactive terminal you can also omit the path and digest entirely: `sign-pending` then shows a selection prompt, one pending file at a time, cycling through them with `↑`/`↓`, each with its bishop art.
+On an interactive terminal you can also omit the path and digest entirely: `sign-pending` then shows a selection prompt with the path and digest of each pending file.
 
 ## Troubleshooting
 

@@ -1,6 +1,4 @@
-use client_cli::utils::label_for_hash;
 use common::fs::names::metadata_path_for;
-use features_lib::HashAlgorithm;
 use predicates::prelude::*;
 use serde_json::Value;
 use sha2::{Digest, Sha512};
@@ -100,13 +98,10 @@ fn check_pending_signers_matching_source_succeeds() {
     check_pending_cmd(&backend, &signers_path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("matches the content published at"))
-        .stdout(predicate::str::contains(&source_url))
-        .stdout(predicate::str::contains(sha512_digest_str(SOURCE_CONTENT)))
-        .stdout(predicate::str::contains(format!(
-            "[{}]",
-            label_for_hash(HashAlgorithm::Sha512)
-        )));
+        .stdout(format!(
+            "✓ Pending signers file matches the content published at {source_url}\n{}\n",
+            sha512_digest_str(SOURCE_CONTENT)
+        ));
 }
 
 #[test]
@@ -127,16 +122,10 @@ fn check_pending_signers_json_output() {
     assert_eq!(v["signers_path"], signers_path);
     assert_eq!(v["retrieval_url"], source_url);
     assert_eq!(v["hash"], sha512_digest_str(SOURCE_CONTENT));
-    let bishop_art = v["bishop_art"]
-        .as_str()
-        .expect("bishop_art field should be a string");
-    assert!(
-        !bishop_art.contains('\x1b'),
-        "bishop art in JSON must not contain ANSI codes"
-    );
-    assert!(
-        bishop_art.contains(format!("[{}]", label_for_hash(HashAlgorithm::Sha512)).as_str()),
-        "bishop art should be rendered, got: {bishop_art}"
+    assert_eq!(
+        v.as_object().unwrap().len(),
+        3,
+        "JSON output must contain only signers_path, retrieval_url and hash, got: {v}"
     );
 }
 

@@ -146,7 +146,7 @@ printf '    asfaload-cli check-pending-signers --json $PENDING_SIGNERS_MIRROR_PA
 printf '\n'
 printf '%s  Expected:%s the check succeeds: the pending signers file matches the\n' "$BOLD" "$RESET"
 printf '  content published at its retrieval url, and the command reports that\n'
-printf '  url, the file hash and its bishop art. Tamper with the pending signers\n'
+printf '  url and the file hash. Tamper with the pending signers\n'
 printf '  file on the backend (or its metadata retrieval_url, as in the\n'
 printf '  compromised_*_env environments) to see the check fail.\n'
 printf '\n'

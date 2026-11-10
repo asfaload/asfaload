@@ -648,7 +648,10 @@ fn sign_pending_complete_release_index_shows_download_command() {
 /// run sign-pending on its pending path with `extra_args`. Returns the output
 /// and the URL of the mock backend.
 fn run_sign_pending_on_activated_signers(extra_args: &[&str]) -> (std::process::Output, String) {
-    let pending_signers = "http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json";
+    // The host is in no forge host list, also with test-utils, so the example
+    // is the same in all builds. The CLI does not contact it.
+    let pending_signers =
+        "http/files.example.com/8080/acme/tool/asfaload.signers.pending/index.json";
     let body = serde_json::to_string(&rest_api_types::models::ErrorResponse {
         error: rest_api_types::errors::ApiError::SignatureAlreadyCollected(
             pending_signers.to_string(),
@@ -700,7 +703,7 @@ fn sign_pending_activated_signers_file_reports_collected_signature() {
     assert_eq!(
         stdout,
         format!(
-            "The signers file http/127.0.0.1/8080/acme/tool/asfaload.signers.pending/index.json was activated. Your signature was collected. You do not need to sign it again.\n\
+            "The signers file http/files.example.com/8080/acme/tool/asfaload.signers.pending/index.json was activated. Your signature was collected. You do not need to sign it again.\n\
              \n\
              Next step\n  \
              The signers file is now active. An artifact signer can register a release\n  \

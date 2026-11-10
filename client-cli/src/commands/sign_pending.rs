@@ -7,7 +7,7 @@ use crate::commands::release_download_output::{
 use crate::commands::revocation_output::revocation_note;
 use crate::commands::signature_status::signature_status_hint;
 use crate::commands::signers_submission_output::{
-    ReleaseExample, print_activation_next_step, release_example_for,
+    print_activation_next_step, release_example_for, release_example_for_backend_path,
 };
 use crate::error::{Result, is_signature_already_collected};
 use crate::utils::executable_name;
@@ -78,10 +78,12 @@ pub async fn handle_sign_pending_sec_key(
                     pending_file.path()
                 );
                 // The backend does not give the metadata of an activated
-                // signers file, so the forge is not known. The checksums files
-                // example applies to all forges.
+                // signers file, so the example is selected from its path.
                 println!();
-                print_activation_next_step(&ReleaseExample::ChecksumsFiles, backend_url);
+                print_activation_next_step(
+                    &release_example_for_backend_path(pending_file.path()),
+                    backend_url,
+                );
             }
             return Ok(response);
         }

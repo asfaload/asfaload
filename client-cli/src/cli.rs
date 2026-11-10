@@ -183,6 +183,21 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+    /// Fetch a file from the backend.
+    FetchFile {
+        /// Path on the backend of the file to fetch. As returned by list-pending.
+        path: String,
+
+        /// Output file path (optional, defaults to stdout)
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
     /// List files requiring your signature from the backend
     ListPending {
         #[command(flatten)]
@@ -433,6 +448,7 @@ impl Commands {
             Self::GetDigest { .. } => "GET_DIGEST",
             Self::CheckIndex { .. } => "CHECK_INDEX",
             Self::CheckPendingSigners { .. } => "CHECK_PENDING_SIGNERS",
+            Self::FetchFile { .. } => "FETCH_FILE",
         }
     }
 
@@ -467,6 +483,7 @@ impl Commands {
             | Self::CheckIndex { json_args, .. }
             | Self::CheckPendingSigners { json_args, .. } => json_args.json,
             Self::GetDigest { json_args, .. } => json_args.json,
+            Self::FetchFile { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
         }
     }

@@ -2,6 +2,7 @@ use std::io::IsTerminal;
 
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
+    commands::fetch_file::handle_fetch_file,
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
@@ -23,6 +24,7 @@ use rest_api_types::models::ClientPendingFile;
 pub mod check_index;
 pub mod check_pending_signers;
 pub mod download;
+pub mod fetch_file;
 pub mod get_digest;
 pub mod ping;
 pub mod register_assets;
@@ -550,6 +552,24 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(check_pending_signers::handle_check_pending_signers_command(
                 signers_path,
                 &url,
+                json_args.json,
+            ))?;
+        }
+        Commands::FetchFile {
+            path,
+            output,
+            backend_url_args,
+            json_args,
+        } => {
+            let backend_url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(handle_fetch_file(
+                path,
+                output,
+                &backend_url,
                 json_args.json,
             ))?;
         }

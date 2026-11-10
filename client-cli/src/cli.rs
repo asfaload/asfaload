@@ -175,7 +175,9 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+    /// Compute the digest for a local or remote file
     GetDigest {
+        /// Path on disk of URL to download file.
         file: String,
 
         #[command(flatten)]

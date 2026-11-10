@@ -82,6 +82,33 @@ fn list_pending_no_filter_shows_all_files() {
         .stdout(predicate::str::contains("file-b.tar.gz"));
 }
 
+#[test]
+fn list_pending_output_shows_only_paths_and_digests() {
+    let mut server = mockito::Server::new();
+    let _m = server
+        .mock("GET", "/v1/pending_signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(pending_response_json(&[
+            ("releases/v1/file-a.tar.gz", DIGEST_A),
+            ("releases/v1/file-b.tar.gz", DIGEST_B),
+        ]))
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("list-pending")
+        .arg("-K")
+        .arg(test_helpers::fixtures_keys_dir().join("key_0"))
+        .arg("-u")
+        .arg(server.url())
+        .env("ASFALOAD_LIST_PENDING_PASSWORD", "password");
+
+    let expected = format!(
+        "Files requiring your signature:\n  - path: releases/v1/file-a.tar.gz\ndigest: {DIGEST_A}\n\n  - path: releases/v1/file-b.tar.gz\ndigest: {DIGEST_B}\n\n"
+    );
+    cmd.assert().success().stdout(expected);
+}
+
 // ---------------------------------------------------------------------------
 // --digest-filter: only the matching file is returned
 // ---------------------------------------------------------------------------

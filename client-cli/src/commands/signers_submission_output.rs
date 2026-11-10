@@ -235,29 +235,43 @@ fn release_example_for_forge(forge: &Forge, owner_repo: Option<String>) -> Relea
 /// Select the release registration example for the backend path of a
 /// signers file, when its metadata is not available.
 ///
-/// Only the host in the path selects the forge. The owner and repo are not
-/// taken from the path, because nothing checked the path against the forge.
-/// A path that cannot be parsed gives the checksums files example, which
-/// applies to all forges.
+/// The host in the path selects the forge. For GitHub, the owner and repo
+/// come from the path, which the user gave to the command. A path that cannot
+/// be parsed gives the checksums files example, which applies to all forges.
 pub fn release_example_for_backend_path(path: &str) -> ReleaseExample {
     match forge_for_backend_path(path) {
-        Some(forge) => release_example_for_forge(&forge, None),
+        Some(forge) => release_example_for_forge(&forge, github_owner_repo_from_backend_path(path)),
         None => ReleaseExample::ChecksumsFiles,
     }
 }
 
-/// The forge of a backend path, which starts with `<scheme>/<host>/<port>/`.
-fn forge_for_backend_path(path: &str) -> Option<Forge> {
+/// The URL for a backend path `<scheme>/<host>/<port>/<path>`.
+fn url_for_backend_path(path: &str) -> Option<url::Url> {
     let mut parts = path.splitn(4, '/');
-    let (scheme, host, port) = (parts.next()?, parts.next()?, parts.next()?);
+    let (scheme, host, port, rest) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
     let port: u16 = port.parse().ok()?;
-    let url = url::Url::parse(&format!("{scheme}://{host}:{port}/")).ok()?;
+    url::Url::parse(&format!("{scheme}://{host}:{port}/{rest}")).ok()
+}
+
+/// The forge of a backend path.
+fn forge_for_backend_path(path: &str) -> Option<Forge> {
+    let url = url_for_backend_path(path)?;
     let forge = match Forges::from_host(url.host_str()?).ok()? {
         Forges::Github(_) => Forge::Github,
         Forges::Gitlab(_) => Forge::Gitlab,
         Forges::FileServer(_) => Forge::FileServer,
     };
     Some(forge)
+}
+
+/// The `owner/repo` of the backend path of a GitHub project, when it is safe
+/// to put in a command. The path of a GitHub project starts with
+/// `<scheme>/<host>/<port>/<owner>/<repo>/`.
+fn github_owner_repo_from_backend_path(path: &str) -> Option<String> {
+    let url = url_for_backend_path(path)?;
+    let mut segments = url.path_segments()?;
+    let owner_repo = format!("{}/{}", segments.next()?, segments.next()?);
+    is_safe_project_id(&owner_repo).then_some(owner_repo)
 }
 
 /// The `owner/repo` of a GitHub URL, when it is safe to put in a command.
@@ -643,10 +657,24 @@ mod tests {
         let cases = [
             (
                 format!("https/github.com/443/acme/tool/{signers}"),
-                ReleaseExample::GithubRelease(None),
+                ReleaseExample::GithubRelease(Some("acme/tool".to_string())),
             ),
             (
                 format!("https/raw.githubusercontent.com/443/acme/tool/{signers}"),
+                ReleaseExample::GithubRelease(Some("acme/tool".to_string())),
+            ),
+            // Shell metacharacters must never reach the command.
+            (
+                format!("https/github.com/443/ac;me/tool/{signers}"),
+                ReleaseExample::GithubRelease(None),
+            ),
+            (
+                format!("https/github.com/443/acme/to%20ol/{signers}"),
+                ReleaseExample::GithubRelease(None),
+            ),
+            // A path without owner and repo gives placeholders.
+            (
+                "https/github.com/443/acme".to_string(),
                 ReleaseExample::GithubRelease(None),
             ),
             (

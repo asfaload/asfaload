@@ -2,7 +2,7 @@ use anstyle::Style;
 use common::AsfaloadHashes;
 use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{Forge, SignersConfigMetadata};
-use forge_url::{ForgeInfo, ForgeTrait};
+use forge_url::{ForgeInfo, ForgeTrait, Forges};
 use rest_api_types::RegisterRepoResponse;
 
 use crate::cli::DEFAULT_BACKEND;
@@ -220,10 +220,44 @@ pub enum ReleaseExample {
 /// checks that URL against the forge before it signs. The backend path is
 /// not used.
 pub fn release_example_for(metadata: &SignersConfigMetadata) -> ReleaseExample {
-    match metadata.kind() {
-        Forge::Github => ReleaseExample::GithubRelease(github_owner_repo(metadata.retrieval_url())),
+    release_example_for_forge(metadata.kind(), github_owner_repo(metadata.retrieval_url()))
+}
+
+/// Select the release registration example for a forge. `owner_repo` is
+/// used only for GitHub.
+fn release_example_for_forge(forge: &Forge, owner_repo: Option<String>) -> ReleaseExample {
+    match forge {
+        Forge::Github => ReleaseExample::GithubRelease(owner_repo),
         Forge::Gitlab | Forge::FileServer => ReleaseExample::ChecksumsFiles,
     }
+}
+
+/// Select the release registration example for the backend path of a
+/// signers file, when its metadata is not available.
+///
+/// Only the host in the path selects the forge. The owner and repo are not
+/// taken from the path, because nothing checked the path against the forge.
+/// A path that cannot be parsed gives the checksums files example, which
+/// applies to all forges.
+pub fn release_example_for_backend_path(path: &str) -> ReleaseExample {
+    match forge_for_backend_path(path) {
+        Some(forge) => release_example_for_forge(&forge, None),
+        None => ReleaseExample::ChecksumsFiles,
+    }
+}
+
+/// The forge of a backend path, which starts with `<scheme>/<host>/<port>/`.
+fn forge_for_backend_path(path: &str) -> Option<Forge> {
+    let mut parts = path.splitn(4, '/');
+    let (scheme, host, port) = (parts.next()?, parts.next()?, parts.next()?);
+    let port: u16 = port.parse().ok()?;
+    let url = url::Url::parse(&format!("{scheme}://{host}:{port}/")).ok()?;
+    let forge = match Forges::from_host(url.host_str()?).ok()? {
+        Forges::Github(_) => Forge::Github,
+        Forges::Gitlab(_) => Forge::Gitlab,
+        Forges::FileServer(_) => Forge::FileServer,
+    };
+    Some(forge)
 }
 
 /// The `owner/repo` of a GitHub URL, when it is safe to put in a command.
@@ -598,6 +632,47 @@ mod tests {
                 release_example_for(&metadata(kind, url)),
                 expected,
                 "retrieval url {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn release_example_for_backend_path_cases() {
+        let signers = format!("{PENDING_SIGNERS_DIR}/{SIGNERS_FILE}");
+        // (backend path, expected example)
+        let cases = [
+            (
+                format!("https/github.com/443/acme/tool/{signers}"),
+                ReleaseExample::GithubRelease(None),
+            ),
+            (
+                format!("https/raw.githubusercontent.com/443/acme/tool/{signers}"),
+                ReleaseExample::GithubRelease(None),
+            ),
+            (
+                format!("https/gitlab.com/443/acme/tool/{signers}"),
+                ReleaseExample::ChecksumsFiles,
+            ),
+            (
+                format!("http/files.example.com/8080/acme/{signers}"),
+                ReleaseExample::ChecksumsFiles,
+            ),
+            // Paths that cannot be parsed give the checksums files example.
+            (
+                format!("https/github.com/notaport/acme/tool/{signers}"),
+                ReleaseExample::ChecksumsFiles,
+            ),
+            (
+                "https/github.com".to_string(),
+                ReleaseExample::ChecksumsFiles,
+            ),
+            (String::new(), ReleaseExample::ChecksumsFiles),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(
+                release_example_for_backend_path(&path),
+                expected,
+                "backend path {path:?}"
             );
         }
     }

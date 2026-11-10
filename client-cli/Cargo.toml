@@ -36,8 +36,6 @@ forge-url = { path = "../file-auth/forge-url" }
 url = "2.5"
 shell-words = "1.1.1"
 inquire = "0.9.4"
-bishop = "1.0.0"
-colored = "3"
 
 [dev-dependencies]
 mockito = "1.2"

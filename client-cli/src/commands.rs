@@ -6,7 +6,7 @@ use crate::{
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
-        bishop_art, expected_digest, get_password,
+        expected_digest, get_password,
     },
 };
 
@@ -243,46 +243,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                         None => server_response,
                     };
                     // Inquired formats proposals according to the Display implementation for PendingFile,
-                    // wrapped to append the bishop art below the digest line.
-                    struct WithBishop(rest_api_types::models::PendingFile);
-                    impl std::fmt::Display for WithBishop {
-                        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                            write!(f, "{}\n{}", self.0, bishop_art(self.0.digest()))
-                        }
-                    }
-                    // define custom scorer to avoid matching everything displayed, even ansi codes.
-                    let entry_scorer = move |input: &str,
-                                             option: &WithBishop,
-                                             _: &str,
-                                             idx: usize| {
-                        // include a space between both to avoid to match end of path followed
-                        // by start of handle_register_assets_command
-                        (option.0.path().to_string() + " " + option.0.digest().to_hex().as_str())
-                            .to_lowercase()
-                            .contains(&input.to_lowercase())
-                            .then_some(-(idx as i64))
-                    };
-                    let proposals: Vec<WithBishop> =
-                        response.pending_files.into_iter().map(WithBishop).collect();
+                    let proposals = response.pending_files;
 
                     if proposals.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
                     } else if std::io::stdin().is_terminal() {
-                        match inquire::Select::new(
-                            format!(
-                                "Files to sign (displayed one of {} at a time):",
-                                proposals.len(),
-                            )
-                            .as_str(),
-                            proposals,
-                        )
-                        // display one at a time as inquire's incremental redraw cannot reliably
-                        // diff multi-line options
-                        .with_page_size(1)
-                        .with_scorer(&entry_scorer)
-                        .prompt()
-                        {
-                            Ok(choice) => choice.0.unseal(),
+                        match inquire::Select::new("File to sign", proposals).prompt() {
+                            Ok(choice) => choice.unseal(),
                             Err(_) => {
                                 return Err(anyhow::Error::new(ClientCliError::InvalidInput(
                                     "Selection cancelled or failed: no path to sign was provided"

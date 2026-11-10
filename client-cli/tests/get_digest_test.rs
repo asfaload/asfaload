@@ -1,5 +1,3 @@
-use client_cli::utils::label_for_hash;
-use features_lib::HashAlgorithm;
 use predicates::prelude::*;
 use sha2::{Digest, Sha512};
 use std::io::Write;
@@ -205,23 +203,23 @@ fn get_digest_file_and_url_same_content_produce_same_hash() {
 }
 
 #[test]
-fn get_digest_file_shows_bishop_art_in_default_mode() {
+fn get_digest_file_default_output_is_digest_only() {
+    let content = b"digest only content";
     let mut file = NamedTempFile::new().unwrap();
-    file.write_all(b"known content for bishop test").unwrap();
+    file.write_all(content).unwrap();
     file.flush().unwrap();
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("get-digest").arg(file.path());
 
-    let label = label_for_hash(HashAlgorithm::Sha512);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains(format!("[{}]", label)));
+        .stdout(format!("{}\n", expected_sha512(content)));
 }
 
 #[test]
-fn get_digest_json_output_contains_bishop_art() {
-    let content = b"json bishop art content";
+fn get_digest_json_output_contains_only_digest() {
+    let content = b"json digest only content";
     let mut file = NamedTempFile::new().unwrap();
     file.write_all(content).unwrap();
     file.flush().unwrap();
@@ -230,10 +228,6 @@ fn get_digest_json_output_contains_bishop_art() {
         .arg("get-digest")
         .arg("--json")
         .arg(file.path())
-        // Force colorization in the subprocess: without it, the colored crate
-        // disables colors for non-TTY stdout and a plain/colored mix-up would
-        // go unnoticed.
-        .env("CLICOLOR_FORCE", "1")
         .output()
         .unwrap();
 
@@ -245,21 +239,9 @@ fn get_digest_json_output_contains_bishop_art() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("stdout should be valid JSON");
-
-    let bishop_art = json["bishop_art"]
-        .as_str()
-        .expect("bishop_art field should be a string");
-    assert!(!bishop_art.is_empty(), "bishop_art should not be empty");
-    assert!(
-        !bishop_art.contains('\x1b'),
-        "bishop_art in JSON mode must be plain, without ANSI codes"
-    );
-
-    // The art must be the plain rendering of the file's digest.
-    let hash = common::AsfaloadHashes::Sha512(Sha512::digest(content));
     assert_eq!(
-        bishop_art,
-        client_cli::utils::bishop_plain(&hash),
-        "bishop_art must match the plain rendering of the file digest"
+        json,
+        serde_json::json!({ "digest": expected_sha512(content) }),
+        "JSON output must contain only the digest"
     );
 }

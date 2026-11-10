@@ -15,24 +15,12 @@ The person who registers a release signs its index at registration. If the signe
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
-Each pending file is listed with its path, its digest, and a bishop art block derived from the digest:
+Each pending file is listed with its path and its digest:
 
 ```
 Files requiring your signature:
   - path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
-
-+----[SHA-512]----+
-|▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
-| ▎▁ ▁ E ▏▏▎▎▃▏▎▎▁|
-|▁ ▏▁ ▏   ▎▁▏ ▎▁▍▏|
-|▏▁  ▏  ▏ ▎▂▎▁▁▎▏▂|
-| ▏▏▁  ▏ S▎▎▎▃▏▏▍▏|
-|  ▏▁▁▏▁▏▎▎▁▂▏▁▏ ▏|
-|   ▁▎▏▁▎▂▎▏▏▏    |
-|   ▁▁▁▏▄▃▍▎▏     |
-|    ▁▁▎▍▅▋▍▏     |
-+---[2e2fde4e…]---+
 ```
 
 ### 2. Sign the release index

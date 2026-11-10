@@ -30,7 +30,7 @@ asfaload-cli new-signers-file \
     --output-file signers.json
 ```
 
-The command prints a summary, ending with the SHA-512 digest of the created file and its bishop art (a visual fingerprint of the digest — handy to spot-check the file later with [`get-digest`](../manual/get-digest.md)):
+The command prints a summary, ending with the SHA-512 digest of the created file (use it to spot-check the file later with [`get-digest`](../manual/get-digest.md)):
 
 ```
 Signers file created successfully at: signers.json
@@ -39,17 +39,6 @@ Admin keys: 0 (threshold: none)
 Master keys: 0 (threshold: none)
 Revocation keys: 0 (threshold: none)
 Generated file's digest: sha512:2e2fde4e...
-+----[SHA-512]----+
-|▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
-| ▎▁ ▁ E ▏▏▎▎▃▏▎▎▁|
-|▁ ▏▁ ▏   ▎▁▏ ▎▁▍▏|
-|▏▁  ▏  ▏ ▎▂▎▁▁▎▏▂|
-| ▏▏▁  ▏ S▎▎▎▃▏▏▍▏|
-|  ▏▁▁▏▁▏▎▎▁▂▏▁▏ ▏|
-|   ▁▎▏▁▎▂▎▏▏▏    |
-|   ▁▁▁▏▄▃▍▎▏     |
-|    ▁▁▎▍▅▋▍▏     |
-+---[2e2fde4e…]---+
 ```
 
 ![Demo: create the signers file](demos/create-signers-file.gif)

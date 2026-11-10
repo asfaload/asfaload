@@ -4,7 +4,6 @@ use features_lib::{SignersConfigMetadata, sha512_for_content};
 use crate::error::{
     ClientCliError, Result, signers_metadata_parse_error, signers_metadata_verification_error,
 };
-use crate::utils::{bishop_art, bishop_plain};
 
 /// Handle the check-pending-signers command.
 ///
@@ -59,13 +58,11 @@ pub async fn handle_check_pending_signers_command(
             signers_path: signers_path.to_string(),
             retrieval_url: retrieval_url.to_string(),
             hash: hash.to_string(),
-            bishop_art: bishop_plain(&hash),
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
         println!("✓ Pending signers file matches the content published at {retrieval_url}");
         println!("{hash}");
-        println!("{}", bishop_art(&hash));
     }
 
     Ok(())

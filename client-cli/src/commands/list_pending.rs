@@ -1,5 +1,4 @@
 use crate::error::{ClientCliError, Result};
-use crate::utils::bishop_art;
 use common::AsfaloadHashes;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
@@ -53,7 +52,6 @@ pub async fn handle_list_pending_command(
         println!("Files requiring your signature:");
         for path in &filtered_response.pending_files {
             println!("  - {}", path);
-            println!("{}", bishop_art(path.digest()));
         }
     }
 

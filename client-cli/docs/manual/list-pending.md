@@ -48,23 +48,11 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default), when files are pending. Each entry shows the path and its digest, followed by a "bishop art" block derived from the digest — a visual fingerprint you can compare at a glance (art shown here for the digest of the example file):
+Human-readable (default), when files are pending. Each entry shows the path and its digest:
 
     Files requiring your signature:
       - path: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
     digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
-
-    +----[SHA-512]----+
-    |▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
-    | ▎▁ ▁ E ▏▏▎▎▃▏▎▎▁|
-    |▁ ▏▁ ▏   ▎▁▏ ▎▁▍▏|
-    |▏▁  ▏  ▏ ▎▂▎▁▁▎▏▂|
-    | ▏▏▁  ▏ S▎▎▎▃▏▏▍▏|
-    |  ▏▁▁▏▁▏▎▎▁▂▏▁▏ ▏|
-    |   ▁▎▏▁▎▂▎▏▏▏    |
-    |   ▁▁▁▏▄▃▍▎▏     |
-    |    ▁▁▎▍▅▋▍▏     |
-    +---[2e2fde4e…]---+
 
 When nothing is pending:
 

@@ -47,5 +47,4 @@ pub struct CheckPendingSignersOutput {
     pub signers_path: String,
     pub retrieval_url: String,
     pub hash: String,
-    pub bishop_art: String,
 }

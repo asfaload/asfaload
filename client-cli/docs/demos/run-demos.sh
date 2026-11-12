@@ -310,7 +310,9 @@ hidden_step_after() {
         update-signers-file.tape)
             # Activation round delegated to the activate-signers-file howto;
             # we run it silently so revoke-release has a signers file with revocation keys.
-            for n in 0 1 2 3 4 5 6; do
+            # key_0 submitted the update in the tape, so its signature is
+            # already collected.
+            for n in 1 2 3 4 5 6; do
                 asfa_sign_pending "$FIXTURE/home/.asfaload/key_$n" "$PENDING_SIGNERS_PATH" "$NEW_SIGNERS_DIGEST"
             done
             ;;

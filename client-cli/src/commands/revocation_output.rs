@@ -2,6 +2,7 @@ use anstyle::Style;
 use common::AsfaloadHashes;
 use common::fs::names::{is_pending_revocation_file_path, pending_revocation_path_for};
 use rest_api_types::RevokeFileResponse;
+use serde::Serialize;
 
 use crate::cli::DEFAULT_BACKEND;
 use crate::commands::signers_submission_output::{
@@ -55,6 +56,16 @@ pub fn print_revocation_overview(
             true,
         )
     );
+}
+
+/// JSON output of a successful revoke.
+#[derive(Serialize)]
+pub struct RevocationJsonOutput<'a> {
+    #[serde(flatten)]
+    pub response: &'a RevokeFileResponse,
+    /// Digest of the revocation document, which the other revocation signers
+    /// must give to sign-pending.
+    pub revocation_digest: &'a AsfaloadHashes,
 }
 
 /// Build the human output after a successful revoke.
@@ -234,5 +245,26 @@ mod tests {
         assert_eq!(revocation_note(FILE_PATH, true), None);
         let signers = format!("project/{PENDING_SIGNERS_DIR}/{SIGNERS_FILE}");
         assert_eq!(revocation_note(&signers, false), None);
+    }
+
+    #[test]
+    fn json_output_contains_response_and_revocation_digest() {
+        let response = response(vec!["asfaload-pub:key-a"]);
+        let digest = digest();
+        let output = RevocationJsonOutput {
+            response: &response,
+            revocation_digest: &digest,
+        };
+        let json: serde_json::Value =
+            serde_json::to_value(&output).expect("output should serialize");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "success": true,
+                "message": "unused",
+                "required_signers": ["asfaload-pub:key-a"],
+                "revocation_digest": digest.to_string(),
+            })
+        );
     }
 }

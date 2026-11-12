@@ -61,7 +61,7 @@ pub enum ClientCliError {
     NoPendingFileWithDigest(AsfaloadHashes),
 
     #[error("Computed digest ({0}) does not match the expected digest ({1})")]
-    ServerDigestError(String, AsfaloadHashes),
+    ExpectedDigestMismatch(String, AsfaloadHashes),
 
     #[error("Index validation failed: {0}")]
     IndexValidation(#[from] common::index_validation::IndexValidationError),

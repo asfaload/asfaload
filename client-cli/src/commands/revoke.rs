@@ -1,5 +1,6 @@
 use crate::commands::revocation_output::{RevocationJsonOutput, print_revocation_overview};
 use crate::error::{ClientCliError, Result, ensure_backend_success};
+use common::AsfaloadHashes;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
     sha512_for_content,
@@ -24,6 +25,7 @@ pub async fn handle_revoke_command(
     file_path: &str,
     secret_key_path: &std::path::PathBuf,
     password: &str,
+    expected_digest: &AsfaloadHashes,
     json: bool,
 ) -> Result<RevokeFileResponse> {
     // Load secret key and derive public key
@@ -38,6 +40,13 @@ pub async fn handle_revoke_command(
 
     // Compute sha512 of the file content
     let subject_digest = sha512_for_content(file_content)?;
+
+    if subject_digest != *expected_digest {
+        return Err(ClientCliError::ExpectedDigestMismatch(
+            subject_digest.to_string(),
+            expected_digest.clone(),
+        ));
+    }
 
     // Build the revocation document
     let revocation = signers_file_types::revocation::RevocationInfo {

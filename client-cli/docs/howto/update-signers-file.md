@@ -101,7 +101,7 @@ asfaload-cli sign-pending \
     --secret-key ~/.asfaload/mykey
 ```
 
-A signer can also use `list-pending` to find the digest and the path:
+A signer can also use `list-pending` to find the path. `list-pending` shows only a short digest: take the full digest from the `update-signers` output, or compute it with [`get-digest`](../manual/get-digest.md) on the published signers file:
 
 ```sh
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey

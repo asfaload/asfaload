@@ -194,7 +194,7 @@ assert_pending_metadata_exist
 section "Signers File Activation"
 ################################################################################
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password "$DIGEST")
 
 # Key0 already signed the pending signers file and metadata at registration.
 
@@ -215,8 +215,10 @@ section "Register and Sign Release v0.1"
 run_step_json "Register release v0.1" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.1)
+# The registering signer gives the digest of the index to the other signers.
+RELEASE_0_1_DIGEST=$(jq -r .index_digest <<<"$LAST_STEP_OUTPUT")
 
-RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
+RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password "$RELEASE_0_1_DIGEST")
 # key2 recorded its signature at registration, so key0's signature meets
 # the threshold.
 run_step_json "Sign release v0.1 with key0 (completes, threshold=2)" \
@@ -239,7 +241,7 @@ run_step_json "Update signers file with key0" \
 assert_pending_signers_exist
 assert_pending_metadata_exist
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password "$UPDATE_DIGEST")
 
 # Key0 already signed the pending signers file and metadata with the update.
 
@@ -272,8 +274,9 @@ section "Register and Sign Release v0.2 (under updated signers)"
 run_step_json "Register release v0.2" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.2)
+RELEASE_0_2_DIGEST=$(jq -r .index_digest <<<"$LAST_STEP_OUTPUT")
 
-RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
+RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password "$RELEASE_0_2_DIGEST")
 # key2 recorded its signature at registration, so key1's signature meets
 # the threshold of 3.
 run_step_json "Sign release v0.2 with key0 (2 of 3 signatures)" \

@@ -1,4 +1,4 @@
-use crate::commands::revocation_output::print_revocation_overview;
+use crate::commands::revocation_output::{RevocationJsonOutput, print_revocation_overview};
 use crate::error::{ClientCliError, Result, ensure_backend_success};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
@@ -70,7 +70,11 @@ pub async fn handle_revoke_command(
 
     // Display result
     if json {
-        println!("{}", serde_json::to_string(&response)?);
+        let output = RevocationJsonOutput {
+            response: &response,
+            revocation_digest: &revocation_hash,
+        };
+        println!("{}", serde_json::to_string(&output)?);
     } else {
         print_revocation_overview(&response, file_path, &revocation_hash, backend_url);
     }

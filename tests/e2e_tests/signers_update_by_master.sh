@@ -126,7 +126,7 @@ run_step_json "List pending for key1 (should show pending signers, key0 already 
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password "$DIGEST")
 
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
@@ -198,7 +198,7 @@ run_step_json "List pending for key5 (should show pending, key3 already signed)"
 section "Signature Collection for Update Activation"
 ################################################################################
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_5" "$backend" $key_password)
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_5" "$backend" $key_password "$UPDATE_DIGEST")
 
 # Key3 already signed the pending signers file and metadata with the update.
 

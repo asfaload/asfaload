@@ -15,17 +15,17 @@ The person who registers a release signs its index at registration. If the signe
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
-Each pending file is listed with its path and its digest:
+Each pending file is listed with its path and a short digest:
 
 ```
 Files requiring your signature:
   - path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
-digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
+digest: sha512:2e2fde4e....c41438d7
 ```
 
 ### 2. Sign the release index
 
-Copy the path **and** the digest from the output above:
+Copy the path from the output above. `sign-pending` also needs the full expected digest of the release index. Do not take it from the backend. Get it from the person who registered the release: the output of `register-assets` gives the full `sign-pending` command. Make sure that the short digest in the `list-pending` output agrees with the start and the end of this digest:
 
 ```sh
 asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \

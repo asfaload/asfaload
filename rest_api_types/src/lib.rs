@@ -441,6 +441,27 @@ pub mod models {
         }
     }
 
+    /// Similar to PendingFile but holding only a shortened digest value to the
+    /// use cannot use it for signing, forcing the user to get the digest from the initiator or a
+    /// local copy of the file to be signed.
+    #[derive(Debug, Clone, Serialize)]
+    pub struct SafePendingFile {
+        path: String,
+        short_digest: String,
+    }
+    impl fmt::Display for SafePendingFile {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "path: {}\ndigest: {}\n", self.path, self.short_digest)
+        }
+    }
+    impl SafePendingFile {
+        pub fn path(&self) -> &str {
+            &self.path
+        }
+        pub fn digest(&self) -> &str {
+            &self.short_digest
+        }
+    }
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingFile {
         path: String,
@@ -479,6 +500,34 @@ pub mod models {
                 digest: self.digest().clone(),
             }
         }
+
+        /// Shortens the digest, displaying start and end chars so the user can still check their
+        /// value but they can't use the backend returned value for signing.
+        pub fn shorten(&self) -> SafePendingFile {
+            // length of prefix sha512
+            let prefix_length = 7;
+            // Number of chars we want to display from start and end of checksum
+            let chars_displayed = 8;
+
+            let shorten = |h: &AsfaloadHashes| {
+                let s = h.to_string();
+                format!(
+                    "{}....{}",
+                    &s[..(prefix_length + chars_displayed)],
+                    &s[s.len() - chars_displayed..]
+                )
+            };
+            SafePendingFile {
+                path: self.path.clone(),
+                short_digest: shorten(&self.digest),
+            }
+        }
+    }
+
+    impl From<&PendingFile> for SafePendingFile {
+        fn from(val: &PendingFile) -> SafePendingFile {
+            val.shorten()
+        }
     }
     #[derive(Debug, Clone, Serialize, Deserialize)]
     /// Response to a pending signatures list request.
@@ -488,6 +537,19 @@ pub mod models {
     ///   from the requesting signer
     pub struct ListPendingResponse {
         pub pending_files: Vec<PendingFile>,
+    }
+
+    #[derive(Debug, Clone, Serialize)]
+    pub struct SafeListPendingResponse {
+        pub pending_files: Vec<SafePendingFile>,
+    }
+
+    impl From<ListPendingResponse> for SafeListPendingResponse {
+        fn from(val: ListPendingResponse) -> SafeListPendingResponse {
+            SafeListPendingResponse {
+                pending_files: val.pending_files.iter().map(|f| f.into()).collect(),
+            }
+        }
     }
 
     impl ListPendingResponse {
@@ -1063,6 +1125,78 @@ mod tests {
         );
         let parsed: models::PingResponse = serde_json::from_value(value)?;
         assert_eq!(parsed, response);
+        Ok(())
+    }
+
+    // PendingFile::shorten tests
+    // --------------------------
+
+    const SHORTEN_TEST_PATH: &str = "github.com/owner/repo/releases/v1.0/asfaload.index.json";
+
+    fn pending_file_with_digest(digest: &str) -> anyhow::Result<models::PendingFile> {
+        Ok(serde_json::from_value(serde_json::json!({
+            "path": SHORTEN_TEST_PATH,
+            "digest": digest,
+        }))?)
+    }
+
+    #[test]
+    fn test_shorten_keeps_prefix_and_suffix_of_digest() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let safe = pending_file_with_digest(&digest)?.shorten();
+        assert_eq!(safe.path(), SHORTEN_TEST_PATH);
+        assert_eq!(safe.digest(), "sha512:01234567....89abcdef");
+        Ok(())
+    }
+
+    #[test]
+    fn test_shorten_does_not_contain_full_digest() -> anyhow::Result<()> {
+        let digest = common::sha512_for_content(b"content".to_vec())?.to_string();
+        let pending = pending_file_with_digest(&digest)?;
+        let safe = pending.shorten();
+        assert!(safe.digest().len() < digest.len());
+        assert!(!safe.to_string().contains(&digest));
+        assert!(!serde_json::to_string(&safe)?.contains(&digest));
+        Ok(())
+    }
+
+    #[test]
+    fn test_shorten_display() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let safe = pending_file_with_digest(&digest)?.shorten();
+        assert_eq!(
+            safe.to_string(),
+            format!("path: {SHORTEN_TEST_PATH}\ndigest: sha512:01234567....89abcdef\n")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_shorten_json_shape() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let safe = pending_file_with_digest(&digest)?.shorten();
+        assert_eq!(
+            serde_json::to_value(&safe)?,
+            serde_json::json!({
+                "path": SHORTEN_TEST_PATH,
+                "short_digest": "sha512:01234567....89abcdef",
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_safe_list_pending_response_from_list_pending_response() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let response = models::ListPendingResponse {
+            pending_files: vec![pending_file_with_digest(&digest)?],
+        };
+        let safe: models::SafeListPendingResponse = response.into();
+        assert_eq!(safe.pending_files.len(), 1);
+        assert_eq!(
+            safe.pending_files[0].digest(),
+            "sha512:01234567....89abcdef"
+        );
         Ok(())
     }
 }

@@ -19,11 +19,11 @@ You must always give the expected digest of the file to sign, with `--digest` or
 
 ### `--digest <DIGEST>`
 
-The expected `sha512:<128 hexadecimal characters>` digest of the file to sign, as printed by [`list-pending`](list-pending.md) or [`get-digest`](get-digest.md). Before signing, the digest of the fetched file is verified against this value and the command aborts on mismatch. When `<FILE_PATH>` is omitted, the interactive selection shows only the pending files with this digest. Conflicts with `--local-copy`. You must give `--digest` or `--local-copy`.
+The expected `sha512:<128 hexadecimal characters>` digest of the file to sign. Get it from the person who started the signature: the outputs of `register-repo`, `update-signers`, `register-assets` and `revoke` give it. Or compute it with [`get-digest`](get-digest.md) on the original file. Do not take it from the backend: [`list-pending`](list-pending.md) shows only a short digest. Before signing, the digest of the fetched file is verified against this value and the command aborts on mismatch. When `<FILE_PATH>` is omitted, the interactive selection shows only the pending files with this digest. Conflicts with `--local-copy`. You must give `--digest` or `--local-copy`.
 
 ### `--local-copy <PATH>`
 
-Path to your local copy of the file to sign, for example the signers file that you received from the project. Its SHA-512 digest is the expected digest, and the command uses it as it uses the value of `--digest`. Use this option when you have the file: you then do not have to trust a digest given by the backend. Conflicts with `--digest`.
+Path to your local copy of the file to sign, for example the signers file that you received from the project. Its SHA-512 digest is the expected digest, and the command uses it as it uses the value of `--digest`. Use this option when you have the file: you then do not have to get the digest from another person. Conflicts with `--digest`.
 
 ### `-K --secret-key <PATH>`
 

@@ -15,6 +15,9 @@ const DIGEST_B: &str = concat!(
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 );
+// list-pending shows only the start and the end of the server digest.
+const SHORT_DIGEST_A: &str = "sha512:aaaaaaaa....aaaaaaaa";
+const SHORT_DIGEST_B: &str = "sha512:bbbbbbbb....bbbbbbbb";
 const DIGEST_NON_MATCHING: &str = concat!(
     "sha512:",
     "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
@@ -104,7 +107,7 @@ fn list_pending_output_shows_only_paths_and_digests() {
         .env("ASFALOAD_LIST_PENDING_PASSWORD", "password");
 
     let expected = format!(
-        "Files requiring your signature:\n  - path: releases/v1/file-a.tar.gz\ndigest: {DIGEST_A}\n\n  - path: releases/v1/file-b.tar.gz\ndigest: {DIGEST_B}\n\n"
+        "Files requiring your signature:\n  - path: releases/v1/file-a.tar.gz\ndigest: {SHORT_DIGEST_A}\n\n  - path: releases/v1/file-b.tar.gz\ndigest: {SHORT_DIGEST_B}\n\n"
     );
     cmd.assert().success().stdout(expected);
 }
@@ -249,7 +252,7 @@ fn list_pending_digest_filter_json_contains_only_matching_file() {
         .as_array()
         .expect("pending_files should be array");
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0]["digest"].as_str().unwrap(), DIGEST_A);
+    assert_eq!(files[0]["short_digest"].as_str().unwrap(), SHORT_DIGEST_A);
     assert!(files[0]["path"].as_str().unwrap().contains("file-a.tar.gz"));
 }
 

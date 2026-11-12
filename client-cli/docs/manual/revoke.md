@@ -81,9 +81,9 @@ Human-readable (default), when your signature completes the revocation:
 
     The revocation is complete. Downloads of this file now fail.
 
-JSON (with `--json`). `required_signers` contains the keys that can still sign. It is empty when the revocation is complete:
+JSON (with `--json`). `required_signers` contains the keys that can still sign. It is empty when the revocation is complete. `revocation_digest` is the digest of the revocation document that you signed. Send it to the other revocation signers: they give it as the `--digest` value of `sign-pending`:
 
-    {"success":true,"message":"Revocation started, more signatures are necessary","required_signers":["asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"]}
+    {"success":true,"message":"Revocation started, more signatures are necessary","required_signers":["asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"],"revocation_digest":"sha512:2e2fde4e..."}
 
 ## Examples
 

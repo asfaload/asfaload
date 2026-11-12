@@ -6,10 +6,21 @@ mod tests {
     use features_lib::AsfaloadPublicKeyTrait;
     use features_lib::AsfaloadPublicKeys;
     use features_lib::AsfaloadSecretKeyTrait;
+    use rest_api_types::models::{ClientPendingFile, SafePendingFile};
     use signers_file::initialize_signers_file;
     use signers_file_types::SignersConfig;
     use std::fs;
     use std::path::Path;
+
+    /// Build the file to sign for a pending file listed by list-pending.
+    ///
+    /// list-pending does not give the full digest. The digest is computed
+    /// from the file in the git repo, as a user does from a local copy.
+    fn client_pending_file(git_repo_path: &Path, pending: &SafePendingFile) -> ClientPendingFile {
+        let digest = common::sha512_for_file(git_repo_path.join(pending.path()))
+            .expect("Failed to compute digest of pending file");
+        ClientPendingFile::new(pending.path().to_string(), digest)
+    }
 
     /// Mirror shape of a signers project served by a mock forge.
     ///
@@ -166,19 +177,19 @@ mod tests {
         .await
         .expect("list-pending should succeed");
 
-        let signers_pending_path = file_paths
+        let signers_pending = file_paths
             .iter()
             .find(|pending| {
                 let p = pending.path();
                 p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
-            .expect("Signers file should be in pending list")
-            .clone();
+            .expect("Signers file should be in pending list");
+        let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         // Sign the pending signers file to activate it (threshold=all for InitialSignersFile)
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -194,7 +205,7 @@ mod tests {
         // The signers file is now active. Signing its pending path again
         // reports that the signature was collected.
         let again = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -211,7 +222,7 @@ mod tests {
         // signers file.
         let outsider_key_path = state.lock().await.secret_key_paths[1].clone();
         let outsider = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &outsider_key_path,
             test_harness::TEST_PASSWORD,
@@ -305,18 +316,18 @@ mod tests {
         .await
         .expect("list-pending should succeed");
 
-        let signers_pending_path = file_paths
+        let signers_pending = file_paths
             .iter()
             .find(|pending| {
                 let p = pending.path();
                 p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
-            .expect("Signers file should be in pending list")
-            .clone();
+            .expect("Signers file should be in pending list");
+        let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -359,12 +370,11 @@ mod tests {
         );
 
         // Sign the pending file
-        let artifact_client_file = file_paths
+        let artifact_pending = file_paths
             .iter()
             .find(|p| p.path() == file_path)
-            .expect("file should be in pending list")
-            .clone()
-            .unseal();
+            .expect("file should be in pending list");
+        let artifact_client_file = client_pending_file(&git_repo_path, artifact_pending);
         let sign_response = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file,
             &backend_url,
@@ -385,7 +395,6 @@ mod tests {
     async fn test_sign_pending_server_digest_mismatch() {
         use client_cli::error::ClientCliError;
         use common::AsfaloadHashes;
-        use rest_api_types::models::ClientPendingFile;
 
         let state = test_harness::initialize().await;
         let guard = state.lock().await;
@@ -430,18 +439,18 @@ mod tests {
         .await
         .expect("list-pending should succeed");
 
-        let signers_pending_path = file_paths
+        let signers_pending = file_paths
             .iter()
             .find(|pending| {
                 let p = pending.path();
                 p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
-            .expect("Signers file should be in pending list")
-            .clone();
+            .expect("Signers file should be in pending list");
+        let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -529,19 +538,19 @@ mod tests {
         .expect("list-pending should succeed for key[0]");
 
         // Find the signers file for this project in the pending list
-        let signers_pending_path = file_paths
+        let signers_pending = file_paths
             .iter()
             .find(|pending| {
                 let p = pending.path();
                 p.starts_with(&format!("{}/", signers_project.project_dir_path))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
-            .expect("Signers file should be in pending list")
-            .clone();
+            .expect("Signers file should be in pending list");
+        let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         // sign-pending with key[0]: 1 of 3, not yet complete
         let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &key_paths[0],
             test_harness::TEST_PASSWORD,
@@ -556,7 +565,7 @@ mod tests {
 
         // sign-pending with key[1]: 2 of 3, not yet complete
         let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &key_paths[1],
             test_harness::TEST_PASSWORD,
@@ -571,7 +580,7 @@ mod tests {
 
         // sign-pending with key[2]: 3 of 3, complete -> signers activate
         let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.unseal(),
+            signers_pending_path.clone(),
             &backend_url,
             &key_paths[2],
             test_harness::TEST_PASSWORD,
@@ -612,12 +621,11 @@ mod tests {
             file_paths
         );
 
-        let artifact_client_file = file_paths
+        let artifact_pending = file_paths
             .iter()
             .find(|p| p.path() == artifact_path)
-            .expect("artifact should be in pending list")
-            .clone()
-            .unseal();
+            .expect("artifact should be in pending list");
+        let artifact_client_file = client_pending_file(&git_repo_path, artifact_pending);
 
         // sign with key[0]: 1 of 2, not complete
         let r3 = client_cli::commands::sign_pending::handle_sign_pending_command(

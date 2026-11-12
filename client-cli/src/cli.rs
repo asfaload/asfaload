@@ -358,6 +358,9 @@ pub enum Commands {
         backend_url_args: BackendUrlArgs,
 
         #[command(flatten)]
+        digest_args: DigestArgs,
+
+        #[command(flatten)]
         json_args: JsonArgs,
     },
 

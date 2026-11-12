@@ -412,7 +412,8 @@ run_step_json "Sign release index with key0 (completes, threshold=2)" \
 
 assert_release_index_signature_count "0.1" 2
 
-expect_fail "Register release with key2 (fails as already registered)" \
+expect_fail_json "Register release with key2 (fails as already registered)" \
+    '.error | contains("Release already registered")' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.1)
 
 # Ensure a second release registration does not override the signatures already collected
@@ -420,7 +421,8 @@ assert_release_index_signature_count "0.1" 2
 
 # The index was completed by key0's signature (key2 signed at registration):
 # further signatures must be rejected.
-expect_fail "Sign release index with key1 (already completed)" \
+expect_fail_json "Sign release index with key1 (already completed)" \
+    '.error | contains("is already complete")' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 # --- Backend: verify release index activated ---
@@ -431,7 +433,8 @@ run_step_json "Check signature status for v0.1 index (complete)" \
     '.is_complete == true and (.required_signers | length == 0)' \
     cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
-expect_fail "Sign release index with key2 (already completed)" \
+expect_fail_json "Sign release index with key2 (already completed)" \
+    '.error | contains("is already complete")' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 DOWNLOAD_V01="$(mktemp)"
@@ -480,7 +483,8 @@ run_step_json "List pending for key1 (should show pending signers, key0 already 
 UPDATE_DIGEST=$(cargo run --quiet -- get-digest --json "$UPDATE_LOCAL_COPY" | jq -r .digest)
 SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password "$UPDATE_DIGEST")
 
-expect_fail "Attempts to re-sign pending signers with key0 (should fail)" \
+expect_fail_json "Attempts to re-sign pending signers with key0 (should fail)" \
+    '.error | contains("was already collected")' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "List pending for key1 (should show pending)" \
@@ -571,7 +575,8 @@ run_step_json "Sign release index with key1 (completes, threshold=3)" \
 
 assert_release_index_signature_count "0.2" 3
 
-expect_fail "Sign release index with key3 (already completed)" \
+expect_fail_json "Sign release index with key3 (already completed)" \
+    '.error | contains("is already complete")' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 # --- Backend: verify v0.2 release index activated ---
@@ -587,19 +592,21 @@ assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 
 # --- Revoke release 0.1 ---
 
-expect_fail "revoke index file for v0.1, not authorized" \
-    cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
+expect_fail_json "revoke index file for v0.1, not authorized" \
+    '.error | contains("not authorized to revoke")' \
+    cargo run --quiet -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" --digest "$RELEASE_0_1_DIGEST" $(release_index 0.1)
 
 pk5="$(pubkey_of "$KEY_5")"
 pk6="$(pubkey_of "$KEY_6")"
 run_step_json "initiate revoke index file for v0.1 (pending, KEY_5 and KEY_6 can still sign)" \
     ".required_signers | length == 2 and any(. == \"$pk5\") and any(. == \"$pk6\")" \
-    cargo run --quiet -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
+    cargo run --quiet -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" --digest "$RELEASE_0_1_DIGEST" $(release_index 0.1)
 # The initiator gives the digest of the revocation document to the other signers.
 REVOCATION_DIGEST=$(jq -r .revocation_digest <<<"$LAST_STEP_OUTPUT")
 
-expect_fail "revoke index file for v0.1 again (already pending)" \
-    cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)
+expect_fail_json "revoke index file for v0.1 again (already pending)" \
+    '.error | contains("pending revocation already exists")' \
+    cargo run --quiet -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" --digest "$RELEASE_0_1_DIGEST" $(release_index 0.1)
 
 DOWNLOAD_V01_bis="$(mktemp)"
 to_delete_on_filesystem+=("$DOWNLOAD_V01_bis")

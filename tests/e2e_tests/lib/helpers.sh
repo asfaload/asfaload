@@ -196,6 +196,23 @@ run_step_json() {
     LAST_STEP_OUTPUT="$output"
 }
 
+# Stop the test run when the client rejects its command line.
+# clap exits with code 2 for a usage error (missing or conflicting flags),
+# and the client exits with code 1 for an error of the command.
+# An expected failure must come from the command, not from a usage error:
+# a usage error only shows that the test gives incorrect arguments.
+# Usage: fail_on_usage_error EXIT_CODE OUTPUT COMMAND...
+fail_on_usage_error() {
+    local exit_code="$1" output="$2"; shift 2
+    if [ "$exit_code" -eq 2 ]; then
+        printf '%s✗ USAGE ERROR%s\n' "$RED" "$RESET"
+        printf '  %sThe client rejected the command line:%s %s\n' "$RED" "$RESET" "$*"
+        printf '  %sSection:%s %s\n' "$RED" "$RESET" "$CURRENT_SECTION"
+        [[ -n "$output" ]] && printf '  %sOutput:%s\n%s\n' "$RED" "$RESET" "$output"
+        exit 1
+    fi
+}
+
 expect_fail() {
     local desc="$1"; shift
     STEP_NUM=$((STEP_NUM + 1))
@@ -220,6 +237,8 @@ expect_fail() {
         echo
         echo "$output"
     fi
+
+    fail_on_usage_error "$exit_code" "$output" "$@"
 
     if [ "$exit_code" -ne 0 ]; then
         printf '%s⚠ expected failure%s %s(%ds)%s\n' "$YELLOW" "$RESET" "$DIM" "$elapsed" "$RESET"
@@ -265,6 +284,8 @@ expect_fail_json() {
         [[ -n "$stdout_output" ]] && echo "stdout: $stdout_output"
         echo "stderr: $stderr_output"
     fi
+
+    fail_on_usage_error "$exit_code" "$stderr_output" "$@" --json
 
     if [ "$exit_code" -eq 0 ]; then
         printf '%s✗ UNEXPECTED SUCCESS%s %s(%ds)%s\n' "$RED" "$RESET" "$DIM" "$elapsed" "$RESET"

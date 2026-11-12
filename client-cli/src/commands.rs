@@ -399,6 +399,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             secret_key_args,
             password_args,
             backend_url_args,
+            digest_args,
             json_args,
         } => {
             let password = get_password(
@@ -415,12 +416,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let expected_digest =
+                expected_digest(digest_args.digest.clone(), digest_args.local_copy.clone())?;
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(revoke::handle_revoke_command(
                 &url,
                 file_path,
                 &secret_key_args.secret_key,
                 password.as_str(),
+                &expected_digest,
                 json_args.json,
             ))?;
         }

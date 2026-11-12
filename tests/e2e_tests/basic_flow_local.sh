@@ -291,6 +291,17 @@ assert_pending_metadata_signatures_contain_keys "$KEY_0"
 run_step_json "List pending for key1" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
+
+# Don't sign if --local-copy digest does not match
+SIGNERS_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNERS_SUFFIX}.json"
+OTHER_SIGNERS_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
+expect_fail_json "Sign signers file with a local copy of another signers file" \
+    '.error | contains("does not match the digest")' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password --local-copy "$OTHER_SIGNERS_LOCAL_COPY" $(pending_signers_file)
+expect_fail_json "Interactive sign-pending with a local copy of another signers file" \
+    '.error | startswith("No pending file has the expected digest")' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password --local-copy "$OTHER_SIGNERS_LOCAL_COPY"
+
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
@@ -301,9 +312,9 @@ assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
 assert_pending_metadata_signature_count 2
 assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1"
 
-run_step_json "Sign signers file with key2 (completes signature)" \
+run_step_json "Sign signers file with key2 (--local-copy, completes signature)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password --local-copy "$SIGNERS_LOCAL_COPY" $(pending_signers_file)
 
 # --- Backend: verify signers activated ---
 assert_signers_active
@@ -320,7 +331,7 @@ run_step_json "Sign signers file with key0 (already activated)" \
 # signatures from the backend; key2 has none → NoPendingSignature error.
 expect_fail_json "Interactive sign-pending with no pending signatures" \
     '.error == "No pending signature found"' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password "$key_password"
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password "$key_password" --digest "$DIGEST"
 
 ################################################################################
 section "Release Registration and Signing"
@@ -481,9 +492,11 @@ assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
 assert_pending_metadata_signature_count 2
 assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1"
 
-run_step_json "Sign pending signers with key3 (newly added artifact signer)" \
+# The updated signers file ends with a newline appended after its generation.
+# The local copy must match these exact bytes.
+run_step_json "Sign pending signers with key3 (newly added artifact signer, --local-copy)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password --local-copy "$UPDATE_LOCAL_COPY" $(pending_signers_file)
 
 assert_pending_signers_signature_count 3
 assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1" "$KEY_3"

@@ -17,19 +17,19 @@ Each signer performs steps 1–2 independently.
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
-If the signers file is waiting for your signature, you'll see its path and its digest:
+If the signers file is waiting for your signature, you'll see its path and a short digest:
 
 ```
 Files requiring your signature:
   - path: https/github.com/443/acme/tool/asfaload.signers.pending/index.json
-digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
+digest: sha512:2e2fde4e....c41438d7
 ```
 
 If nothing is pending for you, the output says `No pending signatures found.`
 
 ### 2. Sign the pending signers file
 
-Copy the path **and** the digest from the output above and pass both to `sign-pending`:
+Copy the path from the output above. `sign-pending` also needs the full expected digest of the signers file. Do not take it from the backend. Get it from the person who registered the repository or proposed the update: the output of `register-repo` and `update-signers` gives the full `sign-pending` command. You can also compute it with [`get-digest`](../manual/get-digest.md) on the signers file published by the project. Make sure that the short digest in the `list-pending` output agrees with the start and the end of this digest:
 
 ```sh
 asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
@@ -37,7 +37,7 @@ asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
 
-If you have a local copy of the signers file, for example from the repository of the project, give it with `--local-copy` instead of `--digest`. The digest of your copy is then the expected digest, and you do not have to trust the digest given by the backend:
+If you have a local copy of the signers file, for example from the repository of the project, give it with `--local-copy` instead of `--digest`. The digest of your copy is then the expected digest, and you do not have to get the digest from another person:
 
 ```sh
 asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \

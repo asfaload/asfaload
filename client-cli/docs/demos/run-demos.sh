@@ -215,26 +215,30 @@ CLI="$REPO_ROOT/target/debug/asfaload-cli"
 PASSWORD_FILE="$FIXTURE/home/.asfaload/.demo-password"
 
 # Digests of the files the tapes register or sign. The pending-file digests
-# depend on backend state created by earlier tapes, so they are filled in
+# depend on state created by earlier tapes, so they are filled in
 # hidden_step_before, right before the tape that needs them is rendered. The
 # signers digest is computed from the file server before register-repo.tape.
+# list-pending does not give the full digest, and a signer must not trust a
+# digest from the backend: each digest comes from the same source as for a
+# real signer.
 SIGNERS_DIGEST=""
 PENDING_SIGNERS_DIGEST=""
 RELEASE_INDEX_DIGEST=""
 PENDING_REVOCATION_DIGEST=""
 NEW_SIGNERS_DIGEST=""
 
-# Extract the digest of a signer's single pending file from list-pending JSON.
-pending_digest() {
-    "$CLI" list-pending --secret-key "$1" \
-        --password-file "$PASSWORD_FILE" -u "$BACKEND_URL" --json \
+# Digest of a file that the backend committed to its git repo.
+# register-assets and revoke run on camera with human output, which shows the
+# digest that the registering or revoking signer sends to the other signers.
+# The script cannot read that output, so it computes the digest of the
+# committed file, which is the file that signer signed.
+committed_file_digest() {
+    "$CLI" get-digest --json "$FIXTURE/git-repo/$1" \
         | grep -oP '"digest":"\Ksha512:[0-9a-f]{128}' | head -n1
 }
 
 asfa_sign_pending() {
-    local key="$1" path="$2"
-    local digest
-    digest="$(pending_digest "$key")"
+    local key="$1" path="$2" digest="$3"
     "$CLI" sign-pending --secret-key "$key" \
         --password-file "$PASSWORD_FILE" \
         --digest "$digest" \
@@ -262,13 +266,14 @@ hidden_step_before() {
                 | grep -oP '"digest":"\Ksha512:[0-9a-f]{128}' | head -n1)"
             ;;
         activate-signers-file.tape)
-            PENDING_SIGNERS_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_0")"
+            # The pending signers file is the file registered by register-repo.
+            PENDING_SIGNERS_DIGEST="$SIGNERS_DIGEST"
             ;;
         sign-release.tape)
-            RELEASE_INDEX_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_1")"
+            RELEASE_INDEX_DIGEST="$(committed_file_digest "$RELEASE_INDEX_PATH")"
             ;;
         revoke-release-cosign.tape)
-            PENDING_REVOCATION_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_5")"
+            PENDING_REVOCATION_DIGEST="$(committed_file_digest "$PENDING_REVOCATION_PATH")"
             ;;
         update-signers-file.tape)
             # The howto assumes the new signers file is already pushed; stage the
@@ -306,7 +311,7 @@ hidden_step_after() {
             # Activation round delegated to the activate-signers-file howto;
             # we run it silently so revoke-release has a signers file with revocation keys.
             for n in 0 1 2 3 4 5 6; do
-                asfa_sign_pending "$FIXTURE/home/.asfaload/key_$n" "$PENDING_SIGNERS_PATH"
+                asfa_sign_pending "$FIXTURE/home/.asfaload/key_$n" "$PENDING_SIGNERS_PATH" "$NEW_SIGNERS_DIGEST"
             done
             ;;
         *) ;;

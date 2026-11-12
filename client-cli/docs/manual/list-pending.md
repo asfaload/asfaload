@@ -29,7 +29,7 @@ Backend API URL. Defaults to `https://backend.asfaload.com`.
 
 ### `--digest-filter <DIGEST>` (`--df`)
 
-Only list pending files whose digest matches the given value. The value must be a full `sha512:<128 hexadecimal characters>` digest (e.g. as printed by [`get-digest`](get-digest.md) or in the list output itself); anything else is rejected. Filtered results are subject to the same output rules as unfiltered ones (an empty result prints `No pending signatures found.`).
+Only list pending files whose digest matches the given value. The value must be a full `sha512:<128 hexadecimal characters>` digest (e.g. as printed by [`get-digest`](get-digest.md)); anything else is rejected. Filtered results are subject to the same output rules as unfiltered ones (an empty result prints `No pending signatures found.`).
 
 ### `--json`
 
@@ -48,19 +48,19 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default), when files are pending. Each entry shows the path and its digest:
+Human-readable (default), when files are pending. Each entry shows the path and a short digest: the start and the end of the digest that the backend gives. The full digest is not shown, because you must not take the expected digest of [`sign-pending`](sign-pending.md) from the backend. Use the short digest to make sure that the pending file has the digest that you expect, for example when `sign-pending` reports a digest mismatch:
 
     Files requiring your signature:
       - path: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
-    digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
+    digest: sha512:2e2fde4e....c41438d7
 
 When nothing is pending:
 
     No pending signatures found.
 
-JSON (with `--json`):
+JSON (with `--json`). `short_digest` is the short digest:
 
-    {"pending_files":[{"path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json","digest":"sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7"}]}
+    {"pending_files":[{"path":"https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json","short_digest":"sha512:2e2fde4e....c41438d7"}]}
 
 An empty result serializes as `{"pending_files":[]}`.
 
@@ -72,10 +72,12 @@ An empty result serializes as `{"pending_files":[]}`.
     # list pending files for one specific digest
     asfaload-cli list-pending --df sha512:2e2fde4e... -K ~/.asfaload/key
 
-    # non-interactive, piped into sign-pending
-    asfaload-cli list-pending --json -K ~/.asfaload/key -p "$PASSWORD" \
-        | jq -r '.pending_files[0] | "--digest \(.digest) \(.path)"' \
-        | xargs asfaload-cli sign-pending -K ~/.asfaload/key -p "$PASSWORD"
+    # non-interactive: sign the first pending file. EXPECTED_DIGEST
+    # comes from a source that you trust, not from list-pending.
+    PENDING_PATH=$(asfaload-cli list-pending --json -K ~/.asfaload/key -p "$PASSWORD" \
+        | jq -r '.pending_files[0].path')
+    asfaload-cli sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
+        --digest "$EXPECTED_DIGEST" "$PENDING_PATH"
 
 ## Exit codes
 

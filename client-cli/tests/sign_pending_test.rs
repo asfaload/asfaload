@@ -62,11 +62,12 @@ fn sign_pending_help_shows_digest_filter_option() {
     cmd.arg("sign-pending").arg("--help");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("digest-filter"));
+        .stdout(predicate::str::contains("--digest"))
+        .stdout(predicate::str::contains("--local-copy"));
 }
 
 // ---------------------------------------------------------------------------
-// --digest-filter with no match: no pending signature error
+// --digest with no match: no pending signature error
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -88,7 +89,7 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
         .arg(fixture_key_path())
         .arg("-u")
         .arg(server.url())
-        .arg("--digest-filter")
+        .arg("--digest")
         .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
 
@@ -98,7 +99,7 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
 }
 
 // ---------------------------------------------------------------------------
-// --digest-filter leaves only the non-targeted file → NoPendingSignature,
+// --digest leaves only the non-targeted file → NoPendingSignature,
 // not "Not a tty", proving the filter ran before the TTY check.
 // ---------------------------------------------------------------------------
 
@@ -121,7 +122,7 @@ fn sign_pending_digest_filter_excludes_non_matching_digest() {
         .arg(fixture_key_path())
         .arg("-u")
         .arg(server.url())
-        .arg("--digest-filter")
+        .arg("--digest")
         .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
 

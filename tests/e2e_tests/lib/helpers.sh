@@ -140,6 +140,7 @@ run_step() {
     fi
 }
 
+# On success, the JSON output of the command is in LAST_STEP_OUTPUT.
 run_step_json() {
     local desc="$1"; shift
     local jq_filter="$1"; shift
@@ -192,6 +193,7 @@ run_step_json() {
 
     printf '%s✓%s %s(%ds)%s\n' "$GREEN" "$RESET" "$DIM" "$elapsed" "$RESET"
     PASS_COUNT=$((PASS_COUNT + 1))
+    LAST_STEP_OUTPUT="$output"
 }
 
 expect_fail() {
@@ -287,45 +289,46 @@ expect_fail_json() {
 
 # ── Pending-file sign helpers ──────────────────────────────────────────────────
 #
-# Query list-pending and return "PATH --digest DIGEST", ready to append to a
-# sign-pending invocation.  The three tokens are word-split by the caller;
-# paths and SHA-512 hex digests contain no spaces, so this is safe.
+# Query list-pending for the path and return "PATH --digest DIGEST", ready to
+# append to a sign-pending invocation.  The three tokens are word-split by the
+# caller; paths and SHA-512 hex digests contain no spaces, so this is safe.
+#
+# list-pending does not give the full digest, and the client must not trust
+# a digest from the backend. The caller gives the expected DIGEST, from the
+# same source as a real signer: get-digest on the signers file, the
+# index_digest of register-assets, or the revocation_digest of revoke.
 
 # Get sign-pending args for a pending file matching a substring pattern.
-# Usage: args=$(pending_sign_args PATTERN KEY BACKEND PASSWORD)
+# Usage: args=$(pending_sign_args PATTERN KEY BACKEND PASSWORD DIGEST)
 #        cargo run -- sign-pending ... $args
 pending_sign_args() {
-    local pattern="$1" key="$2" url="$3" pass="$4"
-    local json path digest
+    local pattern="$1" key="$2" url="$3" pass="$4" digest="$5"
+    local json path
     json=$(cargo run --quiet -- list-pending \
         --secret-key "$key" -u "$url" --password "$pass" --json 2>/dev/null)
     path=$(echo "$json" | jq -r \
         ".pending_files[] | select(.path | contains(\"$pattern\")) | .path" \
         | head -1)
-    digest=$(echo "$json" | jq -r \
-        ".pending_files[] | select(.path | contains(\"$pattern\")) | .digest" \
-        | head -1)
     printf '%s --digest %s' "$path" "$digest"
 }
 
 # Get sign-pending args for the pending signers file.
-# Usage: args=$(pending_signers_sign_args KEY BACKEND PASSWORD)
+# Usage: args=$(pending_signers_sign_args KEY BACKEND PASSWORD DIGEST)
 #        cargo run -- sign-pending ... $args
 pending_signers_sign_args() {
-    pending_sign_args "$PENDING_SIGNERS_DIR" "$1" "$2" "$3"
+    pending_sign_args "$PENDING_SIGNERS_DIR" "$1" "$2" "$3" "$4"
 }
 
 # Get sign-pending args for a release index file.
-# Usage: args=$(release_index_sign_args VERSION KEY BACKEND PASSWORD)
+# Usage: args=$(release_index_sign_args VERSION KEY BACKEND PASSWORD DIGEST)
 #        cargo run -- sign-pending ... $args
 release_index_sign_args() {
-    local version="$1" key="$2" url="$3" pass="$4"
-    local idx_path json path digest
+    local version="$1" key="$2" url="$3" pass="$4" digest="$5"
+    local idx_path json path
     idx_path=$(release_index "$version")
     json=$(cargo run --quiet -- list-pending \
         --secret-key "$key" -u "$url" --password "$pass" --json 2>/dev/null)
     path=$(echo "$json" | jq -r ".pending_files[] | select(.path == \"$idx_path\") | .path")
-    digest=$(echo "$json" | jq -r ".pending_files[] | select(.path == \"$idx_path\") | .digest")
     printf '%s --digest %s' "$path" "$digest"
 }
 

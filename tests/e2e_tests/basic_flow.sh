@@ -152,7 +152,7 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
     cp "$PENDING_SIGNERS_BACKUP" "$PENDING_SIGNERS_FILE"
 fi
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password "$DIGEST")
 
 # Key0 already signed the pending signers file and metadata at registration.
 
@@ -207,6 +207,8 @@ assert_file_not_exists "release v0.1 index after rejected registration" \
 run_step_json "Register release with key2 (which signs it)" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
+# The registering signer gives the digest of the index to the other signers.
+RELEASE_0_1_DIGEST=$(jq -r .index_digest <<<"$LAST_STEP_OUTPUT")
 
 # --- Backend: verify release index created ---
 assert_release_index_exists "0.1"
@@ -278,7 +280,7 @@ run_step_json "List pending for key0 (should show pending release index)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
-RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
+RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password "$RELEASE_0_1_DIGEST")
 run_step_json "Sign release index with key0 (completes, threshold=2)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
@@ -339,7 +341,7 @@ run_step_json "List pending for key1 (should show pending signers, key0 already 
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 
-SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password)
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_1" "$backend" $key_password "$UPDATE_DIGEST")
 
 expect_fail "Attempts to re-sign pending signers with key0 (should fail)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
@@ -396,6 +398,7 @@ section "Registering Release with New Signers File"
 run_step_json "Register second release with key3" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.2)
+RELEASE_0_2_DIGEST=$(jq -r .index_digest <<<"$LAST_STEP_OUTPUT")
 
 # --- Backend: verify second release index created ---
 assert_release_index_exists "0.2"
@@ -422,7 +425,7 @@ run_step_json "List pending for key0 (should show pending release index)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
-RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
+RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password "$RELEASE_0_2_DIGEST")
 run_step_json "Sign release index with key0 (2 of 3 signatures)" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
@@ -454,8 +457,11 @@ assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 expect_fail "revoke index file for v0.1, not authorized" \
     cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
 
-run_step "initiate revoke index file for v0.1" \
+run_step_json "initiate revoke index file for v0.1" \
+    '.success == true' \
     cargo run -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
+# The initiator gives the digest of the revocation document to the other signers.
+REVOCATION_DIGEST=$(jq -r .revocation_digest <<<"$LAST_STEP_OUTPUT")
 
 expect_fail "revoke index file for v0.1 again (already pending)" \
     cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)
@@ -474,7 +480,7 @@ run_step_json "List pending for key5 (one expected, key1 can revoke)" \
     '.pending_files | length == 1' \
     cargo run --quiet -- list-pending --secret-key "$KEY_5" -u "$backend" --password $key_password
 
-REVOCATION_SIGN_ARGS=$(pending_sign_args "$REVOCATION_SUFFIX" "$KEY_5" "$backend" $key_password)
+REVOCATION_SIGN_ARGS=$(pending_sign_args "$REVOCATION_SUFFIX" "$KEY_5" "$backend" $key_password "$REVOCATION_DIGEST")
 run_step "sign pending revocation for v0.1 (second signer via sign-pending)" \
     cargo run -- sign-pending --secret-key "$KEY_5" -p $key_password -u "$backend" $REVOCATION_SIGN_ARGS
 

@@ -318,6 +318,8 @@ run_step_json "Register release via SHA256SUMS (SSH key 1 as submitter)" \
     cargo run --quiet -- register-assets \
         --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
         --csum-file "$CSUM_URL"
+# The registering signer gives the digest of the index to the other signers.
+RELEASE_DIGEST=$(jq -r .index_digest <<<"$LAST_STEP_OUTPUT")
 
 assert_release_index_exists "$RELEASE_VERSION"
 assert_release_index_pending "$RELEASE_VERSION"
@@ -326,7 +328,7 @@ assert_last_commit_contains "$INDEX_FILE"
 # Registration records the submitter's signature, so SSH key 1 has already
 # signed the index: only SSH key 2 still has to sign, and its signature
 # meets the threshold.
-RELEASE_SIGN_ARGS=$(pending_sign_args "$INDEX_FILE" "$SSH_KEY_2" "$backend" "$key_password")
+RELEASE_SIGN_ARGS=$(pending_sign_args "$INDEX_FILE" "$SSH_KEY_2" "$backend" "$key_password" "$RELEASE_DIGEST")
 
 ################################################################################
 section "Sign release index with both SSH keys"

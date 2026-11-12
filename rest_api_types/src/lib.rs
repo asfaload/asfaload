@@ -441,6 +441,27 @@ pub mod models {
         }
     }
 
+    /// Similar to PendingFile but holding only a shortened digest value to the
+    /// use cannot use it for signing, forcing the user to get the digest from the initiator or a
+    /// local copy of the file to be signed.
+    #[derive(Debug, Clone, Serialize)]
+    pub struct SafePendingFile {
+        path: String,
+        short_digest: String,
+    }
+    impl fmt::Display for SafePendingFile {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "path: {}\ndigest: {}\n", self.path, self.short_digest)
+        }
+    }
+    impl SafePendingFile {
+        pub fn path(&self) -> &str {
+            &self.path
+        }
+        pub fn digest(&self) -> &str {
+            &self.short_digest
+        }
+    }
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingFile {
         path: String,
@@ -479,6 +500,34 @@ pub mod models {
                 digest: self.digest().clone(),
             }
         }
+
+        /// Shortens the digest, displaying start and end chars so the user can still check their
+        /// value but they can't use the backend returned value for signing.
+        pub fn shorten(&self) -> SafePendingFile {
+            // length of prefix sha512
+            let prefix_length = 7;
+            // Number of chars we want to display from start and end of checksum
+            let chars_displayed = 8;
+
+            let shorten = |h: &AsfaloadHashes| {
+                let s = h.to_string();
+                format!(
+                    "{}....{}",
+                    &s[..(prefix_length + chars_displayed)],
+                    &s[s.len() - chars_displayed..]
+                )
+            };
+            SafePendingFile {
+                path: self.path.clone(),
+                short_digest: shorten(&self.digest),
+            }
+        }
+    }
+
+    impl From<&PendingFile> for SafePendingFile {
+        fn from(val: &PendingFile) -> SafePendingFile {
+            val.shorten()
+        }
     }
     #[derive(Debug, Clone, Serialize, Deserialize)]
     /// Response to a pending signatures list request.
@@ -488,6 +537,19 @@ pub mod models {
     ///   from the requesting signer
     pub struct ListPendingResponse {
         pub pending_files: Vec<PendingFile>,
+    }
+
+    #[derive(Debug, Clone, Serialize)]
+    pub struct SafeListPendingResponse {
+        pub pending_files: Vec<SafePendingFile>,
+    }
+
+    impl From<ListPendingResponse> for SafeListPendingResponse {
+        fn from(val: ListPendingResponse) -> SafeListPendingResponse {
+            SafeListPendingResponse {
+                pending_files: val.pending_files.iter().map(|f| f.into()).collect(),
+            }
+        }
     }
 
     impl ListPendingResponse {

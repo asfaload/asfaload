@@ -173,8 +173,9 @@ section "Signers Update by Master Key"
 # URL, like register-repo. Use the byte-stable raw URL (see above).
 UPDATE_DIGEST=$(cargo run --quiet -- get-digest --json "$(signers_file_raw "update_with_new_masters")" | jq -r .digest)
 
-expect_fail "Update signers with key5 (not authorized, not in current admin/master)" \
-    cargo run -- update-signers --secret-key "$KEY_5" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file_raw "update_with_new_masters")
+expect_fail_json "Update signers with key5 (not authorized, not in current admin/master)" \
+    '.error | contains("not in the required groups")' \
+    cargo run --quiet -- update-signers --secret-key "$KEY_5" -u "$backend" -p $key_password --digest "$UPDATE_DIGEST" $(signers_file_raw "update_with_new_masters")
 
 run_step_json "Update signers with key3 (master key)" \
     '.success == true' \

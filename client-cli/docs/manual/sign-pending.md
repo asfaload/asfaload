@@ -1,6 +1,6 @@
 # `asfaload-cli sign-pending`
 
-- **Usage**: `asfaload-cli sign-pending [OPTIONS] -K <SECRET_KEY> [<FILE_PATH> --digest <DIGEST>]`
+- **Usage**: `asfaload-cli sign-pending [OPTIONS] -K <SECRET_KEY> <--digest <DIGEST>|--local-copy <PATH>> [FILE_PATH]`
 - **Source**: [`src/commands/sign_pending.rs`](../../src/commands/sign_pending.rs)
 
 Sign a pending file. The command fetches all files associated with the given path from the backend, computes a SHA-512 hash of each, signs them with your secret key, and submits the signatures in a single request.
@@ -13,13 +13,17 @@ Use [`list-pending`](list-pending.md) to discover which files need signing.
 
 Mirror-relative path to the file to sign, as returned by `list-pending`. For example `https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json`. Optional: if omitted, an interactive selector is shown (see below).
 
-`<FILE_PATH>` and `--digest` are tied together: passing one requires the other.
+You must always give the expected digest of the file to sign, with `--digest` or `--local-copy`.
 
 ## Options
 
 ### `--digest <DIGEST>`
 
-The `sha512:<128 hexadecimal characters>` digest of the file to sign, as printed by [`list-pending`](list-pending.md) or [`get-digest`](get-digest.md). Required when `<FILE_PATH>` is given. Before signing, the digest of the fetched file is verified against this value and the command aborts on mismatch.
+The expected `sha512:<128 hexadecimal characters>` digest of the file to sign, as printed by [`list-pending`](list-pending.md) or [`get-digest`](get-digest.md). Before signing, the digest of the fetched file is verified against this value and the command aborts on mismatch. When `<FILE_PATH>` is omitted, the interactive selection shows only the pending files with this digest. Conflicts with `--local-copy`. You must give `--digest` or `--local-copy`.
+
+### `--local-copy <PATH>`
+
+Path to your local copy of the file to sign, for example the signers file that you received from the project. Its SHA-512 digest is the expected digest, and the command uses it as it uses the value of `--digest`. Use this option when you have the file: you then do not have to trust a digest given by the backend. Conflicts with `--digest`.
 
 ### `-K --secret-key <PATH>`
 
@@ -41,10 +45,6 @@ Shell command to run; its standard output is read as the password. Useful for pa
 
 Backend API URL. Defaults to `https://backend.asfaload.com`.
 
-### `--digest-filter <DIGEST>` (`--df`)
-
-Only used when `<FILE_PATH>` is omitted: pre-filters the interactive selection list to pending files matching the given `sha512:<128 hexadecimal characters>` digest. Same value format as `--digest`.
-
 ### `--json`
 
 Emit output as JSON instead of human-readable text.
@@ -62,9 +62,9 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Interactive selection
 
-When `<FILE_PATH>` (and therefore `--digest`) is omitted, the command fetches your pending files and, on a terminal, shows an interactive `Select` prompt. Each proposal shows the file path and its digest. Compare the digest with the expected value before you select the file. Use `↑`/`↓` to move through the list, type to filter it, or use `--digest-filter` to narrow the list beforehand.
+When `<FILE_PATH>` is omitted, the command fetches your pending files and keeps only the files with the expected digest (from `--digest` or `--local-copy`). On a terminal, it shows an interactive `Select` prompt. Each proposal shows the file path and its digest. Use `↑`/`↓` to move through the list, or type to filter it.
 
-If nothing is pending, the command fails with `No pending signature found`. If stdin is not a terminal (e.g. in CI), the command fails with `Not a tty and no path to sign was passed.` — pass `<FILE_PATH>` and `--digest` explicitly in that case.
+If nothing is pending, the command fails with `No pending signature found`. If files are pending, but none has the expected digest, the command fails with `No pending file has the expected digest <DIGEST>`. If stdin is not a terminal (e.g. in CI), the command fails with `Not a tty and no path to sign was passed.` — pass `<FILE_PATH>` explicitly in that case.
 
 ## Output
 
@@ -159,11 +159,13 @@ JSON (with `--json`):
         --digest sha512:2e2fde4e... \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
-    # interactive selection from the pending list
-    asfaload-cli sign-pending -K ~/.asfaload/key
+    # sign a pending signers file, with your local copy of the signers file
+    asfaload-cli sign-pending -K ~/.asfaload/key \
+        --local-copy ./asfaload.signers/index.json \
+        https/github.com/443/acme/repo/asfaload.signers.pending/index.json
 
-    # interactive selection, restricted to one digest
-    asfaload-cli sign-pending -K ~/.asfaload/key --df sha512:2e2fde4e...
+    # interactive selection of the pending files with the expected digest
+    asfaload-cli sign-pending -K ~/.asfaload/key --digest sha512:2e2fde4e...
 
 ## Exit codes
 

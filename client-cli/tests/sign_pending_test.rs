@@ -57,20 +57,21 @@ const FORGE_URL: &str = "https://github.com/acme/tool/raw/main/asfaload.signers/
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sign_pending_help_shows_digest_filter_option() {
+fn sign_pending_help_shows_expected_digest_options() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("sign-pending").arg("--help");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("digest-filter"));
+        .stdout(predicate::str::contains("--digest"))
+        .stdout(predicate::str::contains("--local-copy"));
 }
 
 // ---------------------------------------------------------------------------
-// --digest-filter with no match: no pending signature error
+// --digest with no match: the error names the expected digest
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
+fn sign_pending_digest_no_match_fails_with_no_matching_file() {
     let mut server = mockito::Server::new();
     let _m = server
         .mock("GET", "/v1/pending_signatures")
@@ -88,7 +89,39 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
         .arg(fixture_key_path())
         .arg("-u")
         .arg(server.url())
-        .arg("--digest-filter")
+        .arg("--digest")
+        .arg(DIGEST_NON_MATCHING)
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "No pending file has the expected digest {}",
+            DIGEST_NON_MATCHING
+        )));
+}
+
+// ---------------------------------------------------------------------------
+// Nothing pending at all: no pending signature error
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sign_pending_nothing_pending_fails_with_no_pending() {
+    let mut server = mockito::Server::new();
+    let _m = server
+        .mock("GET", "/v1/pending_signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(pending_response_json(&[]))
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg("--digest")
         .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
 
@@ -98,12 +131,12 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
 }
 
 // ---------------------------------------------------------------------------
-// --digest-filter leaves only the non-targeted file → NoPendingSignature,
+// --digest leaves only the non-targeted files → no matching file error,
 // not "Not a tty", proving the filter ran before the TTY check.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sign_pending_digest_filter_excludes_non_matching_digest() {
+fn sign_pending_digest_excludes_non_matching_digest() {
     let mut server = mockito::Server::new();
     let _m = server
         .mock("GET", "/v1/pending_signatures")
@@ -121,13 +154,16 @@ fn sign_pending_digest_filter_excludes_non_matching_digest() {
         .arg(fixture_key_path())
         .arg("-u")
         .arg(server.url())
-        .arg("--digest-filter")
+        .arg("--digest")
         .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
 
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("No pending signature found"))
+        .stderr(predicate::str::contains(format!(
+            "No pending file has the expected digest {}",
+            DIGEST_NON_MATCHING
+        )))
         .stderr(predicate::str::contains("Not a tty").not());
 }
 
@@ -179,6 +215,216 @@ fn sign_pending_explicit_path_json_incomplete() {
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(stdout, "{\"is_complete\":false}\n");
+}
+
+// ---------------------------------------------------------------------------
+// The expected digest is given with exactly one of --digest and --local-copy
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sign_pending_requires_digest_or_local_copy() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("releases/v1/file-a.tar.gz");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "the following required arguments were not provided",
+        ))
+        .stderr(predicate::str::contains("--digest <DIGEST>|--local-copy"));
+}
+
+#[test]
+fn sign_pending_rejects_digest_with_local_copy() {
+    let local_copy = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(local_copy.path(), b"local copy content").unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("releases/v1/file-a.tar.gz")
+        .arg("--digest")
+        .arg(DIGEST_A)
+        .arg("--local-copy")
+        .arg(local_copy.path());
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn sign_pending_rejects_invalid_expected_digest_input() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let missing_copy = temp_dir.path().join("missing-copy.tar.gz");
+    let empty_copy = temp_dir.path().join("empty-copy.tar.gz");
+    std::fs::write(&empty_copy, b"").unwrap();
+    let missing_copy = missing_copy.to_string_lossy().to_string();
+    let empty_copy = empty_copy.to_string_lossy().to_string();
+
+    // (flag, value, expected error message)
+    let cases = vec![
+        (
+            "--digest",
+            "sha512:not-a-digest".to_string(),
+            "Invalid input: Invalid --digest value".to_string(),
+        ),
+        (
+            "--local-copy",
+            missing_copy.clone(),
+            format!("Invalid input: Invalid --local-copy: File not found at {missing_copy}"),
+        ),
+        (
+            "--local-copy",
+            empty_copy.clone(),
+            format!("Invalid input: Invalid --local-copy: File is empty at {empty_copy}"),
+        ),
+    ];
+
+    for (flag, value, expected_error) in cases {
+        let mut server = mockito::Server::new();
+        let submit = server.mock("POST", "/v1/signatures").expect(0).create();
+
+        let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+        cmd.arg("sign-pending")
+            .arg("-K")
+            .arg(fixture_key_path())
+            .arg("-u")
+            .arg(server.url())
+            .arg("releases/v1/file-a.tar.gz")
+            .arg(flag)
+            .arg(&value)
+            .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+        cmd.assert()
+            .failure()
+            .stderr(predicate::str::contains(expected_error));
+        submit.assert();
+    }
+}
+
+// Mock the backend so that it serves `content` as the file to sign at
+// `file_path`, and accepts the signature.
+fn mock_files_to_sign(
+    server: &mut mockito::Server,
+    file_path: &str,
+    content: &[u8],
+    submitted_signatures: usize,
+) -> (mockito::Mock, mockito::Mock) {
+    let files = server
+        .mock("GET", format!("/v1/files-to-sign/{}", file_path).as_str())
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(files_response_json(&[(file_path, content)]))
+        .create();
+    let signatures = server
+        .mock("POST", "/v1/signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"is_complete":false}"#)
+        .expect(submitted_signatures)
+        .create();
+    (files, signatures)
+}
+
+#[test]
+fn sign_pending_local_copy_matching_file_signs() {
+    let content = b"test file content for local copy signing";
+    let file_path = "releases/v1/file-local-copy.tar.gz";
+    let local_copy = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(local_copy.path(), content).unwrap();
+
+    let mut server = mockito::Server::new();
+    let (_files, signatures) = mock_files_to_sign(&mut server, file_path, content, 1);
+
+    let output = assert_cmd::cargo_bin_cmd!("asfaload-cli")
+        .arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg(file_path)
+        .arg("--local-copy")
+        .arg(local_copy.path())
+        .arg("--json")
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "{\"is_complete\":false}\n"
+    );
+    signatures.assert();
+}
+
+#[test]
+fn sign_pending_local_copy_not_matching_file_is_rejected() {
+    let content = b"content served by the backend";
+    let file_path = "releases/v1/file-local-copy.tar.gz";
+    let local_copy = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(local_copy.path(), b"other content in the local copy").unwrap();
+
+    let mut server = mockito::Server::new();
+    let (_files, signatures) = mock_files_to_sign(&mut server, file_path, content, 0);
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg(file_path)
+        .arg("--local-copy")
+        .arg(local_copy.path())
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "Computed digest ({}) does not match the expected digest ({})",
+            sha512_digest_str(content),
+            sha512_digest_str(b"other content in the local copy")
+        )));
+    signatures.assert();
+}
+
+#[test]
+fn sign_pending_digest_not_matching_file_is_rejected() {
+    let content = b"content served by the backend";
+    let file_path = "releases/v1/file-digest.tar.gz";
+
+    let mut server = mockito::Server::new();
+    let (_files, signatures) = mock_files_to_sign(&mut server, file_path, content, 0);
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg(file_path)
+        .arg("--digest")
+        .arg(DIGEST_NON_MATCHING)
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "Computed digest ({}) does not match the expected digest ({})",
+            sha512_digest_str(content),
+            DIGEST_NON_MATCHING
+        )));
+    signatures.assert();
 }
 
 // ---------------------------------------------------------------------------

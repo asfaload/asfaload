@@ -79,6 +79,11 @@ ALTERNATIVE="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$ALTERNATIVE_NAME"
     -o "$GENUINE" \
     > /dev/null 2>&1
 
+# The local copy of the genuine signers file that a signer keeps, separate
+# from the forge. Its digest is the digest the signer expects to sign.
+SIGNERS_LOCAL_COPY="$WORK_DIR/signers_local_copy.json"
+cp "$GENUINE" "$SIGNERS_LOCAL_COPY"
+
 # The alternative signers file used as tamper content.
 "$CLI" new-signers-file \
     --artifact-signers-file "${KEY_0}.pub" \
@@ -121,6 +126,7 @@ if cmp -s "$PENDING_SIGNERS_FILE" "$PENDING_SIGNERS_ORIGINAL"; then
 fi
 
 MT_RC_EXTRA_EXPORTS+=(
+    "SIGNERS_LOCAL_COPY=$SIGNERS_LOCAL_COPY"
     "PENDING_SIGNERS_FILE=$PENDING_SIGNERS_FILE"
     "PENDING_SIGNERS_ORIGINAL=$PENDING_SIGNERS_ORIGINAL"
 )
@@ -135,6 +141,7 @@ printf '  %-24s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
 printf '  %-24s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
 printf '  %-24s %s\n' "PENDING_SIGNERS_FILE" "$PENDING_SIGNERS_FILE"
 printf '  %-24s %s\n' "PENDING_SIGNERS_ORIGINAL" "$PENDING_SIGNERS_ORIGINAL"
+printf '  %-24s %s\n' "SIGNERS_LOCAL_COPY" "$SIGNERS_LOCAL_COPY"
 printf '\n'
 printf '  The pending signers file served by the backend holds different content\n'
 printf '  than the forge source its metadata points at (the forge still serves\n'
@@ -142,11 +149,19 @@ printf '  the genuine %s).\n' "$GENUINE_NAME"
 printf '\n'
 printf '%s  Try:%s\n' "$BOLD" "$RESET"
 printf '    asfaload-cli list-pending -K $KEY_1\n'
-printf '    asfaload-cli sign-pending -K $KEY_1\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 --local-copy $SIGNERS_LOCAL_COPY\n'
 printf '\n'
-printf '%s  Expected:%s signing is rejected with a Hash mismatch error:\n' "$BOLD" "$RESET"
-printf '  the client detects that the file differs from the forge source, even\n'
-printf '  though the digest reported by list-pending matches the tampered file.\n'
+printf '%s  Expected:%s signing is rejected with a No pending file has the\n' "$BOLD" "$RESET"
+printf '  expected digest error: no pending file has the digest of your local\n'
+printf '  copy.\n'
+printf '\n'
+printf '%s  Forge check variant%s (trust the digest reported by list-pending):\n' "$BOLD" "$RESET"
+printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_1 --json | \\\n'
+printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 $_ARGS\n'
+printf '  Signing is then rejected with a Hash mismatch error: the client\n'
+printf '  detects that the file differs from the forge source, even though the\n'
+printf '  digest reported by list-pending matches the tampered file.\n'
 printf '\n'
 printf '%s  Restore the genuine content to sign successfully:%s\n' "$BOLD" "$RESET"
 printf '    cp $PENDING_SIGNERS_ORIGINAL $PENDING_SIGNERS_FILE\n'

@@ -45,7 +45,9 @@ EXAMPLES
   # Inside the spawned shell (key0 already signed at submission; sign as
   # another signer, key1 or key2):
   asfaload-cli list-pending -K \$KEY_1
-  asfaload-cli sign-pending -K \$KEY_1
+  _ARGS=\$(asfaload-cli list-pending -K \$KEY_1 --json | \\
+      jq -r '.pending_files[0] | "\(.path) --digest \(.digest)"')
+  asfaload-cli sign-pending -K \$KEY_1 \$_ARGS
 EOF
 }
 
@@ -176,7 +178,11 @@ printf '%s  Try:%s\n' "$BOLD" "$RESET"
 printf '  Sign the pending releases as key1 (key0 already signed them with\n'
 printf '  their registration):\n'
 printf '    asfaload-cli list-pending -K $KEY_1\n'
-printf '    asfaload-cli sign-pending -K $KEY_1\n'
+printf '  sign-pending requires the digest of the file to sign. Take the path\n'
+printf '  and the digest of a pending file from the list-pending output:\n'
+printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_1 --json | \\\n'
+printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 $_ARGS\n'
 printf '\n'
 printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"

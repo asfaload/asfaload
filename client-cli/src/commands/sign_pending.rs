@@ -139,7 +139,7 @@ pub async fn handle_sign_pending_sec_key(
         // are signed without digest pre-verification since pending_file.digest() covers
         // only the primary file.
         if *path == pending_file.path() && hash != *pending_file.digest() {
-            return Err(crate::error::ClientCliError::ServerDigestError(
+            return Err(crate::error::ClientCliError::ExpectedDigestMismatch(
                 hash.to_string(),
                 pending_file.digest().clone(),
             ));

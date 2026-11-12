@@ -57,8 +57,11 @@ pub enum ClientCliError {
     #[error("No pending signature found")]
     NoPendingSignature,
 
-    #[error("Computed digest ({0}) does not match the digest advertised by the server ({1})")]
-    ServerDigestError(String, AsfaloadHashes),
+    #[error("No pending file has the expected digest {0}")]
+    NoPendingFileWithDigest(AsfaloadHashes),
+
+    #[error("Computed digest ({0}) does not match the expected digest ({1})")]
+    ExpectedDigestMismatch(String, AsfaloadHashes),
 
     #[error("Index validation failed: {0}")]
     IndexValidation(#[from] common::index_validation::IndexValidationError),

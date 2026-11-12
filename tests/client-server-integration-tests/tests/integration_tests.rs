@@ -474,8 +474,8 @@ mod tests {
         .expect_err("Should fail due to digest mismatch");
 
         assert!(
-            matches!(err, ClientCliError::ServerDigestError(..)),
-            "Expected ServerDigestError, got: {:?}",
+            matches!(err, ClientCliError::ExpectedDigestMismatch(..)),
+            "Expected ExpectedDigestMismatch, got: {:?}",
             err
         );
     }

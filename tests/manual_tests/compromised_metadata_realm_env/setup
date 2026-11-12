@@ -127,6 +127,11 @@ GENUINE="$PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
     -o "$GENUINE" \
     > /dev/null 2>&1
 
+# The local copy of the genuine signers file that a signer keeps, separate
+# from the forge. Its digest is the digest the signer expects to sign.
+SIGNERS_LOCAL_COPY="$WORK_DIR/signers_local_copy.json"
+cp "$GENUINE" "$SIGNERS_LOCAL_COPY"
+
 # The attacker mirrors the genuine signers file on their own server: the
 # content is identical, only the location differs.
 cp "$GENUINE" "$EVIL_FS_ROOT/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
@@ -169,6 +174,7 @@ if [[ "$CURRENT_URL" != "$TAMPERED_URL" ]]; then
 fi
 
 MT_RC_EXTRA_EXPORTS+=(
+    "SIGNERS_LOCAL_COPY=$SIGNERS_LOCAL_COPY"
     "METADATA_FILE=$METADATA_FILE"
     "METADATA_ORIGINAL=$METADATA_ORIGINAL"
     "EVIL_SERVER_URL=$EVIL_SERVER_URL"
@@ -192,6 +198,7 @@ printf '  %-20s %s\n' "EVIL_SERVER_URL" "$EVIL_SERVER_URL"
 printf '  %-20s %s\n' "EVIL_SERVER_LOG" "$EVIL_SERVER_LOG"
 printf '  %-20s %s\n' "METADATA_FILE" "$METADATA_FILE"
 printf '  %-20s %s\n' "METADATA_ORIGINAL" "$METADATA_ORIGINAL"
+printf '  %-20s %s\n' "SIGNERS_LOCAL_COPY" "$SIGNERS_LOCAL_COPY"
 printf '\n'
 printf '  The pending signers file content is genuine, and the retrieval_url\n'
 printf '  in its metadata now points at %s,\n' "$EVIL_SERVER_URL"
@@ -203,7 +210,7 @@ printf '%s  Try:%s\n' "$BOLD" "$RESET"
 printf '    asfaload-cli list-pending -K $KEY_1\n'
 printf '    asfaload-cli check-pending-signers $PENDING_SIGNERS_PATH \\\n'
 printf '      -u $ASFALOAD_BACKEND_URL\n'
-printf '    asfaload-cli sign-pending -K $KEY_1\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 --local-copy $SIGNERS_LOCAL_COPY\n'
 printf '\n'
 printf '%s  Expected:%s check-pending-signers and sign-pending are rejected\n' "$BOLD" "$RESET"
 printf '  with an error of this shape:\n'

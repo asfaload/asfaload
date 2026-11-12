@@ -142,10 +142,12 @@ printf '    asfaload-cli register-repo -K $KEY_0 --digest <DIGEST> $SIGNERS_FILE
 printf '\n'
 printf '%s  4. Sign the signers file to activate it%s\n' "$BOLD" "$RESET"
 printf '  All signers must sign the initial signers file. The submitter (key0)\n'
-printf '  signed it with the registration. Sign it with the other signers:\n'
+printf '  signed it with the registration. Sign it with the other signers.\n'
+printf '  The signers file you generated in step 1 is the local copy: its\n'
+printf '  digest is the digest that you expect to sign:\n'
 printf '    asfaload-cli list-pending -K $KEY_1\n'
-printf '    asfaload-cli sign-pending -K $KEY_1\n'
-printf '    asfaload-cli sign-pending -K $KEY_2\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 --local-copy $SIGNERS_FILE_PATH\n'
+printf '    asfaload-cli sign-pending -K $KEY_2 --local-copy $SIGNERS_FILE_PATH\n'
 printf '\n'
 printf '%s  5. Optional: register a release%s\n' "$BOLD" "$RESET"
 printf '    asfaload-cli register-assets -K $KEY_0 --csum-file $RELEASES_URL/v0.1/SHA256SUMS\n'

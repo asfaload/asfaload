@@ -163,7 +163,10 @@ PENDING_SIGNERS_PATH="http/localhost/${FILE_SERVER_PORT}/project/$PENDING_SIGNER
 cp "$METADATA_FILE" "$METADATA_ORIGINAL"
 TAMPERED_URL="$EVIL_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$GENUINE_NAME"
 
-jq --arg url "$TAMPERED_URL" \
+# Write the metadata in its canonical form (compact, same key order, one
+# trailing newline): the client rejects metadata in another form before it
+# checks the retrieval_url.
+jq -c --arg url "$TAMPERED_URL" \
     '.verified_content.retrieval_url = $url' \
     "$METADATA_ORIGINAL" > "$METADATA_FILE"
 

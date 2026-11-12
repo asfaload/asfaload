@@ -120,7 +120,10 @@ METADATA_ORIGINAL="$WORK_DIR/metadata_original.json"
 cp "$METADATA_FILE" "$METADATA_ORIGINAL"
 TAMPERED_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$ALTERNATIVE_NAME"
 
-jq --arg url "$TAMPERED_URL" \
+# Write the metadata in its canonical form (compact, same key order, one
+# trailing newline): the client rejects metadata in another form before it
+# checks the retrieval_url.
+jq -c --arg url "$TAMPERED_URL" \
     '.verified_content.retrieval_url = $url' \
     "$METADATA_ORIGINAL" > "$METADATA_FILE"
 
@@ -160,7 +163,7 @@ printf '  client fetches the source at the tampered retrieval_url and detects\n'
 printf '  that it differs from the file it is asked to sign.\n'
 printf '\n'
 printf '%s  Fetch failure variant%s (source does not exist):\n' "$BOLD" "$RESET"
-printf '    jq --arg url "$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/nonexistent%s.json" \\\n' "${_SIGNERS_SUFFIX}"
+printf '    jq -c --arg url "$FILE_SERVER_URL/project/%s/nonexistent%s.json" \\\n' "$HIDDEN_SIGNERS_DIR" "${_SIGNERS_SUFFIX}"
 printf '      '"'"'.verified_content.retrieval_url = $url'"'"' \\\n'
 printf '      $METADATA_ORIGINAL > $METADATA_FILE\n'
 printf '  Signing is then rejected with a Failed to fetch signers source error.\n'

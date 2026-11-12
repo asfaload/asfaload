@@ -23,6 +23,17 @@ pub struct PasswordArgs {
 }
 
 #[derive(clap::Args, Debug)]
+#[group(id = "expected_digest", multiple = false, required = true)]
+pub struct DigestArgs {
+    /// Expected digest of the file to sign, format sha512:<hex> (as printed by get-digest).
+    #[arg(long)]
+    pub digest: Option<String>,
+
+    /// Path to a local copy of the file to sign. Its digest is the expected value.
+    #[arg(long, value_name = "PATH")]
+    pub local_copy: Option<String>,
+}
+#[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
     /// Path to your secret key file (asfaload or OpenSSH ed25519)
     #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
@@ -219,11 +230,7 @@ pub enum Commands {
     /// Sign a pending file (fetch, sign, submit)
     SignPending {
         /// Path to the pending file (relative path in mirror). Prompted for select if missing.
-        #[arg(requires = "digest")]
         file_path: Option<String>,
-
-        #[arg(long, requires = "file_path")]
-        digest: Option<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,
@@ -235,7 +242,7 @@ pub enum Commands {
         backend_url_args: BackendUrlArgs,
 
         #[command(flatten)]
-        digest_filter: DigestFilter,
+        digest_args: DigestArgs,
 
         #[command(flatten)]
         json_args: JsonArgs,

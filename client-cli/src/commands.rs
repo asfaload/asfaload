@@ -17,7 +17,6 @@ pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
-use common::AsfaloadHashes;
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use rest_api_types::models::ClientPendingFile;
 
@@ -190,11 +189,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::SignPending {
             file_path: file_path_in,
-            digest,
             secret_key_args,
             password_args,
             backend_url_args,
-            digest_filter,
+            digest_args,
             json_args,
         } => {
             let password = get_password(
@@ -213,18 +211,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let digest_to_sign =
+                expected_digest(digest_args.digest.clone(), digest_args.local_copy.clone())?;
 
             let runtime = tokio::runtime::Runtime::new()?;
             let pending_file = match file_path_in {
-                Some(p) => {
-                    // If we have a file_path_in, clap enforces the presence of a digest too.
-                    let parsed = digest
-                        .as_deref()
-                        .unwrap()
-                        .parse::<AsfaloadHashes>()
-                        .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
-                    ClientPendingFile::new(p.clone(), parsed)
-                }
+                Some(p) => ClientPendingFile::new(p.clone(), digest_to_sign),
                 None => {
                     // need to select interactively as no path passed on command line.
                     // This path is currently not tested, but it uses tested components.
@@ -233,15 +225,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     let client = admin_lib::v1::Client::new(url.clone());
                     let server_response =
                         runtime.block_on(client.get_pending_signatures(&secret_key))?;
-                    let response = match digest_filter.digest_filter.as_deref() {
-                        Some(s) => {
-                            let parsed = s
-                                .parse::<AsfaloadHashes>()
-                                .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
-                            server_response.filter(&parsed)
-                        }
-                        None => server_response,
-                    };
+                    let response = server_response.filter(&digest_to_sign);
                     // Inquired formats proposals according to the Display implementation for PendingFile,
                     let proposals = response.pending_files;
 

@@ -12,9 +12,12 @@ If a release needs to be recalled — a vulnerability was found, or the wrong ar
 
 ### 1. Initiate the revocation
 
+Give the expected digest of the release index with `--digest`. Get it from a trusted source, for example the `register-assets` output when the release was registered. Do not take it from the backend. You can also give your local copy of the index with `--local-copy`. The command compares the digest of the index on the backend with the expected digest, and stops if they are not the same.
+
 ```sh
 asfaload-cli revoke \
     --secret-key ~/.asfaload/revoke-key \
+    --digest sha512:7d4a1c90... \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 

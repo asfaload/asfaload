@@ -5,9 +5,11 @@ set -euo pipefail
 # content of the pending signers file with different (still valid) signers
 # content.
 #
-# list-pending computes the digest from the tampered file on disk, so the
-# client's digest pre-check passes: only the validation of the pending signers
-# file against the forge source recorded in its metadata rejects the signing.
+# A signer that gives the digest of its local copy of the genuine file finds
+# no pending file with that digest. A signer that gives the digest of the
+# tampered file passes the client's digest pre-check: only the validation of
+# the pending signers file against the forge source recorded in its metadata
+# rejects the signing.
 #
 # Start with: ./setup
 # Type 'exit' in the spawned shell to stop all servers and clean up.
@@ -155,13 +157,12 @@ printf '%s  Expected:%s signing is rejected with a No pending file has the\n' "$
 printf '  expected digest error: no pending file has the digest of your local\n'
 printf '  copy.\n'
 printf '\n'
-printf '%s  Forge check variant%s (trust the digest reported by list-pending):\n' "$BOLD" "$RESET"
-printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_1 --json | \\\n'
-printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
-printf '    asfaload-cli sign-pending -K $KEY_1 $_ARGS\n'
+printf '%s  Forge check variant%s (give the digest of the tampered file):\n' "$BOLD" "$RESET"
+printf '    asfaload-cli sign-pending -K $KEY_1 \\\n'
+printf '        --digest $(asfaload-cli get-digest $PENDING_SIGNERS_FILE)\n'
 printf '  Signing is then rejected with a Hash mismatch error: the client\n'
 printf '  detects that the file differs from the forge source, even though the\n'
-printf '  digest reported by list-pending matches the tampered file.\n'
+printf '  digest that you gave matches the tampered file.\n'
 printf '\n'
 printf '%s  Restore the genuine content to sign successfully:%s\n' "$BOLD" "$RESET"
 printf '    cp $PENDING_SIGNERS_ORIGINAL $PENDING_SIGNERS_FILE\n'

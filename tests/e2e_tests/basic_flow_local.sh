@@ -587,19 +587,21 @@ assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 
 # --- Revoke release 0.1 ---
 
-expect_fail "revoke index file for v0.1, not authorized" \
-    cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
+expect_fail_json "revoke index file for v0.1, not authorized" \
+    '.error | contains("not authorized to revoke")' \
+    cargo run --quiet -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" --digest "$RELEASE_0_1_DIGEST" $(release_index 0.1)
 
 pk5="$(pubkey_of "$KEY_5")"
 pk6="$(pubkey_of "$KEY_6")"
 run_step_json "initiate revoke index file for v0.1 (pending, KEY_5 and KEY_6 can still sign)" \
     ".required_signers | length == 2 and any(. == \"$pk5\") and any(. == \"$pk6\")" \
-    cargo run --quiet -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
+    cargo run --quiet -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" --digest "$RELEASE_0_1_DIGEST" $(release_index 0.1)
 # The initiator gives the digest of the revocation document to the other signers.
 REVOCATION_DIGEST=$(jq -r .revocation_digest <<<"$LAST_STEP_OUTPUT")
 
-expect_fail "revoke index file for v0.1 again (already pending)" \
-    cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)
+expect_fail_json "revoke index file for v0.1 again (already pending)" \
+    '.error | contains("pending revocation already exists")' \
+    cargo run --quiet -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" --digest "$RELEASE_0_1_DIGEST" $(release_index 0.1)
 
 DOWNLOAD_V01_bis="$(mktemp)"
 to_delete_on_filesystem+=("$DOWNLOAD_V01_bis")

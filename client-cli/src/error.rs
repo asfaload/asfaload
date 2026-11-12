@@ -57,6 +57,9 @@ pub enum ClientCliError {
     #[error("No pending signature found")]
     NoPendingSignature,
 
+    #[error("No pending file has the expected digest {0}")]
+    NoPendingFileWithDigest(AsfaloadHashes),
+
     #[error("Computed digest ({0}) does not match the digest advertised by the server ({1})")]
     ServerDigestError(String, AsfaloadHashes),
 

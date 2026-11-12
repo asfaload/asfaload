@@ -151,8 +151,9 @@ printf '%s  Try:%s\n' "$BOLD" "$RESET"
 printf '    asfaload-cli list-pending -K $KEY_1\n'
 printf '    asfaload-cli sign-pending -K $KEY_1 --local-copy $SIGNERS_LOCAL_COPY\n'
 printf '\n'
-printf '%s  Expected:%s signing is rejected with a No pending signature found\n' "$BOLD" "$RESET"
-printf '  error: no pending file has the digest of your local copy.\n'
+printf '%s  Expected:%s signing is rejected with a No pending file has the\n' "$BOLD" "$RESET"
+printf '  expected digest error: no pending file has the digest of your local\n'
+printf '  copy.\n'
 printf '\n'
 printf '%s  Forge check variant%s (trust the digest reported by list-pending):\n' "$BOLD" "$RESET"
 printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_1 --json | \\\n'

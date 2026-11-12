@@ -67,7 +67,7 @@ fn sign_pending_help_shows_digest_filter_option() {
 }
 
 // ---------------------------------------------------------------------------
-// --digest with no match: no pending signature error
+// --digest with no match: the error names the expected digest
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -95,11 +95,43 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
 
     cmd.assert()
         .failure()
+        .stderr(predicate::str::contains(format!(
+            "No pending file has the expected digest {}",
+            DIGEST_NON_MATCHING
+        )));
+}
+
+// ---------------------------------------------------------------------------
+// Nothing pending at all: no pending signature error
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sign_pending_nothing_pending_fails_with_no_pending() {
+    let mut server = mockito::Server::new();
+    let _m = server
+        .mock("GET", "/v1/pending_signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(pending_response_json(&[]))
+        .create();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("sign-pending")
+        .arg("-K")
+        .arg(fixture_key_path())
+        .arg("-u")
+        .arg(server.url())
+        .arg("--digest")
+        .arg(DIGEST_NON_MATCHING)
+        .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
+
+    cmd.assert()
+        .failure()
         .stderr(predicate::str::contains("No pending signature found"));
 }
 
 // ---------------------------------------------------------------------------
-// --digest leaves only the non-targeted file → NoPendingSignature,
+// --digest leaves only the non-targeted files → no matching file error,
 // not "Not a tty", proving the filter ran before the TTY check.
 // ---------------------------------------------------------------------------
 
@@ -128,7 +160,10 @@ fn sign_pending_digest_filter_excludes_non_matching_digest() {
 
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("No pending signature found"))
+        .stderr(predicate::str::contains(format!(
+            "No pending file has the expected digest {}",
+            DIGEST_NON_MATCHING
+        )))
         .stderr(predicate::str::contains("Not a tty").not());
 }
 

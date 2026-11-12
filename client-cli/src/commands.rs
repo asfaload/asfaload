@@ -230,7 +230,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     let proposals = response.pending_files;
 
                     if proposals.is_empty() {
-                        return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
+                        let error = if server_response.pending_files.is_empty() {
+                            ClientCliError::NoPendingSignature
+                        } else {
+                            ClientCliError::NoPendingFileWithDigest(digest_to_sign)
+                        };
+                        return Err(anyhow::Error::new(error));
                     } else if std::io::stdin().is_terminal() {
                         match inquire::Select::new("File to sign", proposals).prompt() {
                             Ok(choice) => choice.unseal(),

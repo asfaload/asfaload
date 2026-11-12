@@ -60,7 +60,7 @@ pub enum ClientCliError {
     #[error("No pending file has the expected digest {0}")]
     NoPendingFileWithDigest(AsfaloadHashes),
 
-    #[error("Computed digest ({0}) does not match the digest advertised by the server ({1})")]
+    #[error("Computed digest ({0}) does not match the expected digest ({1})")]
     ServerDigestError(String, AsfaloadHashes),
 
     #[error("Index validation failed: {0}")]

@@ -296,7 +296,7 @@ run_step_json "List pending for key1" \
 SIGNERS_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNERS_SUFFIX}.json"
 OTHER_SIGNERS_LOCAL_COPY="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
 expect_fail_json "Sign signers file with a local copy of another signers file" \
-    '.error | contains("does not match the digest")' \
+    '.error | contains("does not match the expected digest")' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password --local-copy "$OTHER_SIGNERS_LOCAL_COPY" $(pending_signers_file)
 expect_fail_json "Interactive sign-pending with a local copy of another signers file" \
     '.error | startswith("No pending file has the expected digest")' \

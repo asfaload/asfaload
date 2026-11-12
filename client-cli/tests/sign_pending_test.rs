@@ -391,8 +391,9 @@ fn sign_pending_local_copy_not_matching_file_is_rejected() {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains(format!(
-            "Computed digest ({}) does not match",
-            sha512_digest_str(content)
+            "Computed digest ({}) does not match the expected digest ({})",
+            sha512_digest_str(content),
+            sha512_digest_str(b"other content in the local copy")
         )));
     signatures.assert();
 }

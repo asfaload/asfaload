@@ -45,9 +45,7 @@ EXAMPLES
   # Inside the spawned shell (key0 already signed at submission; sign as
   # another signer, key1 or key2):
   asfaload-cli list-pending -K \$KEY_1
-  _ARGS=\$(asfaload-cli list-pending -K \$KEY_1 --json | \\
-      jq -r '.pending_files[0] | "\(.path) --digest \(.digest)"')
-  asfaload-cli sign-pending -K \$KEY_1 \$_ARGS
+  asfaload-cli sign-pending -K \$KEY_1 --digest \$RELEASE_V0_1_INDEX_DIGEST
 EOF
 }
 
@@ -122,9 +120,6 @@ _PENDING_JSON=$("$CLI" list-pending \
 _PENDING_PATH=$(echo "$_PENDING_JSON" | jq -r \
     --arg pat "$PENDING_SIGNERS_DIR" \
     '.pending_files[] | select(.path | contains($pat)) | .path' | head -1)
-_PENDING_DIGEST=$(echo "$_PENDING_JSON" | jq -r \
-    --arg pat "$PENDING_SIGNERS_DIR" \
-    '.pending_files[] | select(.path | contains($pat)) | .digest' | head -1)
 
 # All three signers must sign the initial signers file to activate it. The
 # submitter (key0) already signed it at registration, so only key1 and key2
@@ -133,10 +128,10 @@ for _KEY in "$KEY_1" "$KEY_2"; do
     "$CLI" sign-pending \
         --secret-key "$_KEY" \
         -u "$BACKEND_URL" \
-        "$_PENDING_PATH" --digest "$_PENDING_DIGEST" \
+        "$_PENDING_PATH" --digest "$DIGEST" \
         --json > /dev/null
 done
-unset _KEY _PENDING_JSON _PENDING_PATH _PENDING_DIGEST
+unset _KEY _PENDING_JSON _PENDING_PATH
 
 printf '%s✓%s\n' "$GREEN" "$RESET"
 
@@ -149,13 +144,14 @@ for _I in $(seq 1 "$PENDING_COUNT"); do
     dd if=/dev/urandom of="$RELEASE_DIR/artifact.bin" bs=1024 count=4 2>/dev/null
     (cd "$RELEASE_DIR" && sha256sum artifact.bin > SHA256SUMS)
 
-    "$CLI" register-assets \
+    _INDEX_DIGEST=$("$CLI" register-assets \
         --secret-key "$KEY_0" \
         -u "$BACKEND_URL" \
         --csum-file "$FILE_SERVER_URL/project/releases/v0.$_I/SHA256SUMS" \
-        --json > /dev/null
+        --json | jq -r .index_digest)
+    MT_RC_EXTRA_EXPORTS+=("RELEASE_V0_${_I}_INDEX_DIGEST=$_INDEX_DIGEST")
 done
-unset _I RELEASE_DIR
+unset _I RELEASE_DIR _INDEX_DIGEST
 
 printf '%s✓%s\n' "$GREEN" "$RESET"
 
@@ -178,11 +174,10 @@ printf '%s  Try:%s\n' "$BOLD" "$RESET"
 printf '  Sign the pending releases as key1 (key0 already signed them with\n'
 printf '  their registration):\n'
 printf '    asfaload-cli list-pending -K $KEY_1\n'
-printf '  sign-pending requires the digest of the file to sign. Take the path\n'
-printf '  and the digest of a pending file from the list-pending output:\n'
-printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_1 --json | \\\n'
-printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
-printf '    asfaload-cli sign-pending -K $KEY_1 $_ARGS\n'
+printf '  sign-pending requires the digest of the file to sign. Do not take it\n'
+printf '  from the backend: RELEASE_V0_<N>_INDEX_DIGEST is the index_digest that\n'
+printf '  register-assets gave for release v0.<N>:\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 --digest $RELEASE_V0_1_INDEX_DIGEST\n'
 printf '\n'
 printf '%s  Type '"'"'exit'"'"' to stop servers and clean up.%s\n' "$DIM" "$RESET"
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"

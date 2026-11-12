@@ -35,6 +35,8 @@ The new shell has these variables:
 - `BACKEND_REPO`: the backend git repository
 - `RELEASE_URL_V01`, `RELEASE_URL_V02`: GitHub release URLs
 - `RELEASE_INDEX_V01`, `RELEASE_INDEX_V02`: mirror-relative index paths
+- `RELEASE_INDEX_V02_DIGEST`: the `index_digest` that `register-assets`
+  gave for `v0.2`
 - `ARTIFACT_URL_V01`, `ARTIFACT_URL_V02`: GitHub download URLs
 
 Example commands:
@@ -51,11 +53,17 @@ Expected results:
 - The download of `v0.2` fails because the index is not signed.
 - `list-pending` shows the index of `v0.2`.
 
-To sign the index of `v0.2` (two more signatures are needed, as `key_2`
-already signed it with the registration):
+To sign the index of `v0.2` (one more signature is needed, as `key_2`
+already signed it with the registration and the threshold is 2), run
+`sign-pending` with `key_0`:
 
-1. Obtain the path and the digest from the `list-pending` output.
-2. Run `sign-pending` with `key_0`, then again with `key_1`.
+```
+asfaload-cli sign-pending -K $KEY_0 $RELEASE_INDEX_V02 --digest $RELEASE_INDEX_V02_DIGEST
+```
+
+Do not take the digest from the `list-pending` output. `list-pending`
+gives only a short digest, and a signer must not trust a digest from the
+backend.
 
 ## Stop
 

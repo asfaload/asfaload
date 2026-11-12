@@ -52,6 +52,7 @@ ENVIRONMENT SET IN SPAWNED SHELL
   BACKEND_REPO           Backend git repo working tree (mirror content)
   RELEASE_URL_V01/V02    GitHub release URLs for v0.1 and v0.2
   RELEASE_INDEX_V01/V02  Mirror-relative index paths for v0.1 and v0.2
+  RELEASE_INDEX_V02_DIGEST  index_digest that register-assets gave for v0.2
   ARTIFACT_URL_V01/V02   GitHub download URLs for the release artifacts
   PATH                   target/debug prepended (asfaload-cli available directly)
 EOF
@@ -77,17 +78,18 @@ mt_start_backend
 
 # Locate a pending file by mirror-path substring and print "PATH --digest D",
 # ready to append to a sign-pending invocation.
+# list-pending does not give the full digest, and a signer must not trust a
+# digest from the backend. The caller gives the expected DIGEST, from the
+# same source as a real signer: get-digest on the signers file, or the
+# index_digest of register-assets.
 mt_pending_sign_args() {
-    local pattern="$1" key="$2"
-    local json path digest
+    local pattern="$1" key="$2" digest="$3"
+    local json path
     json=$("$CLI" list-pending --secret-key "$key" -u "$BACKEND_URL" --json)
     path=$(echo "$json" | jq -r \
         ".pending_files[] | select(.path | contains(\"$pattern\")) | .path" \
         | head -1)
-    digest=$(echo "$json" | jq -r \
-        ".pending_files[] | select(.path | contains(\"$pattern\")) | .digest" \
-        | head -1)
-    if [[ -z "$path" || -z "$digest" ]]; then
+    if [[ -z "$path" ]]; then
         printf '%sSetup failed: no pending file matching %s%s\n' "$RED" "$pattern" "$RESET" >&2
         exit 1
     fi
@@ -117,7 +119,7 @@ DIGEST=$("$CLI" get-digest --json "$(signers_file_raw 1)" | jq -r .digest)
 # submitter (key0) already signed it at registration, so only key1 and key2
 # sign here.
 for _KEY in "$KEY_1" "$KEY_2"; do
-    _ARGS=$(mt_pending_sign_args "$PENDING_SIGNERS_DIR" "$_KEY")
+    _ARGS=$(mt_pending_sign_args "$PENDING_SIGNERS_DIR" "$_KEY" "$DIGEST")
     "$CLI" sign-pending \
         --secret-key "$_KEY" \
         -u "$BACKEND_URL" \
@@ -132,11 +134,11 @@ printf '%s✓%s\n' "$GREEN" "$RESET"
 
 printf '%sRegistering and signing release v0.1...%s ' "$DIM" "$RESET"
 
-"$CLI" register-assets \
+V01_INDEX_DIGEST=$("$CLI" register-assets \
     --secret-key "$KEY_2" \
     -u "$BACKEND_URL" \
     --github-release-url "$(release_url 0.1)" \
-    --json > /dev/null
+    --json | jq -r .index_digest)
 
 # Release v0.1 is registered by key2, whose signature is recorded with the
 # registration. One more signature (key0) brings the index to its threshold
@@ -144,7 +146,7 @@ printf '%sRegistering and signing release v0.1...%s ' "$DIM" "$RESET"
 "$CLI" sign-pending \
     --secret-key "$KEY_0" \
     -u "$BACKEND_URL" \
-    $(mt_pending_sign_args "$(release_index 0.1)" "$KEY_0") \
+    $(mt_pending_sign_args "$(release_index 0.1)" "$KEY_0" "$V01_INDEX_DIGEST") \
     --json > /dev/null
 
 V01_INDEX_FILE="$BACKEND_PROJECT_DIR/releases/tag/v0.1/$INDEX_FILE"
@@ -159,11 +161,13 @@ printf '%s✓%s\n' "$GREEN" "$RESET"
 
 printf '%sRegistering release v0.2 (unsigned)...%s ' "$DIM" "$RESET"
 
-"$CLI" register-assets \
+# The signers of v0.2 give this index_digest to sign-pending. It is exported
+# in the spawned shell.
+V02_INDEX_DIGEST=$("$CLI" register-assets \
     --secret-key "$KEY_2" \
     -u "$BACKEND_URL" \
     --github-release-url "$(release_url 0.2)" \
-    --json > /dev/null
+    --json | jq -r .index_digest)
 
 V02_INDEX_FILE="$BACKEND_PROJECT_DIR/releases/tag/v0.2/$INDEX_FILE"
 if [[ ! -f "$V02_INDEX_FILE.signatures.json.pending" || -f "$V02_INDEX_FILE.signatures.json" ]]; then
@@ -183,6 +187,7 @@ MT_RC_EXTRA_EXPORTS+=(
     "RELEASE_INDEX_V02=$(release_index 0.2)"
     "RELEASE_INDEX_V01_FILE=$V01_INDEX_FILE"
     "RELEASE_INDEX_V02_FILE=$V02_INDEX_FILE"
+    "RELEASE_INDEX_V02_DIGEST=$V02_INDEX_DIGEST"
     "ARTIFACT_URL_V01=$(artifact_url 0.1)"
     "ARTIFACT_URL_V02=$(artifact_url 0.2)"
 )
@@ -212,10 +217,8 @@ printf '%s  Expected:%s the v0.1 download succeeds (index complete), the v0.2\n'
 printf '  download fails (unsigned), and list-pending shows the v0.2 index.\n'
 printf '  Sign the v0.2 index with two more keys (key2 already signed it with\n'
 printf '  its registration) to activate it:\n'
-printf '    _ARGS=$(asfaload-cli list-pending -K $KEY_0 --json | \\\n'
-printf '        jq -r '"'"'.pending_files[0] | "\\(.path) --digest \\(.digest)"'"'"')\n'
-printf '    asfaload-cli sign-pending -K $KEY_0 $_ARGS\n'
-printf '    asfaload-cli sign-pending -K $KEY_1 $_ARGS\n'
+printf '    asfaload-cli sign-pending -K $KEY_0 $RELEASE_INDEX_V02 --digest $RELEASE_INDEX_V02_DIGEST\n'
+printf '    asfaload-cli sign-pending -K $KEY_1 $RELEASE_INDEX_V02 --digest $RELEASE_INDEX_V02_DIGEST\n'
 printf '\n'
 printf '%s  Type '"'"'exit'"'"' to stop the backend and clean up.%s\n' "$DIM" "$RESET"
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "$BOLD" "$RESET"

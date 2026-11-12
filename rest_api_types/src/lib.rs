@@ -1127,4 +1127,76 @@ mod tests {
         assert_eq!(parsed, response);
         Ok(())
     }
+
+    // PendingFile::shorten tests
+    // --------------------------
+
+    const SHORTEN_TEST_PATH: &str = "github.com/owner/repo/releases/v1.0/asfaload.index.json";
+
+    fn pending_file_with_digest(digest: &str) -> anyhow::Result<models::PendingFile> {
+        Ok(serde_json::from_value(serde_json::json!({
+            "path": SHORTEN_TEST_PATH,
+            "digest": digest,
+        }))?)
+    }
+
+    #[test]
+    fn test_shorten_keeps_prefix_and_suffix_of_digest() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let safe = pending_file_with_digest(&digest)?.shorten();
+        assert_eq!(safe.path(), SHORTEN_TEST_PATH);
+        assert_eq!(safe.digest(), "sha512:01234567....89abcdef");
+        Ok(())
+    }
+
+    #[test]
+    fn test_shorten_does_not_contain_full_digest() -> anyhow::Result<()> {
+        let digest = common::sha512_for_content(b"content".to_vec())?.to_string();
+        let pending = pending_file_with_digest(&digest)?;
+        let safe = pending.shorten();
+        assert!(safe.digest().len() < digest.len());
+        assert!(!safe.to_string().contains(&digest));
+        assert!(!serde_json::to_string(&safe)?.contains(&digest));
+        Ok(())
+    }
+
+    #[test]
+    fn test_shorten_display() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let safe = pending_file_with_digest(&digest)?.shorten();
+        assert_eq!(
+            safe.to_string(),
+            format!("path: {SHORTEN_TEST_PATH}\ndigest: sha512:01234567....89abcdef\n")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_shorten_json_shape() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let safe = pending_file_with_digest(&digest)?.shorten();
+        assert_eq!(
+            serde_json::to_value(&safe)?,
+            serde_json::json!({
+                "path": SHORTEN_TEST_PATH,
+                "short_digest": "sha512:01234567....89abcdef",
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_safe_list_pending_response_from_list_pending_response() -> anyhow::Result<()> {
+        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
+        let response = models::ListPendingResponse {
+            pending_files: vec![pending_file_with_digest(&digest)?],
+        };
+        let safe: models::SafeListPendingResponse = response.into();
+        assert_eq!(safe.pending_files.len(), 1);
+        assert_eq!(
+            safe.pending_files[0].digest(),
+            "sha512:01234567....89abcdef"
+        );
+        Ok(())
+    }
 }

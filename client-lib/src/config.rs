@@ -34,6 +34,17 @@ impl CliConfig {
             Ok(())
         }
     }
+
+    pub fn get_key(&self, alias: &str) -> Option<&AsfaloadPublicKeys> {
+        self.aliases.get(alias)
+    }
+
+    pub fn get_alias(&self, key: &AsfaloadPublicKeys) -> Option<&str> {
+        self.aliases
+            .iter()
+            .find(|(_, k)| *k == key)
+            .map(|(name, _)| name.as_str())
+    }
 }
 
 fn build_config_path(path_in: Option<PathBuf>) -> Result<PathBuf, ClientLibError> {

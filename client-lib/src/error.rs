@@ -141,6 +141,9 @@ pub enum ClientLibError {
         url: String,
         project_id: Option<String>,
     },
+
+    #[error("Config error: {0}")]
+    ConfigError(String),
 }
 
 /// Detail sentence for `UrlOutsideRealm`: name the forge project the URL

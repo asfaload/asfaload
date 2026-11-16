@@ -1,5 +1,6 @@
 pub mod artifact_info;
 mod backend;
+mod config;
 pub mod constants;
 mod download;
 mod error;

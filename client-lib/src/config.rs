@@ -143,6 +143,26 @@ pub fn load_or_init_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLi
     }
 }
 
+pub fn save_config(config: &CliConfig, path_in: Option<&Path>) -> Result<(), ClientLibError> {
+    let config_path = build_config_path(path_in)?;
+    let config_content = toml::to_string(config)
+        .map_err(|e| ClientLibError::ConfigError(format!("Could not serialise config: {e}")))?;
+    let config_dir = match config_path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    std::fs::create_dir_all(config_dir)?;
+    // Write a temporary file and rename it, so a failed write keeps the existing config.
+    let mut temp_file = tempfile::NamedTempFile::new_in(config_dir)?;
+    temp_file.write_all(config_content.as_bytes())?;
+    temp_file.persist(&config_path).map_err(|e| {
+        ClientLibError::PersistError(format!(
+            "Failed to move temp file to {:?}: {}",
+            config_path, e
+        ))
+    })?;
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,6 +473,56 @@ mod tests {
                 e => panic!("case {description}: expected ConfigError, got {e}"),
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn save_config_writes_loadable_config_to_new_path() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("a").join("config.toml");
+        let keys = TestKeys::new(2);
+        let mut config = CliConfig::default();
+        config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
+        config.add_alias(keys.pub_key(1).unwrap(), "bob", false)?;
+
+        save_config(&config, Some(&config_path))?;
+
+        let loaded = load_config(Some(&config_path))?;
+        assert_eq!(loaded.aliases, config.aliases);
+        Ok(())
+    }
+
+    #[test]
+    fn save_config_replaces_existing_config() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let keys = TestKeys::new(1);
+        let mut config = load_or_init_config(Some(&config_path))?;
+        config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
+
+        save_config(&config, Some(&config_path))?;
+
+        let loaded = load_config(Some(&config_path))?;
+        assert_eq!(loaded.aliases, config.aliases);
+        Ok(())
+    }
+
+    #[test]
+    fn save_config_leaves_no_content_of_a_longer_previous_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let keys = TestKeys::new(2);
+        let mut config = CliConfig::default();
+        config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
+        config.add_alias(keys.pub_key(1).unwrap(), "bob", false)?;
+        save_config(&config, Some(&config_path))?;
+
+        let mut smaller = CliConfig::default();
+        smaller.add_alias(keys.pub_key(0).unwrap(), "al", false)?;
+        save_config(&smaller, Some(&config_path))?;
+
+        let loaded = load_config(Some(&config_path))?;
+        assert_eq!(loaded.aliases, smaller.aliases);
         Ok(())
     }
 }

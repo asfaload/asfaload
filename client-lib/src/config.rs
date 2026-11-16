@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::OpenOptions,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use crate::ClientLibError;
@@ -88,9 +88,9 @@ fn check_alias_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn build_config_path(path_in: Option<PathBuf>) -> Result<PathBuf, ClientLibError> {
+fn build_config_path(path_in: Option<&Path>) -> Result<PathBuf, ClientLibError> {
     match path_in {
-        Some(p) => Ok(p),
+        Some(p) => Ok(p.to_path_buf()),
         None => {
             let strategy = choose_base_strategy().map_err(|e| {
                 ClientLibError::ConfigError(format!(
@@ -105,7 +105,7 @@ fn build_config_path(path_in: Option<PathBuf>) -> Result<PathBuf, ClientLibError
     }
 }
 
-pub fn load_config(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError> {
+pub fn load_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
     let config_path = build_config_path(path_in)?;
     let content = std::fs::read_to_string(config_path)?;
     let config: CliConfig = toml::from_str(&content)
@@ -116,7 +116,7 @@ pub fn load_config(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError
     Ok(config)
 }
 
-pub fn init(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError> {
+pub fn init(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
     let config_path = build_config_path(path_in)?;
     let default_config = CliConfig::default();
     let config_content = toml::to_string(&default_config).map_err(|e| {
@@ -133,11 +133,11 @@ pub fn init(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError> {
     Ok(default_config)
 }
 
-pub fn load_or_init_config(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError> {
+pub fn load_or_init_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
     let config_path = build_config_path(path_in)?;
-    match load_config(Some(config_path.clone())) {
+    match load_config(Some(&config_path)) {
         Err(ClientLibError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-            init(Some(config_path))
+            init(Some(&config_path))
         }
         result => result,
     }
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn build_config_path_returns_given_path() -> anyhow::Result<()> {
         let path = PathBuf::from("/some/dir/my-config.toml");
-        assert_eq!(build_config_path(Some(path.clone()))?, path);
+        assert_eq!(build_config_path(Some(&path))?, path);
         Ok(())
     }
 
@@ -181,7 +181,7 @@ mod tests {
         };
         write(&config_path, toml::to_string(&config)?)?;
 
-        let loaded = load_config(Some(config_path))?;
+        let loaded = load_config(Some(&config_path))?;
         assert_eq!(loaded.aliases, aliases);
         Ok(())
     }
@@ -190,7 +190,7 @@ mod tests {
     fn load_config_fails_when_file_is_missing() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("config.toml");
-        match load_config(Some(config_path)).unwrap_err() {
+        match load_config(Some(&config_path)).unwrap_err() {
             ClientLibError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::NotFound),
             e => panic!("expected Io error, got {e}"),
         }
@@ -208,7 +208,7 @@ mod tests {
             let temp_dir = TempDir::new()?;
             let config_path = temp_dir.path().join("config.toml");
             write(&config_path, content)?;
-            match load_config(Some(config_path)).unwrap_err() {
+            match load_config(Some(&config_path)).unwrap_err() {
                 ClientLibError::ConfigError(msg) => assert!(
                     msg.starts_with("Could not parse config file"),
                     "case {name}: unexpected message {msg}"
@@ -224,11 +224,11 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("a").join("b").join("config.toml");
 
-        let config = init(Some(config_path.clone()))?;
+        let config = init(Some(&config_path))?;
         assert!(config.aliases.is_empty());
         assert!(config_path.is_file());
 
-        let loaded = load_config(Some(config_path))?;
+        let loaded = load_config(Some(&config_path))?;
         assert!(loaded.aliases.is_empty());
         Ok(())
     }
@@ -240,7 +240,7 @@ mod tests {
         let existing = "# existing config\n";
         write(&config_path, existing)?;
 
-        match init(Some(config_path.clone())).unwrap_err() {
+        match init(Some(&config_path)).unwrap_err() {
             ClientLibError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists),
             e => panic!("expected Io error, got {e}"),
         }
@@ -253,7 +253,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("a").join("config.toml");
 
-        let config = load_or_init_config(Some(config_path.clone()))?;
+        let config = load_or_init_config(Some(&config_path))?;
         assert!(config.aliases.is_empty());
         assert!(config_path.is_file());
         Ok(())
@@ -270,7 +270,7 @@ mod tests {
         let content = toml::to_string(&config)?;
         write(&config_path, &content)?;
 
-        let loaded = load_or_init_config(Some(config_path.clone()))?;
+        let loaded = load_or_init_config(Some(&config_path))?;
         assert_eq!(loaded.aliases, config.aliases);
         assert_eq!(std::fs::read_to_string(&config_path)?, content);
         Ok(())
@@ -283,7 +283,7 @@ mod tests {
         let invalid = "this is = = not toml";
         write(&config_path, invalid)?;
 
-        match load_or_init_config(Some(config_path.clone())).unwrap_err() {
+        match load_or_init_config(Some(&config_path)).unwrap_err() {
             ClientLibError::ConfigError(_) => {}
             e => panic!("expected ConfigError, got {e}"),
         }
@@ -445,7 +445,7 @@ mod tests {
             let temp_dir = TempDir::new()?;
             let config_path = temp_dir.path().join("config.toml");
             write(&config_path, content)?;
-            match load_config(Some(config_path)).unwrap_err() {
+            match load_config(Some(&config_path)).unwrap_err() {
                 ClientLibError::ConfigError(msg) => assert!(
                     msg.starts_with("Invalid config file"),
                     "case {description}: unexpected message {msg}"

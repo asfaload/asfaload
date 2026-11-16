@@ -2,7 +2,9 @@ use std::io::IsTerminal;
 
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
-    commands::fetch_file::handle_fetch_file,
+    commands::{
+        complete::handle_complete, fetch_file::handle_fetch_file, shell::handle_shell_command,
+    },
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
@@ -17,11 +19,13 @@ pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
+use clap::ValueEnum;
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use rest_api_types::models::ClientPendingFile;
 
 pub mod check_index;
 pub mod check_pending_signers;
+pub mod complete;
 pub mod download;
 pub mod fetch_file;
 pub mod get_digest;
@@ -32,6 +36,7 @@ pub mod release_download_output;
 pub mod release_registration_output;
 pub mod revocation_output;
 pub mod revoke;
+pub mod shell;
 pub mod signers_submission_output;
 pub mod update_signers;
 
@@ -532,6 +537,23 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &backend_url,
                 json_args.json,
             ))?;
+        }
+        Commands::Complete { shell, output } => {
+            let shell_value = clap_complete_command::Shell::from_str(shell, true)
+                .map_err(|e| ClientCliError::InvalidInput(format!("shell not known:{e}")))?;
+            let mut writer: Box<dyn std::io::Write> = match output {
+                Some(path) => Box::new(std::fs::File::create(path)?),
+                None => Box::new(std::io::stdout()),
+            };
+            handle_complete(shell_value, &mut writer)?;
+        }
+        Commands::Shell { shell } => {
+            let exit_code = handle_shell_command(*shell)?;
+            // process::exit does not run destructors. This is safe here because
+            // handle_shell_command already removed its temporary directory.
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
         }
     }
     Ok(())

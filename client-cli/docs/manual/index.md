@@ -38,6 +38,10 @@ Reference for all `asfaload-cli` commands.
 
 - [`ping`](ping.md) — check backend connectivity and, optionally, your credentials
 
+## Shell integration
+
+- [`shell`](shell.md) — start a shell in which completion for `asfaload-cli` is active
+
 ## Common notes
 
 ### Passwords

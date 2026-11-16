@@ -11,7 +11,6 @@ serde_json = "1.0.145"
 thiserror = "2.0.17"
 base64 = "0.22"
 chrono = { version = "0.4.42", features = ["serde"] }
-tempfile = "3.23.0"
 
 [features]
 test-utils = []
@@ -22,6 +21,5 @@ workspace = true
 [dev-dependencies]
 sha2 = "0.10.9"
 test_helpers = { path = "../test_helpers/" }
-tempfile = "3.21.0"
 mockito = "1.7"
 tokio = { version = "1", features = ["macros", "rt"] }

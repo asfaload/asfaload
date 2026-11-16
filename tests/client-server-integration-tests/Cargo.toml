@@ -15,15 +15,18 @@ rest-api = { path = "../../rest-api" }
 rest_api_test_helpers = { path = "../../rest_api_test_helpers" }
 rest_api_types = { path = "../../rest_api_types" }
 rest_api_auth = { path = "../../rest_api_auth" }
-admin-lib = { path = "../../admin-lib" }
 features_lib = { path = "../../core/features_lib" }
 signers_file_types = { path = "../../core/signers_file_types" }
 signers_file = { path = "../../core/signers_file" }
-client-cli = { path = "../../client-cli" }
 common = { path = "../../core/common" }
 test_helpers = { path = "../../core/test_helpers" }
 forge-url = { path = "../../file-auth/forge-url", features = ["test-utils"] }
 url = "2.5"
 
 [dev-dependencies]
+admin-lib = { path = "../../admin-lib" }
+client-cli = { path = "../../client-cli" }
 mockito = "1.7"
+
+[lints]
+workspace = true

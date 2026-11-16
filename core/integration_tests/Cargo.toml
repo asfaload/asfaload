@@ -3,17 +3,15 @@ name = "integration_tests"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[dev-dependencies]
 anyhow = "1.0.99"
 common = { path = "../common/" }
 signatures = { path = "../signatures/" }
-signers_file = { path = "../signers_file/" }
 signers_file_types = { path = "../signers_file_types/" }
-aggregate_signature = { path = "../aggregate_signature/" }
-features_lib = { path = "../features_lib/" }
-chrono = "0.4.42"
 serde_json = "1.0.142"
 tempfile = "3.21.0"
+signers_file = { path = "../signers_file/" }
+features_lib = { path = "../features_lib/" }
 test_helpers = { path = "../test_helpers/" }
 
 [lints]

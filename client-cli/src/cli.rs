@@ -1,3 +1,4 @@
+use crate::commands::shell::ShellKind;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -422,6 +423,26 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+    /// Generate a shell completion script
+    ///
+    /// Load it in the current shell, for example with
+    /// `source <(asfaload-cli complete --shell bash)`.
+    Complete {
+        /// Shell for which to generate completion
+        #[arg(short, long)]
+        shell: String,
+        /// Output file
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Start a shell in which completion for asfaload-cli is active
+    ///
+    /// The shell loads your own configuration first. Type `exit` to return.
+    Shell {
+        /// Shell to start
+        #[arg(long, value_enum, default_value = "bash")]
+        shell: ShellKind,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -459,6 +480,8 @@ impl Commands {
             Self::CheckIndex { .. } => "CHECK_INDEX",
             Self::CheckPendingSigners { .. } => "CHECK_PENDING_SIGNERS",
             Self::FetchFile { .. } => "FETCH_FILE",
+            Self::Complete { .. } => "COMPLETE",
+            Self::Shell { .. } => "SHELL",
         }
     }
 
@@ -495,6 +518,8 @@ impl Commands {
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::FetchFile { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
+            Self::Complete { .. } => false,
+            Self::Shell { .. } => false,
         }
     }
 }

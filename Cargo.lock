@@ -570,6 +570,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
+dependencies = [
+ "clap",
+]
+
+[[package]]
+name = "clap_complete_command"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da8e198c052315686d36371e8a3c5778b7852fc75cc313e4e11eeb7a644a1b62"
+dependencies = [
+ "clap",
+ "clap_complete",
+ "clap_complete_nushell",
+]
+
+[[package]]
+name = "clap_complete_nushell"
+version = "4.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "933b05d5d83ff65fd7eaf5d106c792f2264908790a2642aca57429767b762ce2"
+dependencies = [
+ "clap",
+ "clap_complete",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -599,6 +629,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "clap_complete_command",
  "client-lib",
  "common",
  "features_lib",
@@ -1961,9 +1992,7 @@ dependencies = [
 name = "integration_tests"
 version = "0.1.0"
 dependencies = [
- "aggregate_signature",
  "anyhow",
- "chrono",
  "common",
  "features_lib",
  "serde_json",
@@ -3330,7 +3359,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
- "tempfile",
  "test_helpers",
  "thiserror 2.0.18",
  "tokio",

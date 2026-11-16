@@ -290,4 +290,169 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&config_path)?, invalid);
         Ok(())
     }
+
+    #[test]
+    fn check_alias_name_accepts_and_rejects() {
+        let cases = vec![
+            ("alice", true),
+            ("Bob-2", true),
+            ("release_team.v1", true),
+            ("", false),
+            (" ", false),
+            ("alice smith", false),
+            ("alice\n", false),
+            ("asfaload-pub:abc", false),
+            ("a/b", false),
+            ("élise", false),
+        ];
+        for (name, valid) in cases {
+            assert_eq!(
+                check_alias_name(name).is_ok(),
+                valid,
+                "unexpected result for {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn add_alias_inserts_new_aliases() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        let mut config = CliConfig::default();
+
+        config.add_alias(key_0, "alice", false)?;
+        config.add_alias(key_1, "bob", false)?;
+
+        let expected = HashMap::from([
+            ("alice".to_string(), key_0.clone()),
+            ("bob".to_string(), key_1.clone()),
+        ]);
+        assert_eq!(config.aliases, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn add_alias_with_existing_alias() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let key = |n: usize| keys.pub_key(n).unwrap().clone();
+        // The config always starts with alice -> key 0.
+        // (description, key index, alias, overwrite, expected aliases or None for an error)
+        let cases: Vec<(&str, usize, &str, bool, Option<Vec<(&str, usize)>>)> = vec![
+            (
+                "same pair again",
+                0,
+                "alice",
+                false,
+                Some(vec![("alice", 0)]),
+            ),
+            ("alias of other key", 1, "alice", false, None),
+            ("alias of other key, overwrite", 1, "alice", true, None),
+            ("rename key", 0, "bob", false, None),
+            (
+                "rename key, overwrite",
+                0,
+                "bob",
+                true,
+                Some(vec![("bob", 0)]),
+            ),
+            (
+                "new pair",
+                1,
+                "bob",
+                false,
+                Some(vec![("alice", 0), ("bob", 1)]),
+            ),
+            ("empty alias", 1, "", true, None),
+            ("invalid alias", 1, "bob smith", true, None),
+        ];
+        for (description, key_index, alias, overwrite, expected) in cases {
+            let mut config = CliConfig::default();
+            config.add_alias(&key(0), "alice", false)?;
+
+            let result = config.add_alias(&key(key_index), alias, overwrite);
+
+            match (result, expected) {
+                (Ok(()), Some(expected)) => {
+                    let expected: HashMap<String, AsfaloadPublicKeys> = expected
+                        .into_iter()
+                        .map(|(name, n)| (name.to_string(), key(n)))
+                        .collect();
+                    assert_eq!(config.aliases, expected, "case {description}");
+                }
+                (Err(ClientLibError::GenericError(_)), None) => {
+                    let unchanged = HashMap::from([("alice".to_string(), key(0))]);
+                    assert_eq!(config.aliases, unchanged, "case {description}");
+                }
+                (result, expected) => {
+                    panic!("case {description}: got {result:?}, expected {expected:?}")
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn get_key_and_get_alias() -> anyhow::Result<()> {
+        let keys = TestKeys::new(3);
+        let (key_0, key_1, key_2) = (
+            keys.pub_key(0).unwrap(),
+            keys.pub_key(1).unwrap(),
+            keys.pub_key(2).unwrap(),
+        );
+        let mut config = CliConfig::default();
+        config.add_alias(key_0, "alice", false)?;
+        config.add_alias(key_1, "bob", false)?;
+
+        assert_eq!(config.get_key("alice"), Some(key_0));
+        assert_eq!(config.get_key("bob"), Some(key_1));
+        assert_eq!(config.get_key("carol"), None);
+        assert_eq!(config.get_alias(key_0), Some("alice"));
+        assert_eq!(config.get_alias(key_1), Some("bob"));
+        assert_eq!(config.get_alias(key_2), None);
+        Ok(())
+    }
+
+    #[test]
+    fn get_key_and_get_alias_after_rename() -> anyhow::Result<()> {
+        let keys = TestKeys::new(1);
+        let key = keys.pub_key(0).unwrap();
+        let mut config = CliConfig::default();
+        config.add_alias(key, "alice", false)?;
+        config.add_alias(key, "alicia", true)?;
+
+        assert_eq!(config.get_alias(key), Some("alicia"));
+        assert_eq!(config.get_key("alicia"), Some(key));
+        assert_eq!(config.get_key("alice"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_rejects_invalid_aliases() -> anyhow::Result<()> {
+        let keys = TestKeys::new(1);
+        let key = keys.pub_key(0).unwrap().to_base64();
+        let cases = vec![
+            (
+                "key with two aliases",
+                format!("[aliases]\nalice = \"{key}\"\nbob = \"{key}\""),
+            ),
+            (
+                "invalid alias",
+                format!("[aliases]\n\"bob smith\" = \"{key}\""),
+            ),
+            ("empty alias", format!("[aliases]\n\"\" = \"{key}\"")),
+        ];
+        for (description, content) in cases {
+            let temp_dir = TempDir::new()?;
+            let config_path = temp_dir.path().join("config.toml");
+            write(&config_path, content)?;
+            match load_config(Some(config_path)).unwrap_err() {
+                ClientLibError::ConfigError(msg) => assert!(
+                    msg.starts_with("Invalid config file"),
+                    "case {description}: unexpected message {msg}"
+                ),
+                e => panic!("case {description}: expected ConfigError, got {e}"),
+            }
+        }
+        Ok(())
+    }
 }

@@ -20,7 +20,11 @@ pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
 use clap::ValueEnum;
-use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use client_lib::config::{load_or_init_config, save_config};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
+};
+use inquire::prompt_text;
 use rest_api_types::models::ClientPendingFile;
 
 pub mod check_index;
@@ -554,6 +558,28 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             if exit_code != 0 {
                 std::process::exit(exit_code);
             }
+        }
+        Commands::Alias {
+            name,
+            key,
+            config_file,
+            force,
+        } => {
+            let alias = match name {
+                Some(s) => s.clone(),
+                None => {
+                    let provided = prompt_text("Enter the name you want to give this key.");
+                    provided.map_err(|e| {
+                        ClientCliError::InvalidInput(format!(
+                            "No alias name given and the prompt failed: {e}"
+                        ))
+                    })?
+                }
+            };
+            let mut config = load_or_init_config(config_file.as_deref())?;
+            let pub_key = AsfaloadPublicKeys::from_base64(key)?;
+            config.add_alias(&pub_key, &alias, *force)?;
+            save_config(&config, config_file.as_deref())?;
         }
     }
     Ok(())

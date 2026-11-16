@@ -443,6 +443,16 @@ pub enum Commands {
         #[arg(long, value_enum, default_value = "bash")]
         shell: ShellKind,
     },
+
+    Alias {
+        key: String,
+        #[arg(short, long)]
+        name: Option<String>,
+        #[arg(short, long)]
+        config_file: Option<PathBuf>,
+        #[arg(short, long, default_value = "false")]
+        force: bool,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -482,6 +492,7 @@ impl Commands {
             Self::FetchFile { .. } => "FETCH_FILE",
             Self::Complete { .. } => "COMPLETE",
             Self::Shell { .. } => "SHELL",
+            Self::Alias { .. } => "ALIAS",
         }
     }
 
@@ -520,6 +531,7 @@ impl Commands {
             Self::Download { .. } => false,
             Self::Complete { .. } => false,
             Self::Shell { .. } => false,
+            Self::Alias { .. } => false,
         }
     }
 }

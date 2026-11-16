@@ -422,6 +422,15 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+    /// Register assets with the backend (GitHub release or checksums files)
+    Complete {
+        /// Shell for which to generate completion
+        #[arg(short, long)]
+        shell: String,
+        /// Output file
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -459,6 +468,7 @@ impl Commands {
             Self::CheckIndex { .. } => "CHECK_INDEX",
             Self::CheckPendingSigners { .. } => "CHECK_PENDING_SIGNERS",
             Self::FetchFile { .. } => "FETCH_FILE",
+            Self::Complete { .. } => "COMPLETE",
         }
     }
 
@@ -495,6 +505,7 @@ impl Commands {
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::FetchFile { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
+            Self::Complete { .. } => false,
         }
     }
 }

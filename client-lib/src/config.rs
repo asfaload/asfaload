@@ -1,5 +1,5 @@
 use etcetera::{BaseStrategy, choose_base_strategy};
-use features_lib::AsfaloadPublicKeys;
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -15,6 +15,25 @@ use crate::ClientLibError;
 pub struct CliConfig {
     // Alias for pub keys. Key is alias, value if pubkey. Makes config file more readable.
     aliases: HashMap<String, AsfaloadPublicKeys>,
+}
+
+impl CliConfig {
+    pub fn add_alias(
+        &mut self,
+        k: &AsfaloadPublicKeys,
+        name: &str,
+        overwrite: bool,
+    ) -> Result<(), ClientLibError> {
+        if self.aliases.contains_key(name) && !overwrite {
+            Err(ClientLibError::GenericError(format!(
+                "Refusing to overwrite existing alias for {}",
+                k.to_base64()
+            )))
+        } else {
+            let old_alias = self.aliases.insert(name.to_string(), k.clone());
+            Ok(())
+        }
+    }
 }
 
 fn build_config_path(path_in: Option<PathBuf>) -> Result<PathBuf, ClientLibError> {

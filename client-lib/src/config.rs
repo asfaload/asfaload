@@ -59,6 +59,16 @@ pub fn init(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError> {
     Ok(default_config)
 }
 
+pub fn load_or_init_config(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError> {
+    let config_path = build_config_path(path_in)?;
+    match load_config(Some(config_path.clone())) {
+        Err(ClientLibError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            init(Some(config_path))
+        }
+        result => result,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

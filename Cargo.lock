@@ -1992,9 +1992,7 @@ dependencies = [
 name = "integration_tests"
 version = "0.1.0"
 dependencies = [
- "aggregate_signature",
  "anyhow",
- "chrono",
  "common",
  "features_lib",
  "serde_json",
@@ -3361,7 +3359,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
- "tempfile",
  "test_helpers",
  "thiserror 2.0.18",
  "tokio",

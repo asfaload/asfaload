@@ -8,9 +8,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
 signatures = { path = "../signatures/" }
 thiserror = "2.0.16"
-tempfile = "3.21.0"
 sha2 = "0.10.9"
-anyhow = "1.0.99"
 common = { path = "../common/" }
 constants = { path = "../constants/" }
 signers_file_types = { path = "../signers_file_types/" }
@@ -18,6 +16,7 @@ aggregate_signature = { path = "../aggregate_signature/" }
 chrono = { version = "0.4.42", features = ["serde"] }
 
 [dev-dependencies]
+anyhow = "1.0.99"
 test_helpers = { path = "../test_helpers/" }
 tempfile = "3.21.0"
 

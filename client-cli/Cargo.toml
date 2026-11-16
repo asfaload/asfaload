@@ -37,12 +37,12 @@ url = "2.5"
 shell-words = "1.1.1"
 inquire = "0.9.4"
 clap_complete_command = "0.6.1"
+tempfile = "3.14"
 
 [dev-dependencies]
 mockito = "1.2"
 assert_cmd = "2.0"
 predicates = "3.1"
-tempfile = "3.14"
 test_helpers = { path = "../core/test_helpers" }
 base64 = "0.22"
 

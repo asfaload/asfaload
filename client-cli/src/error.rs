@@ -30,6 +30,9 @@ pub enum ClientCliError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    #[error("Shell program {0} was not found on PATH")]
+    ShellNotFound(String),
+
     #[error("Password is too week")]
     PasswordStrengthError(String),
 

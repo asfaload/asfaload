@@ -34,6 +34,7 @@ pub mod release_download_output;
 pub mod release_registration_output;
 pub mod revocation_output;
 pub mod revoke;
+pub mod shell;
 pub mod signers_submission_output;
 pub mod update_signers;
 

@@ -173,4 +173,47 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&config_path)?, existing);
         Ok(())
     }
+
+    #[test]
+    fn load_or_init_config_creates_missing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("a").join("config.toml");
+
+        let config = load_or_init_config(Some(config_path.clone()))?;
+        assert!(config.aliases.is_empty());
+        assert!(config_path.is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn load_or_init_config_loads_existing_file_unchanged() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let keys = TestKeys::new(1);
+        let config = CliConfig {
+            aliases: HashMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
+        };
+        let content = toml::to_string(&config)?;
+        write(&config_path, &content)?;
+
+        let loaded = load_or_init_config(Some(config_path.clone()))?;
+        assert_eq!(loaded.aliases, config.aliases);
+        assert_eq!(std::fs::read_to_string(&config_path)?, content);
+        Ok(())
+    }
+
+    #[test]
+    fn load_or_init_config_does_not_replace_invalid_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let invalid = "this is = = not toml";
+        write(&config_path, invalid)?;
+
+        match load_or_init_config(Some(config_path.clone())).unwrap_err() {
+            ClientLibError::ConfigError(_) => {}
+            e => panic!("expected ConfigError, got {e}"),
+        }
+        assert_eq!(std::fs::read_to_string(&config_path)?, invalid);
+        Ok(())
+    }
 }

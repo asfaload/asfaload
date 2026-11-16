@@ -2,7 +2,7 @@ use etcetera::{BaseStrategy, choose_base_strategy};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::OpenOptions,
     io::Write,
     path::PathBuf,
@@ -24,15 +24,28 @@ impl CliConfig {
         name: &str,
         overwrite: bool,
     ) -> Result<(), ClientLibError> {
-        if self.aliases.contains_key(name) && !overwrite {
-            Err(ClientLibError::GenericError(format!(
-                "Refusing to overwrite existing alias for {}",
-                k.to_base64()
-            )))
-        } else {
-            let old_alias = self.aliases.insert(name.to_string(), k.clone());
-            Ok(())
+        check_alias_name(name).map_err(ClientLibError::GenericError)?;
+        // An alias never moves to another key, even with overwrite.
+        if let Some(existing) = self.aliases.get(name) {
+            if existing == k {
+                return Ok(());
+            }
+            return Err(ClientLibError::GenericError(format!(
+                "Alias {name} already exists for key {}",
+                existing.to_base64()
+            )));
         }
+        if let Some(old_alias) = self.get_alias(k).map(str::to_string) {
+            if !overwrite {
+                return Err(ClientLibError::GenericError(format!(
+                    "Refusing to overwrite existing alias for {}",
+                    k.to_base64()
+                )));
+            }
+            self.aliases.remove(&old_alias);
+        }
+        self.aliases.insert(name.to_string(), k.clone());
+        Ok(())
     }
 
     pub fn get_key(&self, alias: &str) -> Option<&AsfaloadPublicKeys> {
@@ -45,6 +58,34 @@ impl CliConfig {
             .find(|(_, k)| *k == key)
             .map(|(name, _)| name.as_str())
     }
+
+    // A config file edited by hand can break the rules that add_alias enforces.
+    fn validate(&self) -> Result<(), String> {
+        let mut seen_keys = HashSet::new();
+        for (name, key) in &self.aliases {
+            check_alias_name(name)?;
+            if !seen_keys.insert(key) {
+                return Err(format!("Key {} has more than one alias", key.to_base64()));
+            }
+        }
+        Ok(())
+    }
+}
+
+// Restricted to characters that are safe in a shell and cannot form a public key ("asfaload-pub:...").
+fn check_alias_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Alias must not be empty".to_string());
+    }
+    if let Some(c) = name
+        .chars()
+        .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+    {
+        return Err(format!(
+            "Alias {name:?} contains invalid character {c:?}: only ASCII letters, digits, '-', '_' and '.' are allowed"
+        ));
+    }
+    Ok(())
 }
 
 fn build_config_path(path_in: Option<PathBuf>) -> Result<PathBuf, ClientLibError> {
@@ -69,6 +110,9 @@ pub fn load_config(path_in: Option<PathBuf>) -> Result<CliConfig, ClientLibError
     let content = std::fs::read_to_string(config_path)?;
     let config: CliConfig = toml::from_str(&content)
         .map_err(|e| ClientLibError::ConfigError(format!("Could not parse config file: {e}")))?;
+    config
+        .validate()
+        .map_err(|e| ClientLibError::ConfigError(format!("Invalid config file: {e}")))?;
     Ok(config)
 }
 

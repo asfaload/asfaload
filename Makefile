@@ -75,15 +75,7 @@ test-asfaload:
 	# run separately as some tests only run when test-utils feature is NOT present.
 	cargo nextest run --package forge-url
 	KEY_TYPE=asfaload $(MAKE) -C tests/e2e_tests test-local
-	$(MAKE) test-cli-shell
-
-## Run the shell integration tests of asfaload-cli
-test-cli-shell:
-	cargo build --package client-cli
-	@for t in client-cli/tests/shell/test_*.sh; do \
-		printf '\n══ Running %s ══\n\n' "$$t"; \
-		./$$t || exit 1; \
-	done
+	$(MAKE) -C client-cli test-shell
 
 ## Run mutation tests (with asfaload keys). Select packages in .cargo/mutants.toml
 test-mutants:

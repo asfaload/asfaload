@@ -147,15 +147,13 @@ fn launch_spec(
             vec![subshell],
         ),
         ShellKind::Zsh => {
-            let user_zdotdir_env = user_zdotdir
-                .filter(|dir| !dir.is_empty())
-                .map(|dir| (USER_ZDOTDIR_ENV_VAR, dir));
+            let user_zdotdir_env = (USER_ZDOTDIR_ENV_VAR, user_zdotdir.unwrap_or_default());
             let env = [
                 subshell,
                 (ZDOTDIR_ENV_VAR, tmp_dir.as_os_str().to_os_string()),
             ]
             .into_iter()
-            .chain(user_zdotdir_env)
+            .chain([user_zdotdir_env])
             .collect();
             (vec![OsString::from("-i")], env)
         }
@@ -335,7 +333,11 @@ export PATH=/opt/asfaload/bin:"$PATH"
                 LaunchSpec {
                     program: "zsh",
                     args: vec!["-i".into()],
-                    env: vec![subshell.clone(), tmp_dir_env.clone()],
+                    env: vec![
+                        subshell.clone(),
+                        tmp_dir_env.clone(),
+                        (USER_ZDOTDIR_ENV_VAR, "".into()),
+                    ],
                 },
             ),
             (
@@ -344,7 +346,11 @@ export PATH=/opt/asfaload/bin:"$PATH"
                 LaunchSpec {
                     program: "zsh",
                     args: vec!["-i".into()],
-                    env: vec![subshell.clone(), tmp_dir_env.clone()],
+                    env: vec![
+                        subshell.clone(),
+                        tmp_dir_env.clone(),
+                        (USER_ZDOTDIR_ENV_VAR, "".into()),
+                    ],
                 },
             ),
             (

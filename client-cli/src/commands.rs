@@ -2,7 +2,9 @@ use std::io::IsTerminal;
 
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
-    commands::{complete::handle_complete, fetch_file::handle_fetch_file},
+    commands::{
+        complete::handle_complete, fetch_file::handle_fetch_file, shell::handle_shell_command,
+    },
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
@@ -544,6 +546,14 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 None => Box::new(std::io::stdout()),
             };
             handle_complete(shell_value, &mut writer)?;
+        }
+        Commands::Shell { shell } => {
+            let exit_code = handle_shell_command(*shell)?;
+            // process::exit does not run destructors. This is safe here because
+            // handle_shell_command already removed its temporary directory.
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
         }
     }
     Ok(())

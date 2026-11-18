@@ -94,6 +94,12 @@ pub enum ClientCliError {
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    #[error("Alias {0} does not exist in config")]
+    AliasNotFound(String),
+
+    #[error("No alias exists in config for key {0}")]
+    NoAliasForKey(String),
 }
 
 /// Return the error built by `failure` with the backend message when the

@@ -15,7 +15,7 @@ pub fn list_aliases(
     let output = match name {
         Some(alias) => match config.get_key(alias) {
             Some(k) => format!("{} = {}", alias, k.to_base64()),
-            None => format!("Alias does not exist in config"),
+            None => return Err(ClientCliError::AliasNotFound(alias.clone())),
         },
         None => toml::to_string(aliases).map_err(|e| {
             ClientCliError::ConfigError(format!(
@@ -34,7 +34,7 @@ pub fn display_key(
     let config = load_config_or_default(config_file.as_deref())?;
     let output = match config.get_alias(key) {
         Some(alias) => format!("{} = {}", alias, key.to_base64()),
-        None => format!("Alias does not exist in config"),
+        None => return Err(ClientCliError::NoAliasForKey(key.to_base64())),
     };
 
     Ok(output.clone())

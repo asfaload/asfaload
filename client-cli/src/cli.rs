@@ -445,9 +445,9 @@ pub enum Commands {
     },
 
     Alias {
-        key: Option<String>,
-        #[arg(short, long)]
         name: Option<String>,
+        #[arg(short, long)]
+        key: Option<String>,
         #[arg(short, long)]
         config_file: Option<PathBuf>,
         #[arg(short, long, default_value = "false")]

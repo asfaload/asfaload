@@ -100,6 +100,9 @@ pub enum ClientCliError {
 
     #[error("No alias exists in config for key {0}")]
     NoAliasForKey(String),
+
+    #[error("Alias {0} is not an alias for key {1}")]
+    AliasNotForKey(String, String),
 }
 
 /// Return the error built by `failure` with the backend message when the

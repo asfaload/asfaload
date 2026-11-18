@@ -443,17 +443,32 @@ pub enum Commands {
         #[arg(long, value_enum, default_value = "bash")]
         shell: ShellKind,
     },
-
+    /// Manage aliases for keys.
+    ///
+    /// An alias is a name you assign to a public key.
+    /// It is stored locally, and is only useful for humans.
+    ///
+    /// Aliases have no meaning for and are not communicated to the backend.
+    ///
+    /// Note: A key can have only one alias.
+    #[command(group(clap::ArgGroup::new("alias_target").args(["name", "key"]).multiple(true)))]
     Alias {
+        /// Alias name
         name: Option<String>,
+        /// Public key (asfaload-pub:...)
         #[arg(short, long)]
         key: Option<String>,
+        /// Configuration file to use instead of the default file
         #[arg(short, long)]
         config_file: Option<PathBuf>,
+        /// When the key already has an alias, rename that alias to NAME.
         #[arg(short, long, default_value = "false")]
         force: bool,
         #[command(flatten)]
         json_args: JsonArgs,
+        /// Delete the alias. With NAME and --key, the alias must be for that key.
+        #[arg(long, short, requires = "alias_target", conflicts_with = "force")]
+        delete: bool,
     },
 }
 

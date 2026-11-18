@@ -64,6 +64,11 @@ impl CliConfig {
         &self.aliases
     }
 
+    /// Removes the alias and returns the key it was for, or `None` if the alias does not exist.
+    pub fn remove_alias(&mut self, name: &str) -> Option<AsfaloadPublicKeys> {
+        self.aliases.remove(name)
+    }
+
     // A config file edited by hand can break the rules that add_alias enforces.
     fn validate(&self) -> Result<(), String> {
         let mut seen_keys = HashSet::new();

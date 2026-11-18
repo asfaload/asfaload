@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use client_lib::config::{load_config_or_default, save_config};
+use client_lib::config::{CliConfig, load_config_or_default, save_config};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 
 use crate::error::ClientCliError;
 
-// Output of a single alias, as used for lookups and additions.
+// Output of a single alias, as used for lookups, additions and deletions.
 fn format_alias(
     alias: &str,
     key: &AsfaloadPublicKeys,
@@ -73,6 +73,65 @@ pub fn add_alias(
     } else {
         Ok(format!("Alias {} added for {}", name, key.to_base64()))
     }
+}
+
+fn remove_and_save(
+    mut config: CliConfig,
+    config_file: &Option<PathBuf>,
+    name: &str,
+    json: bool,
+) -> Result<String, ClientCliError> {
+    let key = config
+        .remove_alias(name)
+        .ok_or_else(|| ClientCliError::AliasNotFound(name.to_string()))?;
+    save_config(&config, config_file.as_deref())?;
+    if json {
+        format_alias(name, &key, json)
+    } else {
+        Ok(format!("Alias {} deleted for {}", name, key.to_base64()))
+    }
+}
+
+pub fn delete_alias(
+    config_file: &Option<PathBuf>,
+    name: &str,
+    json: bool,
+) -> Result<String, ClientCliError> {
+    let config = load_config_or_default(config_file.as_deref())?;
+    remove_and_save(config, config_file, name, json)
+}
+
+pub fn delete_alias_of_key(
+    config_file: &Option<PathBuf>,
+    key: &AsfaloadPublicKeys,
+    json: bool,
+) -> Result<String, ClientCliError> {
+    let config = load_config_or_default(config_file.as_deref())?;
+    let name = config
+        .get_alias(key)
+        .ok_or_else(|| ClientCliError::NoAliasForKey(key.to_base64()))?
+        .to_string();
+    remove_and_save(config, config_file, &name, json)
+}
+
+pub fn delete_alias_pair(
+    config_file: &Option<PathBuf>,
+    key: &AsfaloadPublicKeys,
+    name: &str,
+    json: bool,
+) -> Result<String, ClientCliError> {
+    let config = load_config_or_default(config_file.as_deref())?;
+    match config.get_key(name) {
+        None => return Err(ClientCliError::AliasNotFound(name.to_string())),
+        Some(k) if k != key => {
+            return Err(ClientCliError::AliasNotForKey(
+                name.to_string(),
+                key.to_base64(),
+            ));
+        }
+        Some(_) => {}
+    }
+    remove_and_save(config, config_file, name, json)
 }
 
 #[cfg(test)]

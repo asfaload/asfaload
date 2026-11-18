@@ -3,7 +3,10 @@ use std::io::IsTerminal;
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
     commands::{
-        alias::{add_alias, display_key, list_aliases},
+        alias::{
+            add_alias, delete_alias, delete_alias_of_key, delete_alias_pair, display_key,
+            list_aliases,
+        },
         complete::handle_complete,
         fetch_file::handle_fetch_file,
         shell::handle_shell_command,
@@ -566,19 +569,22 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             key,
             config_file,
             force,
+            delete,
             json_args,
         } => {
-            let output = match (name, key) {
-                (None, None) => list_aliases(config_file, &None, json_args.json)?,
-                (Some(_), None) => list_aliases(config_file, name, json_args.json)?,
-                (None, Some(k)) => {
-                    let pub_key = AsfaloadPublicKeys::from_base64(k)?;
-                    display_key(config_file, &pub_key, json_args.json)?
-                }
-                (Some(n), Some(k)) => {
-                    let pub_key = AsfaloadPublicKeys::from_base64(k)?;
-                    add_alias(config_file, &pub_key, n, *force, json_args.json)?
-                }
+            let json = json_args.json;
+            let pub_key = key
+                .as_deref()
+                .map(AsfaloadPublicKeys::from_base64)
+                .transpose()?;
+            let output = match (name, &pub_key, delete) {
+                (None, None, _) => list_aliases(config_file, &None, json)?,
+                (Some(_), None, false) => list_aliases(config_file, name, json)?,
+                (Some(n), None, true) => delete_alias(config_file, n, json)?,
+                (None, Some(k), false) => display_key(config_file, k, json)?,
+                (None, Some(k), true) => delete_alias_of_key(config_file, k, json)?,
+                (Some(n), Some(k), false) => add_alias(config_file, k, n, *force, json)?,
+                (Some(n), Some(k), true) => delete_alias_pair(config_file, k, n, json)?,
             };
             println!("{}", output);
         }

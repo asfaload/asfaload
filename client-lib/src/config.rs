@@ -10,11 +10,12 @@ use std::{
 
 use crate::ClientLibError;
 
+type Aliases = HashMap<String, AsfaloadPublicKeys>;
 #[derive(Debug, Default, Deserialize, Serialize)]
 /// Configuration of the client CLI
 pub struct CliConfig {
     // Alias for pub keys. Key is alias, value if pubkey. Makes config file more readable.
-    aliases: HashMap<String, AsfaloadPublicKeys>,
+    aliases: Aliases,
 }
 
 impl CliConfig {
@@ -57,6 +58,10 @@ impl CliConfig {
             .iter()
             .find(|(_, k)| *k == key)
             .map(|(name, _)| name.as_str())
+    }
+
+    pub fn aliases(&self) -> &Aliases {
+        &self.aliases
     }
 
     // A config file edited by hand can break the rules that add_alias enforces.
@@ -443,6 +448,24 @@ mod tests {
         assert_eq!(config.get_alias(key), Some("alicia"));
         assert_eq!(config.get_key("alicia"), Some(key));
         assert_eq!(config.get_key("alice"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn aliases_returns_all_aliases() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        let mut config = CliConfig::default();
+        assert!(config.aliases().is_empty());
+
+        config.add_alias(key_0, "alice", false)?;
+        config.add_alias(key_1, "bob", false)?;
+
+        let expected = HashMap::from([
+            ("alice".to_string(), key_0.clone()),
+            ("bob".to_string(), key_1.clone()),
+        ]);
+        assert_eq!(config.aliases(), &expected);
         Ok(())
     }
 

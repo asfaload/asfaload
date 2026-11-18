@@ -3,7 +3,10 @@ use std::io::IsTerminal;
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
     commands::{
-        complete::handle_complete, fetch_file::handle_fetch_file, shell::handle_shell_command,
+        alias::{add_alias, display_key, list_aliases},
+        complete::handle_complete,
+        fetch_file::handle_fetch_file,
+        shell::handle_shell_command,
     },
     error::ClientCliError,
     utils::{
@@ -12,6 +15,7 @@ use crate::{
     },
 };
 
+pub mod alias;
 pub mod keys;
 pub mod list_pending;
 pub mod share_key;
@@ -20,11 +24,9 @@ pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
 use clap::ValueEnum;
-use client_lib::config::{load_or_init_config, save_config};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
 };
-use inquire::prompt_text;
 use rest_api_types::models::ClientPendingFile;
 
 pub mod check_index;
@@ -565,21 +567,19 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             config_file,
             force,
         } => {
-            let alias = match name {
-                Some(s) => s.clone(),
-                None => {
-                    let provided = prompt_text("Enter the name you want to give this key.");
-                    provided.map_err(|e| {
-                        ClientCliError::InvalidInput(format!(
-                            "No alias name given and the prompt failed: {e}"
-                        ))
-                    })?
+            let output = match (name, key) {
+                (None, None) => list_aliases(config_file, &None)?,
+                (Some(_), None) => list_aliases(config_file, name)?,
+                (None, Some(k)) => {
+                    let pub_key = AsfaloadPublicKeys::from_base64(k)?;
+                    display_key(config_file, &pub_key)?
+                }
+                (Some(n), Some(k)) => {
+                    let pub_key = AsfaloadPublicKeys::from_base64(k)?;
+                    add_alias(config_file, &pub_key, n, *force)?
                 }
             };
-            let mut config = load_or_init_config(config_file.as_deref())?;
-            let pub_key = AsfaloadPublicKeys::from_base64(key)?;
-            config.add_alias(&pub_key, &alias, *force)?;
-            save_config(&config, config_file.as_deref())?;
+            println!("{}", output);
         }
     }
     Ok(())

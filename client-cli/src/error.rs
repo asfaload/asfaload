@@ -91,6 +91,9 @@ pub enum ClientCliError {
 
     #[error("Signers update failed: {0}")]
     SignersUpdateFailed(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
 }
 
 /// Return the error built by `failure` with the backend message when the

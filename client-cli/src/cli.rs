@@ -445,7 +445,7 @@ pub enum Commands {
     },
 
     Alias {
-        key: String,
+        key: Option<String>,
         #[arg(short, long)]
         name: Option<String>,
         #[arg(short, long)]

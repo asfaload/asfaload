@@ -148,6 +148,15 @@ pub fn load_or_init_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLi
     }
 }
 
+pub fn load_config_or_default(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
+    match load_config(path_in) {
+        Err(ClientLibError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            Ok(CliConfig::default())
+        }
+        result => result,
+    }
+}
+
 pub fn save_config(config: &CliConfig, path_in: Option<&Path>) -> Result<(), ClientLibError> {
     let config_path = build_config_path(path_in)?;
     let config_content = toml::to_string(config)
@@ -313,6 +322,45 @@ mod tests {
             e => panic!("expected ConfigError, got {e}"),
         }
         assert_eq!(std::fs::read_to_string(&config_path)?, invalid);
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_or_default_does_not_create_missing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("a").join("config.toml");
+
+        let config = load_config_or_default(Some(&config_path))?;
+        assert!(config.aliases.is_empty());
+        assert!(!temp_dir.path().join("a").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_or_default_loads_existing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let keys = TestKeys::new(1);
+        let config = CliConfig {
+            aliases: HashMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
+        };
+        write(&config_path, toml::to_string(&config)?)?;
+
+        let loaded = load_config_or_default(Some(&config_path))?;
+        assert_eq!(loaded.aliases, config.aliases);
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_or_default_fails_on_invalid_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write(&config_path, "this is = = not toml")?;
+
+        match load_config_or_default(Some(&config_path)).unwrap_err() {
+            ClientLibError::ConfigError(_) => {}
+            e => panic!("expected ConfigError, got {e}"),
+        }
         Ok(())
     }
 

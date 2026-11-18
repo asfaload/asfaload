@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+};
 
 use client_lib::config::{CliConfig, load_config, save_config};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
@@ -21,7 +24,7 @@ fn write_config(config_path: &Path, aliases: &[(&str, &AsfaloadPublicKeys)]) -> 
     Ok(())
 }
 
-fn aliases_in(config_path: &Path) -> anyhow::Result<HashMap<String, AsfaloadPublicKeys>> {
+fn aliases_in(config_path: &Path) -> anyhow::Result<BTreeMap<String, AsfaloadPublicKeys>> {
     Ok(load_config(Some(config_path))?.aliases().clone())
 }
 
@@ -39,13 +42,12 @@ fn alias_without_args_lists_all_aliases() -> anyhow::Result<()> {
         .get_output()
         .clone();
 
-    // The order of the aliases in the output is not fixed.
-    let listed: HashMap<String, String> = toml::from_str(&String::from_utf8(output.stdout)?)?;
-    let expected = HashMap::from([
-        ("alice".to_string(), key_0.to_base64()),
-        ("bob".to_string(), key_1.to_base64()),
-    ]);
-    assert_eq!(listed, expected);
+    let expected = format!(
+        "alice = \"{}\"\nbob = \"{}\"\n\n",
+        key_0.to_base64(),
+        key_1.to_base64()
+    );
+    assert_eq!(String::from_utf8(output.stdout)?, expected);
     Ok(())
 }
 
@@ -125,7 +127,7 @@ fn alias_lookup_by_name_or_key() -> anyhow::Result<()> {
                 assert.failure().stderr(contains(stderr));
             }
         }
-        let unchanged = HashMap::from([("alice".to_string(), key_0.clone())]);
+        let unchanged = BTreeMap::from([("alice".to_string(), key_0.clone())]);
         assert_eq!(aliases_in(&config_path)?, unchanged, "case {description}");
     }
     Ok(())
@@ -150,7 +152,7 @@ fn alias_with_name_and_key_adds_alias() -> anyhow::Result<()> {
             key_1.to_base64()
         )));
 
-    let expected = HashMap::from([
+    let expected = BTreeMap::from([
         ("alice".to_string(), key_0.clone()),
         ("bob".to_string(), key_1.clone()),
     ]);
@@ -173,7 +175,7 @@ fn alias_rename_of_key_requires_force() -> anyhow::Result<()> {
         .assert()
         .failure()
         .stderr(contains("Refusing to overwrite existing alias"));
-    let unchanged = HashMap::from([("alice".to_string(), key_0.clone())]);
+    let unchanged = BTreeMap::from([("alice".to_string(), key_0.clone())]);
     assert_eq!(aliases_in(&config_path)?, unchanged);
 
     alias_cmd(&config_path)
@@ -183,7 +185,7 @@ fn alias_rename_of_key_requires_force() -> anyhow::Result<()> {
         .arg("--force")
         .assert()
         .success();
-    let renamed = HashMap::from([("alicia".to_string(), key_0.clone())]);
+    let renamed = BTreeMap::from([("alicia".to_string(), key_0.clone())]);
     assert_eq!(aliases_in(&config_path)?, renamed);
     Ok(())
 }
@@ -204,7 +206,7 @@ fn alias_with_invalid_key_fails() -> anyhow::Result<()> {
 
         alias_cmd(&config_path).args(&args).assert().failure();
 
-        let unchanged = HashMap::from([("alice".to_string(), key_0.clone())]);
+        let unchanged = BTreeMap::from([("alice".to_string(), key_0.clone())]);
         assert_eq!(aliases_in(&config_path)?, unchanged, "case {description}");
     }
     Ok(())

@@ -110,13 +110,12 @@ mod tests {
 
         let output = list_aliases(&config_path, &None, false)?;
 
-        // The order of the aliases in the output is not fixed.
-        let listed: HashMap<String, String> = toml::from_str(&output)?;
-        let expected = HashMap::from([
-            ("alice".to_string(), key_0.to_base64()),
-            ("bob".to_string(), key_1.to_base64()),
-        ]);
-        assert_eq!(listed, expected);
+        let expected = format!(
+            "alice = \"{}\"\nbob = \"{}\"\n",
+            key_0.to_base64(),
+            key_1.to_base64()
+        );
+        assert_eq!(output, expected);
         Ok(())
     }
 

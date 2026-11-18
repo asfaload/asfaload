@@ -2,7 +2,7 @@ use etcetera::{BaseStrategy, choose_base_strategy};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
@@ -10,7 +10,7 @@ use std::{
 
 use crate::ClientLibError;
 
-type Aliases = HashMap<String, AsfaloadPublicKeys>;
+type Aliases = BTreeMap<String, AsfaloadPublicKeys>;
 #[derive(Debug, Default, Deserialize, Serialize)]
 /// Configuration of the client CLI
 pub struct CliConfig {
@@ -206,7 +206,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("config.toml");
         let keys = TestKeys::new(2);
-        let aliases = HashMap::from([
+        let aliases = BTreeMap::from([
             ("alice".to_string(), keys.pub_key(0).unwrap().clone()),
             ("bob".to_string(), keys.pub_key(1).unwrap().clone()),
         ]);
@@ -299,7 +299,7 @@ mod tests {
         let config_path = temp_dir.path().join("config.toml");
         let keys = TestKeys::new(1);
         let config = CliConfig {
-            aliases: HashMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
+            aliases: BTreeMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
         };
         let content = toml::to_string(&config)?;
         write(&config_path, &content)?;
@@ -342,7 +342,7 @@ mod tests {
         let config_path = temp_dir.path().join("config.toml");
         let keys = TestKeys::new(1);
         let config = CliConfig {
-            aliases: HashMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
+            aliases: BTreeMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
         };
         write(&config_path, toml::to_string(&config)?)?;
 
@@ -396,7 +396,7 @@ mod tests {
         config.add_alias(key_0, "alice", false)?;
         config.add_alias(key_1, "bob", false)?;
 
-        let expected = HashMap::from([
+        let expected = BTreeMap::from([
             ("alice".to_string(), key_0.clone()),
             ("bob".to_string(), key_1.clone()),
         ]);
@@ -446,14 +446,14 @@ mod tests {
 
             match (result, expected) {
                 (Ok(()), Some(expected)) => {
-                    let expected: HashMap<String, AsfaloadPublicKeys> = expected
+                    let expected: BTreeMap<String, AsfaloadPublicKeys> = expected
                         .into_iter()
                         .map(|(name, n)| (name.to_string(), key(n)))
                         .collect();
                     assert_eq!(config.aliases, expected, "case {description}");
                 }
                 (Err(ClientLibError::GenericError(_)), None) => {
-                    let unchanged = HashMap::from([("alice".to_string(), key(0))]);
+                    let unchanged = BTreeMap::from([("alice".to_string(), key(0))]);
                     assert_eq!(config.aliases, unchanged, "case {description}");
                 }
                 (result, expected) => {
@@ -509,7 +509,7 @@ mod tests {
         config.add_alias(key_0, "alice", false)?;
         config.add_alias(key_1, "bob", false)?;
 
-        let expected = HashMap::from([
+        let expected = BTreeMap::from([
             ("alice".to_string(), key_0.clone()),
             ("bob".to_string(), key_1.clone()),
         ]);

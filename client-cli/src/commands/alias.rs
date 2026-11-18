@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use client_lib::config::{load_or_init_config, save_config};
+use client_lib::config::{load_config_or_default, save_config};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 
 use crate::error::ClientCliError;
@@ -9,7 +9,7 @@ pub fn list_aliases(
     config_file: &Option<PathBuf>,
     name: &Option<String>,
 ) -> Result<String, ClientCliError> {
-    let config = load_or_init_config(config_file.as_deref())?;
+    let config = load_config_or_default(config_file.as_deref())?;
     let aliases = config.aliases();
 
     let output = match name {
@@ -31,7 +31,7 @@ pub fn display_key(
     config_file: &Option<PathBuf>,
     key: &AsfaloadPublicKeys,
 ) -> Result<String, ClientCliError> {
-    let config = load_or_init_config(config_file.as_deref())?;
+    let config = load_config_or_default(config_file.as_deref())?;
     let output = match config.get_alias(key) {
         Some(alias) => format!("{} = {}", alias, key.to_base64()),
         None => format!("Alias does not exist in config"),
@@ -46,7 +46,7 @@ pub fn add_alias(
     name: &str,
     force: bool,
 ) -> Result<String, ClientCliError> {
-    let mut config = load_or_init_config(config_file.as_deref())?;
+    let mut config = load_config_or_default(config_file.as_deref())?;
     config.add_alias(key, name, force)?;
     save_config(&config, config_file.as_deref())?;
     Ok(format!("Alias {} added for {}", name, key.to_base64()))

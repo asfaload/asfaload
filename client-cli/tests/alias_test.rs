@@ -209,3 +209,111 @@ fn alias_with_invalid_key_fails() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn alias_json_output() -> anyhow::Result<()> {
+    let keys = TestKeys::new(3);
+    let (key_0, key_1, key_2) = (
+        keys.pub_key(0).unwrap(),
+        keys.pub_key(1).unwrap(),
+        keys.pub_key(2).unwrap(),
+    );
+    let existing = vec![("alice", key_0), ("bob", key_1)];
+    // (description, aliases in config, arguments, expected aliases in the output)
+    type Aliases<'a> = Vec<(&'a str, &'a AsfaloadPublicKeys)>;
+    let cases: Vec<(&str, Aliases, Vec<String>, Aliases)> = vec![
+        ("list all", existing.clone(), vec![], existing.clone()),
+        ("list without config", vec![], vec![], vec![]),
+        (
+            "lookup by name",
+            existing.clone(),
+            vec!["bob".to_string()],
+            vec![("bob", key_1)],
+        ),
+        (
+            "lookup by key",
+            existing.clone(),
+            vec!["--key".to_string(), key_0.to_base64()],
+            vec![("alice", key_0)],
+        ),
+        (
+            "add",
+            existing.clone(),
+            vec!["carol".to_string(), "--key".to_string(), key_2.to_base64()],
+            vec![("carol", key_2)],
+        ),
+    ];
+    for (description, config_aliases, args, expected) in cases {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        if !config_aliases.is_empty() {
+            write_config(&config_path, &config_aliases)?;
+        }
+
+        let output = alias_cmd(&config_path)
+            .args(&args)
+            .arg("--json")
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+
+        let listed: HashMap<String, String> = serde_json::from_slice(&output.stdout)?;
+        let expected: HashMap<String, String> = expected
+            .into_iter()
+            .map(|(name, key)| (name.to_string(), key.to_base64()))
+            .collect();
+        assert_eq!(listed, expected, "case {description}");
+    }
+    Ok(())
+}
+
+#[test]
+fn alias_json_errors() -> anyhow::Result<()> {
+    let keys = TestKeys::new(2);
+    let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+    // (description, arguments, expected part of the error message)
+    let cases: Vec<(&str, Vec<String>, String)> = vec![
+        (
+            "unknown name",
+            vec!["carol".to_string()],
+            "Alias carol does not exist in config".to_string(),
+        ),
+        (
+            "key without alias",
+            vec!["--key".to_string(), key_1.to_base64()],
+            format!("No alias exists in config for key {}", key_1.to_base64()),
+        ),
+        (
+            "rename without force",
+            vec!["alicia".to_string(), "--key".to_string(), key_0.to_base64()],
+            "Refusing to overwrite existing alias".to_string(),
+        ),
+        (
+            "invalid key",
+            vec!["--key".to_string(), "not-a-key".to_string()],
+            "Key parse error".to_string(),
+        ),
+    ];
+    for (description, args, expected) in cases {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write_config(&config_path, &[("alice", key_0)])?;
+
+        let output = alias_cmd(&config_path)
+            .args(&args)
+            .arg("--json")
+            .assert()
+            .failure()
+            .get_output()
+            .clone();
+
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr)?;
+        let message = error["error"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(&expected),
+            "case {description}: unexpected error {message:?}"
+        );
+    }
+    Ok(())
+}

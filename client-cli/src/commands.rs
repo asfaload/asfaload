@@ -566,17 +566,18 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             key,
             config_file,
             force,
+            json_args,
         } => {
             let output = match (name, key) {
-                (None, None) => list_aliases(config_file, &None)?,
-                (Some(_), None) => list_aliases(config_file, name)?,
+                (None, None) => list_aliases(config_file, &None, json_args.json)?,
+                (Some(_), None) => list_aliases(config_file, name, json_args.json)?,
                 (None, Some(k)) => {
                     let pub_key = AsfaloadPublicKeys::from_base64(k)?;
-                    display_key(config_file, &pub_key)?
+                    display_key(config_file, &pub_key, json_args.json)?
                 }
                 (Some(n), Some(k)) => {
                     let pub_key = AsfaloadPublicKeys::from_base64(k)?;
-                    add_alias(config_file, &pub_key, n, *force)?
+                    add_alias(config_file, &pub_key, n, *force, json_args.json)?
                 }
             };
             println!("{}", output);

@@ -452,6 +452,8 @@ pub enum Commands {
         config_file: Option<PathBuf>,
         #[arg(short, long, default_value = "false")]
         force: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
 }
 
@@ -525,13 +527,13 @@ impl Commands {
             | Self::Revoke { json_args, .. }
             | Self::Ping { json_args, .. }
             | Self::CheckIndex { json_args, .. }
-            | Self::CheckPendingSigners { json_args, .. } => json_args.json,
+            | Self::CheckPendingSigners { json_args, .. }
+            | Self::Alias { json_args, .. } => json_args.json,
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::FetchFile { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
             Self::Complete { .. } => false,
             Self::Shell { .. } => false,
-            Self::Alias { .. } => false,
         }
     }
 }

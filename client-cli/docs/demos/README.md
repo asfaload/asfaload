@@ -86,6 +86,7 @@ The driver renders tapes in this order, mirroring the howto index:
 8. `update-signers-file` — proposes a new signers file (4 artifact + 3 revocation keys).
 9. `revoke-release-initiate` — `key_4` initiates the revocation of `v1.0` (leaves a pending revocation on the backend).
 10. `revoke-release-cosign` — `key_5` co-signs the pending revocation; threshold 2 is met and `v1.0` becomes revoked.
+11. `name-public-keys` — gives aliases to `key_0.pub` and `key_1.pub`, then shows, renames and deletes them. It uses only the local configuration file, not the backend.
 
 `download-with-verification` is recorded before `update-signers-file`/`revoke-release` so the verification path stays the happy one. By the end of the run, `v1.0` is revoked.
 
@@ -104,6 +105,7 @@ These run silently in the driver to bridge demos:
 - **After `create-signers-file.tape`**: copy `$HOME/signers.json` into the fileserver doc-root at `demo-project/asfaload.signers/index.json`. Equivalent of the how-to's "commit and push".
 - **After `update-signers-file.tape`**: run `sign-pending` for `key_0` through `key_6` so the v2 signers file becomes active. The signing-round how-to (`activate-signers-file`) already showed the user-facing flow, so we don't re-record it here. This is what makes `revoke-release` work — the active signers file now has a revocation group.
 - **Backend URL and password file via env vars**: the driver exports `ASFALOAD_BACKEND_URL` (the local rest-api) and `ASFALOAD_PASSWORD_FILE` (the fixture `.demo-password`) to the `vhs` process. The CLI reads both through clap's env support, so on-screen commands omit `-u` and `--password-file`. In a real session the user only passes `-u` to override the default backend (`https://backend.asfaload.com`) and supplies the password interactively or via `--password-file`.
+- **Configuration directory**: the driver sets `XDG_CONFIG_HOME` to `$HOME/.config` in the fixture. Thus, the `alias` command writes its configuration file in the fixture, and not in your own configuration directory.
 
 ## Env vars exposed to tapes
 

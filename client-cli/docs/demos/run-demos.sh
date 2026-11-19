@@ -46,6 +46,7 @@ TAPES=(
     "update-signers-file.tape"
     "revoke-release-initiate.tape"
     "revoke-release-cosign.tape"
+    "name-public-keys.tape"
 )
 
 # Release version used by register/sign/download/revoke demos.
@@ -335,6 +336,7 @@ for tape in "${TAPES[@]}"; do
     (
         cd "$TAPES_DIR"
         HOME="$FIXTURE/home" \
+        XDG_CONFIG_HOME="$FIXTURE/home/.config" \
         PATH="$REPO_ROOT/target/debug:$PATH" \
         ASFALOAD_BACKEND_URL="$BACKEND_URL" \
         ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE" \

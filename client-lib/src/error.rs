@@ -144,6 +144,8 @@ pub enum ClientLibError {
 
     #[error("Config error: {0}")]
     ConfigError(String),
+    #[error("Alias not found: {0}")]
+    AliasNotFound(String),
 }
 
 /// Detail sentence for `UrlOutsideRealm`: name the forge project the URL

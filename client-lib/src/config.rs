@@ -96,6 +96,12 @@ fn check_alias_name(name: &str) -> Result<(), String> {
             "Alias {name:?} contains invalid character {c:?}: only ASCII letters, digits, '-', '_' and '.' are allowed"
         ));
     }
+    // A leading '-' reads as a command line flag, and "." or ".." as a path.
+    if !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return Err(format!(
+            "Alias {name:?} must start with an ASCII letter or digit"
+        ));
+    }
     Ok(())
 }
 
@@ -304,7 +310,14 @@ mod tests {
             ("alice", true),
             ("Bob-2", true),
             ("release_team.v1", true),
+            ("2fa-key", true),
             ("", false),
+            ("-k", false),
+            ("--force", false),
+            (".", false),
+            ("..", false),
+            (".hidden", false),
+            ("_team", false),
             (" ", false),
             ("alice smith", false),
             ("alice\n", false),

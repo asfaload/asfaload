@@ -138,6 +138,12 @@ pub fn load_config_or_default(path_in: Option<&Path>) -> Result<CliConfig, Clien
 
 pub fn save_config(config: &CliConfig, path_in: Option<&Path>) -> Result<(), ClientLibError> {
     let config_path = build_config_path(path_in)?;
+    // Write to the target of a symlink, so the symlink stays in place.
+    let config_path = match std::fs::canonicalize(&config_path) {
+        Ok(target) => target,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => config_path,
+        Err(e) => return Err(e.into()),
+    };
     let config_content = toml::to_string(config)
         .map_err(|e| ClientLibError::ConfigError(format!("Could not serialise config: {e}")))?;
     let config_dir = match config_path.parent() {
@@ -540,6 +546,29 @@ mod tests {
 
         let loaded = load_config(Some(&config_path))?;
         assert_eq!(loaded.aliases, smaller.aliases);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_config_writes_through_symlink() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let target_dir = temp_dir.path().join("dotfiles");
+        std::fs::create_dir(&target_dir)?;
+        let target_path = target_dir.join("config.toml");
+        write(&target_path, "[aliases]\n")?;
+        let link_path = temp_dir.path().join("config.toml");
+        std::os::unix::fs::symlink(&target_path, &link_path)?;
+        let keys = TestKeys::new(1);
+        let mut config = CliConfig::default();
+        config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
+
+        save_config(&config, Some(&link_path))?;
+
+        assert!(std::fs::symlink_metadata(&link_path)?.is_symlink());
+        assert_eq!(std::fs::read_link(&link_path)?, target_path);
+        let loaded = load_config(Some(&target_path))?;
+        assert_eq!(loaded.aliases, config.aliases);
         Ok(())
     }
 }

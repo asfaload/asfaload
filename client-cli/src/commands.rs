@@ -3,7 +3,13 @@ use std::io::IsTerminal;
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
     commands::{
-        complete::handle_complete, fetch_file::handle_fetch_file, shell::handle_shell_command,
+        alias::{
+            add_alias, delete_alias, delete_alias_of_key, delete_alias_pair, display_key,
+            list_aliases,
+        },
+        complete::handle_complete,
+        fetch_file::handle_fetch_file,
+        shell::handle_shell_command,
     },
     error::ClientCliError,
     utils::{
@@ -12,6 +18,7 @@ use crate::{
     },
 };
 
+pub mod alias;
 pub mod keys;
 pub mod list_pending;
 pub mod share_key;
@@ -20,7 +27,9 @@ pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
 use clap::ValueEnum;
-use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
+};
 use rest_api_types::models::ClientPendingFile;
 
 pub mod check_index;
@@ -554,6 +563,30 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             if exit_code != 0 {
                 std::process::exit(exit_code);
             }
+        }
+        Commands::Alias {
+            name,
+            key,
+            config_file,
+            force,
+            delete,
+            json_args,
+        } => {
+            let json = json_args.json;
+            let pub_key = key
+                .as_deref()
+                .map(AsfaloadPublicKeys::from_base64)
+                .transpose()?;
+            let output = match (name, &pub_key, delete) {
+                (None, None, _) => list_aliases(config_file, &None, json)?,
+                (Some(_), None, false) => list_aliases(config_file, name, json)?,
+                (Some(n), None, true) => delete_alias(config_file, n, json)?,
+                (None, Some(k), false) => display_key(config_file, k, json)?,
+                (None, Some(k), true) => delete_alias_of_key(config_file, k, json)?,
+                (Some(n), Some(k), false) => add_alias(config_file, k, n, *force, json)?,
+                (Some(n), Some(k), true) => delete_alias_pair(config_file, k, n, json)?,
+            };
+            println!("{}", output);
         }
     }
     Ok(())

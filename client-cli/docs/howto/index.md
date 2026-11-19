@@ -26,3 +26,7 @@ Step-by-step recipes for common operations with the `asfaload-cli` CLI. Follow t
 ## Verification
 
 10. [Download a file with signature verification](download-with-verification.md)
+
+## Local configuration
+
+11. [Give names to public keys](name-public-keys.md)

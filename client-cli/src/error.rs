@@ -91,6 +91,18 @@ pub enum ClientCliError {
 
     #[error("Signers update failed: {0}")]
     SignersUpdateFailed(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
+    #[error("Alias {0} does not exist in config")]
+    AliasNotFound(String),
+
+    #[error("No alias exists in config for key {0}")]
+    NoAliasForKey(String),
+
+    #[error("Alias {0} is not an alias for key {1}")]
+    AliasNotForKey(String, String),
 }
 
 /// Return the error built by `failure` with the backend message when the

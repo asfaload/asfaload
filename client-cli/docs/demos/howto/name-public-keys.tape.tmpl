@@ -1,0 +1,42 @@
+Output out/name-public-keys.gif
+
+Set Shell "bash"
+Set Width 1200
+Set Height 700
+Set TypingSpeed $TYPING_SPEED
+Set PlaybackSpeed 1.0
+
+Type "# Give a name to the public key of each signer"
+Enter
+Type 'asfaload-cli alias alice --key "$(cat ~/.asfaload/key_0.pub)"'
+Enter
+$SLEEP 2s
+Type 'asfaload-cli alias bob --key "$(cat ~/.asfaload/key_1.pub)"'
+Enter
+$SLEEP 2s
+Type "# Show all aliases"
+Enter
+Type "asfaload-cli alias"
+Enter
+$SLEEP 3s
+Type "# Find the key of an alias, or the alias of a key"
+Enter
+Type "asfaload-cli alias alice"
+Enter
+$SLEEP 2s
+Type 'asfaload-cli alias --key "$(cat ~/.asfaload/key_1.pub)"'
+Enter
+$SLEEP 3s
+Type "# Rename the alias of a key"
+Enter
+Type 'asfaload-cli alias robert --key "$(cat ~/.asfaload/key_1.pub)" --force'
+Enter
+$SLEEP 2s
+Type "# Delete an alias"
+Enter
+Type "asfaload-cli alias alice --delete"
+Enter
+$SLEEP 2s
+Type "asfaload-cli alias"
+Enter
+Sleep $END_PAUSE

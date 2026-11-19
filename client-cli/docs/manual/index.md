@@ -42,6 +42,10 @@ Reference for all `asfaload-cli` commands.
 
 - [`shell`](shell.md) — start a shell in which completion for `asfaload-cli` is active
 
+## Local configuration
+
+- [`alias`](alias.md) — give names to public keys, and show or delete these names
+
 ## Common notes
 
 ### Passwords

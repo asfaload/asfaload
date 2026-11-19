@@ -19,6 +19,7 @@
   - [Update a signers file](client-cli/howto/update-signers-file.md)
   - [Revoke a signed release](client-cli/howto/revoke-release.md)
   - [Download with verification](client-cli/howto/download-with-verification.md)
+  - [Give names to public keys](client-cli/howto/name-public-keys.md)
 - [Manual](client-cli/manual/index.md)
   - [new-keys](client-cli/manual/new-keys.md)
   - [share-key](client-cli/manual/share-key.md)
@@ -35,6 +36,7 @@
   - [check-index](client-cli/manual/check-index.md)
   - [check-pending-signers](client-cli/manual/check-pending-signers.md)
   - [ping](client-cli/manual/ping.md)
+  - [alias](client-cli/manual/alias.md)
 
 # REST API
 

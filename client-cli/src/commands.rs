@@ -153,6 +153,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             revocation_threshold,
             output_file,
             json_args,
+            config_args,
         } => {
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
@@ -169,6 +170,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 revocation_threshold.as_ref().copied(),
                 output_file,
                 json_args.json,
+                config_args.config_file.clone(),
             )?;
         }
         Commands::ListPending {

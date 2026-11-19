@@ -62,6 +62,13 @@ pub struct JsonArgs {
     pub json: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct ConfigFile {
+    /// Config file path
+    #[arg(long, short)]
+    pub config_file: Option<PathBuf>,
+}
+
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum ForgeType {
     Github,
@@ -186,6 +193,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
     /// Compute the digest for a local or remote file
     GetDigest {

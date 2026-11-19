@@ -319,3 +319,85 @@ fn alias_json_errors() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn alias_delete_by_name_key_or_pair() -> anyhow::Result<()> {
+    let keys = TestKeys::new(2);
+    let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+    // (description, arguments)
+    let cases: Vec<(&str, Vec<String>)> = vec![
+        ("by name", vec!["alice".to_string()]),
+        ("by key", vec!["--key".to_string(), key_0.to_base64()]),
+        (
+            "by pair",
+            vec!["alice".to_string(), "--key".to_string(), key_0.to_base64()],
+        ),
+    ];
+    for (description, args) in cases {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write_config(&config_path, &[("alice", key_0), ("bob", key_1)])?;
+
+        alias_cmd(&config_path)
+            .args(&args)
+            .arg("--delete")
+            .assert()
+            .success()
+            .stdout(contains(format!(
+                "Alias alice deleted for {}",
+                key_0.to_base64()
+            )));
+
+        let remaining = BTreeMap::from([("bob".to_string(), key_1.clone())]);
+        assert_eq!(aliases_in(&config_path)?, remaining, "case {description}");
+    }
+    Ok(())
+}
+
+#[test]
+fn alias_delete_rejects_invalid_arguments() -> anyhow::Result<()> {
+    let keys = TestKeys::new(2);
+    let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+    // (description, arguments, expected part of the error message)
+    let cases: Vec<(&str, Vec<String>, String)> = vec![
+        (
+            "without name or key",
+            vec!["--delete".to_string()],
+            "required arguments were not provided".to_string(),
+        ),
+        (
+            "with force",
+            vec![
+                "alice".to_string(),
+                "--delete".to_string(),
+                "--force".to_string(),
+            ],
+            "cannot be used with".to_string(),
+        ),
+        (
+            "pair with other key",
+            vec![
+                "alice".to_string(),
+                "--key".to_string(),
+                key_1.to_base64(),
+                "--delete".to_string(),
+            ],
+            format!("Alias alice is not an alias for key {}", key_1.to_base64()),
+        ),
+    ];
+    for (description, args, expected) in cases {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write_config(&config_path, &[("alice", key_0)])?;
+
+        alias_cmd(&config_path)
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(contains(expected));
+
+        let unchanged = BTreeMap::from([("alice".to_string(), key_0.clone())]);
+        assert_eq!(aliases_in(&config_path)?, unchanged, "case {description}");
+    }
+    Ok(())
+}

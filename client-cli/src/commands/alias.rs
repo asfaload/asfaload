@@ -248,6 +248,112 @@ mod tests {
         Ok(())
     }
 
+    type AliasCall<'a> = Box<dyn Fn(&Option<PathBuf>) -> Result<String, ClientCliError> + 'a>;
+
+    #[test]
+    fn delete_removes_only_the_requested_alias() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        // (description, call)
+        let cases: Vec<(&str, AliasCall<'_>)> = vec![
+            (
+                "by name",
+                Box::new(|path| delete_alias(path, "alice", false)),
+            ),
+            (
+                "by key",
+                Box::new(|path| delete_alias_of_key(path, key_0, false)),
+            ),
+            (
+                "by pair",
+                Box::new(|path| delete_alias_pair(path, key_0, "alice", false)),
+            ),
+        ];
+        for (description, call) in cases {
+            let temp_dir = TempDir::new()?;
+            let config_path = Some(temp_dir.path().join("config.toml"));
+            write_config(
+                config_path.as_deref().unwrap(),
+                &[("alice", key_0), ("bob", key_1)],
+            )?;
+
+            let output = call(&config_path)?;
+
+            assert_eq!(
+                output,
+                format!("Alias alice deleted for {}", key_0.to_base64()),
+                "case {description}"
+            );
+            let loaded = load_config(config_path.as_deref())?;
+            assert_eq!(loaded.get_key("alice"), None, "case {description}");
+            assert_eq!(loaded.get_key("bob"), Some(key_1), "case {description}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delete_errors_leave_config_unchanged() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        // (description, call, expected error)
+        let cases: Vec<(&str, AliasCall<'_>, ClientCliError)> = vec![
+            (
+                "unknown name",
+                Box::new(|path| delete_alias(path, "carol", false)),
+                ClientCliError::AliasNotFound("carol".to_string()),
+            ),
+            (
+                "key without alias",
+                Box::new(|path| delete_alias_of_key(path, key_1, false)),
+                ClientCliError::NoAliasForKey(key_1.to_base64()),
+            ),
+            (
+                "pair with unknown name",
+                Box::new(|path| delete_alias_pair(path, key_0, "carol", false)),
+                ClientCliError::AliasNotFound("carol".to_string()),
+            ),
+            (
+                "pair with other key",
+                Box::new(|path| delete_alias_pair(path, key_1, "alice", false)),
+                ClientCliError::AliasNotForKey("alice".to_string(), key_1.to_base64()),
+            ),
+        ];
+        for (description, call, expected) in cases {
+            let temp_dir = TempDir::new()?;
+            let path = temp_dir.path().join("config.toml");
+            let config_path = Some(path.clone());
+            write_config(&path, &[("alice", key_0)])?;
+            let before = std::fs::read_to_string(&path)?;
+
+            match call(&config_path) {
+                Err(e) => assert_eq!(e.to_string(), expected.to_string(), "case {description}"),
+                Ok(output) => panic!("case {description}: expected an error, got {output:?}"),
+            }
+            assert_eq!(
+                std::fs::read_to_string(&path)?,
+                before,
+                "case {description}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delete_does_not_create_missing_config() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().join("config.toml");
+        let config_path = Some(path.clone());
+        let keys = TestKeys::new(1);
+        let key_0 = keys.pub_key(0).unwrap();
+
+        assert!(delete_alias(&config_path, "alice", false).is_err());
+        assert!(delete_alias_of_key(&config_path, key_0, false).is_err());
+        assert!(delete_alias_pair(&config_path, key_0, "alice", false).is_err());
+
+        assert!(!path.exists());
+        Ok(())
+    }
+
     #[test]
     fn json_output_maps_aliases_to_keys() -> anyhow::Result<()> {
         let keys = TestKeys::new(3);
@@ -256,7 +362,6 @@ mod tests {
             keys.pub_key(1).unwrap(),
             keys.pub_key(2).unwrap(),
         );
-        type AliasCall<'a> = Box<dyn Fn(&Option<PathBuf>) -> Result<String, ClientCliError> + 'a>;
         type Expected<'a> = Vec<(&'a str, &'a AsfaloadPublicKeys)>;
         // (description, call, expected aliases in the output)
         let cases: Vec<(&str, AliasCall<'_>, Expected<'_>)> = vec![
@@ -279,6 +384,11 @@ mod tests {
                 "add",
                 Box::new(|path| add_alias(path, key_2, "carol", false, true)),
                 vec![("carol", key_2)],
+            ),
+            (
+                "delete",
+                Box::new(|path| delete_alias(path, "bob", true)),
+                vec![("bob", key_1)],
             ),
         ];
         for (description, call, expected) in cases {

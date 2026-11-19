@@ -523,6 +523,23 @@ mod tests {
     }
 
     #[test]
+    fn remove_alias_returns_removed_key() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        let mut config = CliConfig::default();
+        config.add_alias(key_0, "alice", false)?;
+        config.add_alias(key_1, "bob", false)?;
+
+        assert_eq!(config.remove_alias("alice"), Some(key_0.clone()));
+        assert_eq!(config.remove_alias("alice"), None);
+        assert_eq!(config.remove_alias("carol"), None);
+
+        let expected = BTreeMap::from([("bob".to_string(), key_1.clone())]);
+        assert_eq!(config.aliases(), &expected);
+        Ok(())
+    }
+
+    #[test]
     fn load_config_rejects_invalid_aliases() -> anyhow::Result<()> {
         let keys = TestKeys::new(1);
         let key = keys.pub_key(0).unwrap().to_base64();

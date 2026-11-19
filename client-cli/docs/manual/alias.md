@@ -79,14 +79,16 @@ Write the result as JSON instead of human-readable text.
 
 ## Output
 
+The operations that show aliases write TOML lines. You can copy these lines into the `[aliases]` table of a configuration file. An alias that contains a `.` is between quotes, because TOML reads an unquoted `.` as a separator of nested tables.
+
 Show all aliases:
 
     alice = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"
-    bob = "asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU"
+    "release.v1" = "asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU"
 
 Show one alias (from `NAME` or from `--key`):
 
-    alice = asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+    alice = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"
 
 Add an alias:
 

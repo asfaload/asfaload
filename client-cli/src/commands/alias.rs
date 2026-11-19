@@ -6,6 +6,16 @@ use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 
 use crate::error::ClientCliError;
 
+// TOML lines, so the output can be copied to the aliases table of the config file.
+fn to_toml_lines(aliases: &impl serde::Serialize) -> Result<String, ClientCliError> {
+    let lines = toml::to_string(aliases).map_err(|e| {
+        ClientCliError::ConfigError(format!(
+            "Got a problem serialising the aliases for output: {e}"
+        ))
+    })?;
+    Ok(lines.trim_end().to_string())
+}
+
 // Output of a single alias, as used for lookups, additions and deletions.
 fn format_alias(
     alias: &str,
@@ -16,7 +26,7 @@ fn format_alias(
     if json {
         Ok(serde_json::to_string(&HashMap::from([(alias, key)]))?)
     } else {
-        Ok(format!("{} = {}", alias, key))
+        to_toml_lines(&HashMap::from([(alias, key)]))
     }
 }
 
@@ -34,11 +44,7 @@ pub fn list_aliases(
             None => return Err(ClientCliError::AliasNotFound(alias.clone())),
         },
         None if json => serde_json::to_string(aliases)?,
-        None => toml::to_string(aliases).map_err(|e| {
-            ClientCliError::ConfigError(format!(
-                "Got a problem serialising the aliases for output: {e}"
-            ))
-        })?,
+        None => to_toml_lines(aliases)?,
     };
 
     Ok(output.clone())
@@ -170,11 +176,38 @@ mod tests {
         let output = list_aliases(&config_path, &None, false)?;
 
         let expected = format!(
-            "alice = \"{}\"\nbob = \"{}\"\n",
+            "alice = \"{}\"\nbob = \"{}\"",
             key_0.to_base64(),
             key_1.to_base64()
         );
         assert_eq!(output, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn text_output_can_be_copied_to_config_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = Some(temp_dir.path().join("config.toml"));
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        write_config(
+            config_path.as_deref().unwrap(),
+            &[("alice", key_0), ("release.v1", key_1)],
+        )?;
+        let expected = load_config(config_path.as_deref())?;
+
+        // A '.' in an unquoted TOML key creates a nested table, so the name must be quoted.
+        let single = list_aliases(&config_path, &Some("release.v1".to_string()), false)?;
+        assert_eq!(
+            single,
+            format!("\"release.v1\" = \"{}\"", key_1.to_base64())
+        );
+
+        let copied_path = temp_dir.path().join("copied.toml");
+        let listed = list_aliases(&config_path, &None, false)?;
+        std::fs::write(&copied_path, format!("[aliases]\n{listed}\n"))?;
+        let copied = load_config(Some(&copied_path))?;
+        assert_eq!(copied.aliases(), expected.aliases());
         Ok(())
     }
 
@@ -187,7 +220,7 @@ mod tests {
         write_config(config_path.as_deref().unwrap(), &[("alice", key_0)])?;
 
         let output = list_aliases(&config_path, &Some("alice".to_string()), false)?;
-        assert_eq!(output, format!("alice = {}", key_0.to_base64()));
+        assert_eq!(output, format!("alice = \"{}\"", key_0.to_base64()));
 
         match list_aliases(&config_path, &Some("carol".to_string()), false) {
             Err(ClientCliError::AliasNotFound(name)) => assert_eq!(name, "carol"),
@@ -205,7 +238,7 @@ mod tests {
         write_config(config_path.as_deref().unwrap(), &[("alice", key_0)])?;
 
         let output = display_key(&config_path, key_0, false)?;
-        assert_eq!(output, format!("alice = {}", key_0.to_base64()));
+        assert_eq!(output, format!("alice = \"{}\"", key_0.to_base64()));
 
         match display_key(&config_path, key_1, false) {
             Err(ClientCliError::NoAliasForKey(key)) => assert_eq!(key, key_1.to_base64()),

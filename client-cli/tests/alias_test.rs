@@ -43,7 +43,7 @@ fn alias_without_args_lists_all_aliases() -> anyhow::Result<()> {
         .clone();
 
     let expected = format!(
-        "alice = \"{}\"\nbob = \"{}\"\n\n",
+        "alice = \"{}\"\nbob = \"{}\"\n",
         key_0.to_base64(),
         key_1.to_base64()
     );
@@ -80,7 +80,7 @@ fn alias_lookups_without_config_do_not_create_it() -> anyhow::Result<()> {
 fn alias_lookup_by_name_or_key() -> anyhow::Result<()> {
     let keys = TestKeys::new(2);
     let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
-    let found = format!("alice = {}", key_0.to_base64());
+    let found = format!("alice = \"{}\"", key_0.to_base64());
     // (description, arguments, expected stdout on success or stderr part on failure)
     let cases: Vec<(&str, Vec<String>, Result<String, String>)> = vec![
         (

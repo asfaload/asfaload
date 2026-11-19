@@ -11,6 +11,7 @@ use crate::ClientLibError;
 
 type Aliases = BTreeMap<String, AsfaloadPublicKeys>;
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 /// Configuration of the client CLI
 pub struct CliConfig {
     // Alias for pub keys. Key is alias, value if pubkey. Makes config file more readable.
@@ -215,6 +216,9 @@ mod tests {
             ("not toml", "this is = = not toml"),
             ("aliases not a table", "aliases = 3"),
             ("invalid key", "[aliases]\nalice = \"not-a-key\""),
+            ("misspelled aliases section", "[alias]\n"),
+            ("unknown section next to aliases", "[aliases]\n\n[other]\n"),
+            ("unknown top-level key", "version = 1"),
         ];
         for (name, content) in cases {
             let temp_dir = TempDir::new()?;

@@ -3,7 +3,6 @@ use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
-    fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -127,33 +126,6 @@ pub fn load_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> 
     Ok(config)
 }
 
-pub fn init(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
-    let config_path = build_config_path(path_in)?;
-    let default_config = CliConfig::default();
-    let config_content = toml::to_string(&default_config).map_err(|e| {
-        ClientLibError::ConfigError(format!("Could not serialise default config: {e}"))
-    })?;
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut f = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&config_path)?;
-    f.write_all(config_content.as_bytes())?;
-    Ok(default_config)
-}
-
-pub fn load_or_init_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
-    let config_path = build_config_path(path_in)?;
-    match load_config(Some(&config_path)) {
-        Err(ClientLibError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-            init(Some(&config_path))
-        }
-        result => result,
-    }
-}
-
 pub fn load_config_or_default(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {
     match load_config(path_in) {
         Err(ClientLibError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -274,78 +246,6 @@ mod tests {
                 .unwrap_or_else(|e| panic!("case {name}: unexpected error {e}"));
             assert!(loaded.aliases.is_empty(), "case {name}: aliases not empty");
         }
-        Ok(())
-    }
-
-    #[test]
-    fn init_creates_parent_dirs_and_loadable_config() -> anyhow::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config_path = temp_dir.path().join("a").join("b").join("config.toml");
-
-        let config = init(Some(&config_path))?;
-        assert!(config.aliases.is_empty());
-        assert!(config_path.is_file());
-
-        let loaded = load_config(Some(&config_path))?;
-        assert!(loaded.aliases.is_empty());
-        Ok(())
-    }
-
-    #[test]
-    fn init_does_not_overwrite_existing_file() -> anyhow::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config_path = temp_dir.path().join("config.toml");
-        let existing = "# existing config\n";
-        write(&config_path, existing)?;
-
-        match init(Some(&config_path)).unwrap_err() {
-            ClientLibError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists),
-            e => panic!("expected Io error, got {e}"),
-        }
-        assert_eq!(std::fs::read_to_string(&config_path)?, existing);
-        Ok(())
-    }
-
-    #[test]
-    fn load_or_init_config_creates_missing_file() -> anyhow::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config_path = temp_dir.path().join("a").join("config.toml");
-
-        let config = load_or_init_config(Some(&config_path))?;
-        assert!(config.aliases.is_empty());
-        assert!(config_path.is_file());
-        Ok(())
-    }
-
-    #[test]
-    fn load_or_init_config_loads_existing_file_unchanged() -> anyhow::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config_path = temp_dir.path().join("config.toml");
-        let keys = TestKeys::new(1);
-        let config = CliConfig {
-            aliases: BTreeMap::from([("alice".to_string(), keys.pub_key(0).unwrap().clone())]),
-        };
-        let content = toml::to_string(&config)?;
-        write(&config_path, &content)?;
-
-        let loaded = load_or_init_config(Some(&config_path))?;
-        assert_eq!(loaded.aliases, config.aliases);
-        assert_eq!(std::fs::read_to_string(&config_path)?, content);
-        Ok(())
-    }
-
-    #[test]
-    fn load_or_init_config_does_not_replace_invalid_file() -> anyhow::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config_path = temp_dir.path().join("config.toml");
-        let invalid = "this is = = not toml";
-        write(&config_path, invalid)?;
-
-        match load_or_init_config(Some(&config_path)).unwrap_err() {
-            ClientLibError::ConfigError(_) => {}
-            e => panic!("expected ConfigError, got {e}"),
-        }
-        assert_eq!(std::fs::read_to_string(&config_path)?, invalid);
         Ok(())
     }
 
@@ -609,7 +509,8 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("config.toml");
         let keys = TestKeys::new(1);
-        let mut config = load_or_init_config(Some(&config_path))?;
+        write(&config_path, "[aliases]\n")?;
+        let mut config = load_config(Some(&config_path))?;
         config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
 
         save_config(&config, Some(&config_path))?;

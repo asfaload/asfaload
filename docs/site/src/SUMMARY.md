@@ -35,6 +35,7 @@
   - [check-index](client-cli/manual/check-index.md)
   - [check-pending-signers](client-cli/manual/check-pending-signers.md)
   - [ping](client-cli/manual/ping.md)
+  - [alias](client-cli/manual/alias.md)
 
 # REST API
 

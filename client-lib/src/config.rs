@@ -15,6 +15,7 @@ type Aliases = BTreeMap<String, AsfaloadPublicKeys>;
 /// Configuration of the client CLI
 pub struct CliConfig {
     // Alias for pub keys. Key is alias, value if pubkey. Makes config file more readable.
+    #[serde(default)]
     aliases: Aliases,
 }
 
@@ -254,6 +255,24 @@ mod tests {
                 ),
                 e => panic!("case {name}: expected ConfigError, got {e}"),
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_accepts_file_without_aliases() -> anyhow::Result<()> {
+        let cases = vec![
+            ("empty", ""),
+            ("blank lines", "\n  \n"),
+            ("comment only", "# no aliases yet\n"),
+        ];
+        for (name, content) in cases {
+            let temp_dir = TempDir::new()?;
+            let config_path = temp_dir.path().join("config.toml");
+            write(&config_path, content)?;
+            let loaded = load_config(Some(&config_path))
+                .unwrap_or_else(|e| panic!("case {name}: unexpected error {e}"));
+            assert!(loaded.aliases.is_empty(), "case {name}: aliases not empty");
         }
         Ok(())
     }

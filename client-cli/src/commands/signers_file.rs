@@ -7,7 +7,7 @@ use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, executable_name, validate_threshold};
 use anstyle::Style;
 use client_lib::alias::input_to_key;
-use client_lib::config::{CliConfig, load_config_or_default};
+use client_lib::config::ConfigAccessor;
 use common::sha512_for_content;
 use features_lib::{
     ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
@@ -76,7 +76,7 @@ pub fn handle_new_signers_file_command(
     revocation_threshold: Option<u32>,
     output_file: &Option<PathBuf>,
     json: bool,
-    config_file: Option<PathBuf>,
+    config_accessor: &ConfigAccessor,
 ) -> Result<()> {
     // Do output file validations early
     if let Some(output_file) = output_file {
@@ -102,10 +102,9 @@ pub fn handle_new_signers_file_command(
         }
     };
 
-    let config = load_config_or_default(config_file.as_deref())?;
     // Combine string and file-based artifact signers
     let all_artifact_signers: Vec<AsfaloadPublicKeys> =
-        combine_key_sources(artifact_signer, artifact_signer_file, &config)?;
+        combine_key_sources(artifact_signer, artifact_signer_file, config_accessor)?;
     let all_artifact_signers_count = all_artifact_signers.len();
 
     if all_artifact_signers_count == 0 {
@@ -118,18 +117,18 @@ pub fn handle_new_signers_file_command(
 
     // Combine string and file-based admin keys
     let all_admin_keys: Vec<AsfaloadPublicKeys> =
-        combine_key_sources(admin_key, admin_key_file, &config)?;
+        combine_key_sources(admin_key, admin_key_file, config_accessor)?;
     let all_admin_keys_count = all_admin_keys.len();
     let admin_group_info = get_group_info(all_admin_keys, admin_threshold)?;
 
     // Combine string and file-based master keys
     let all_master_keys: Vec<AsfaloadPublicKeys> =
-        combine_key_sources(master_key, master_key_file, &config)?;
+        combine_key_sources(master_key, master_key_file, config_accessor)?;
     let all_master_keys_count = all_master_keys.len();
     let master_group_info = get_group_info(all_master_keys, master_threshold)?;
     // Revocation keys
     let all_revocation_keys: Vec<AsfaloadPublicKeys> =
-        combine_key_sources(revocation_key, revocation_key_file, &config)?;
+        combine_key_sources(revocation_key, revocation_key_file, config_accessor)?;
     let all_revocation_keys_count = all_revocation_keys.len();
     let revocation_group_info = get_group_info(all_revocation_keys, revocation_threshold)?;
     // Create signers config using the with_keys method
@@ -280,13 +279,13 @@ pub fn handle_new_signers_file_command(
 fn combine_key_sources(
     string_keys: &[String],
     file_keys: &[PathBuf],
-    config: &CliConfig,
+    config_accessor: &ConfigAccessor,
 ) -> Result<Vec<AsfaloadPublicKeys>> {
     // Collect public keys from base64 strings we got
     let mut combined: Vec<Result<AsfaloadPublicKeys>> = string_keys
         .iter()
         .map(|key_str| {
-            input_to_key(config, key_str).map_err(|e| {
+            input_to_key(config_accessor, key_str).map_err(|e| {
                 let path_buf = PathBuf::from_str(key_str).unwrap_or(PathBuf::new());
                 if path_buf.as_path().exists() {
                     crate::error::ClientCliError::SignersFile(format!(

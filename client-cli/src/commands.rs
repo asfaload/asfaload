@@ -27,6 +27,7 @@ pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
 use clap::ValueEnum;
+use client_lib::config::ConfigAccessor;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
 };
@@ -155,6 +156,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             json_args,
             config_args,
         } => {
+            let config_accessor = ConfigAccessor::new(&config_args.config_file)?;
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
                 artifact_signers_file,
@@ -170,7 +172,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 revocation_threshold.as_ref().copied(),
                 output_file,
                 json_args.json,
-                config_args.config_file.clone(),
+                &config_accessor,
             )?;
         }
         Commands::ListPending {

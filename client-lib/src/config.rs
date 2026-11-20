@@ -2,6 +2,7 @@ use etcetera::{BaseStrategy, choose_base_strategy};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::OnceCell,
     collections::{BTreeMap, HashSet},
     io::Write,
     path::{Path, PathBuf},
@@ -10,7 +11,7 @@ use std::{
 use crate::ClientLibError;
 
 type Aliases = BTreeMap<String, AsfaloadPublicKeys>;
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 /// Configuration of the client CLI
 pub struct CliConfig {
@@ -80,6 +81,31 @@ impl CliConfig {
             }
         }
         Ok(())
+    }
+}
+
+/// The ConfigAccessor loads the config lazily, preventing config failures for commands that don't
+/// use the config.
+pub struct ConfigAccessor {
+    path: PathBuf,
+    config: OnceCell<CliConfig>,
+}
+
+impl ConfigAccessor {
+    pub fn new(path_in: &Option<PathBuf>) -> Result<Self, ClientLibError> {
+        let config_path = build_config_path(path_in.as_deref())?;
+        Ok(ConfigAccessor {
+            path: config_path,
+            config: OnceCell::new(),
+        })
+    }
+
+    pub fn get(&self) -> Result<&CliConfig, ClientLibError> {
+        if let Some(config) = self.config.get() {
+            return Ok(config);
+        }
+        let config = load_config_or_default(Some(&self.path))?;
+        Ok(self.config.get_or_init(|| config))
     }
 }
 

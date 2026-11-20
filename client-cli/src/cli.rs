@@ -139,7 +139,7 @@ pub enum Commands {
     },
     /// Operations related to signers files
     NewSignersFile {
-        /// Artifact signer public key as base64 string (can be repeated)
+        /// Artifact signer: key alias or public key as base64 string (can be repeated)
         #[arg(long, short, value_name = "PUB_KEY")]
         artifact_signer: Vec<String>,
 
@@ -151,7 +151,7 @@ pub enum Commands {
         #[arg(long, short = 'A')]
         artifact_threshold: u32,
 
-        /// Admin public key string as base64 string (can be repeated)
+        /// Admin public key alias or base64 string (can be repeated)
         #[arg(long, short = 'd', value_name = "PUB_KEY")]
         admin_key: Vec<String>,
 
@@ -163,7 +163,7 @@ pub enum Commands {
         #[arg(long, short = 'D')]
         admin_threshold: Option<u32>,
 
-        /// Master public key string as base64 string (can be repeated)
+        /// Master public key alias or base64 string (can be repeated)
         #[arg(long, short, value_name = "PUB_KEY")]
         master_key: Vec<String>,
 
@@ -175,7 +175,7 @@ pub enum Commands {
         #[arg(long, short = 'M')]
         master_threshold: Option<u32>,
 
-        /// Revocation public key string as base64 string (can be repeated)
+        /// Revocation public key alias or base64 string (can be repeated)
         #[arg(long, short, value_name = "PUB_KEY")]
         revocation_key: Vec<String>,
 

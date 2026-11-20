@@ -350,6 +350,7 @@ fn combine_key_sources(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use client_lib::config::{CliConfig, save_config};
     use std::fs;
     use tempfile::TempDir;
     use test_helpers::{TestKeys, fixtures_pub_key, fixtures_sec_key};
@@ -376,7 +377,8 @@ mod tests {
 
     #[test]
     fn combine_key_sources_empty_inputs() {
-        let result = combine_key_sources(&[], &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[], &config_accessor);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -384,7 +386,8 @@ mod tests {
     #[test]
     fn combine_key_sources_valid_base64_string() {
         let keys = vec![VALID_PUBKEY_B64.to_string()];
-        let result = combine_key_sources(&keys, &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&keys, &[], &config_accessor);
         assert!(result.is_ok());
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 1);
@@ -397,7 +400,8 @@ mod tests {
             "asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU".to_string(),
             "asfaload-pub:YCuPAtMNZQaYPDjWmp8voWh6bVg0bRyLu2zEkH6zYZI".to_string(),
         ];
-        let result = combine_key_sources(&keys, &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&keys, &[], &config_accessor);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);
     }
@@ -405,7 +409,8 @@ mod tests {
     #[test]
     fn combine_key_sources_invalid_base64_string_returns_error() {
         let keys = vec!["not-a-valid-key".to_string()];
-        let result = combine_key_sources(&keys, &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&keys, &[], &config_accessor);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -427,7 +432,8 @@ mod tests {
         let file_path = fixtures_pub_key(0);
 
         let keys = vec![file_path.to_string_lossy().to_string()];
-        let result = combine_key_sources(&keys, &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&keys, &[], &config_accessor);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -446,7 +452,8 @@ mod tests {
     fn combine_key_sources_nonexistent_path_string_gives_parse_error_not_path_hint() {
         // A path-like string that does NOT exist on disk should not trigger the path hint
         let keys = vec!["/tmp/nonexistent_key_file_12345.pub".to_string()];
-        let result = combine_key_sources(&keys, &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&keys, &[], &config_accessor);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -465,7 +472,8 @@ mod tests {
     fn combine_key_sources_valid_file_key() {
         let key_file = fixtures_pub_key(0);
 
-        let result = combine_key_sources(&[], &[key_file], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[key_file], &config_accessor);
         match result {
             Ok(_) => {}
             Err(e) => panic!("Got unexpected error: {e}"),
@@ -478,7 +486,8 @@ mod tests {
     #[test]
     fn combine_key_sources_nonexistent_file_returns_error() {
         let bad_path = PathBuf::from("/tmp/does_not_exist_key_12345.pub");
-        let result = combine_key_sources(&[], &[bad_path], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[bad_path], &config_accessor);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -494,7 +503,8 @@ mod tests {
         let key_file = temp_dir.path().join("bad.pub");
         std::fs::write(&key_file, "this is not a valid key file").unwrap();
 
-        let result = combine_key_sources(&[], &[key_file], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[key_file], &config_accessor);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -511,7 +521,8 @@ mod tests {
         let string_keys = vec![VALID_PUBKEY_B64.to_string()];
         let file_keys = vec![key_file.clone()];
 
-        let result = combine_key_sources(&string_keys, &file_keys, &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&string_keys, &file_keys, &config_accessor);
         match result {
             Ok(parsed) => {
                 assert_eq!(parsed.len(), 2);
@@ -528,7 +539,8 @@ mod tests {
     fn combine_key_sources_first_invalid_string_fails_entire_call() {
         // One valid + one invalid string key: should fail
         let keys = vec![VALID_PUBKEY_B64.to_string(), "garbage".to_string()];
-        let result = combine_key_sources(&keys, &[], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&keys, &[], &config_accessor);
         assert!(result.is_err());
     }
 
@@ -551,7 +563,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = combine_key_sources(&[], &[multi_key_file], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[multi_key_file], &config_accessor);
         assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 3);
@@ -577,7 +590,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = combine_key_sources(&[], &[mixed_file], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[mixed_file], &config_accessor);
         assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 2);
@@ -603,7 +617,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = combine_key_sources(&[], &[file_path], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[file_path], &config_accessor);
         assert!(result.is_err(), "Expected error for invalid key in middle");
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -638,8 +653,8 @@ mod tests {
         )
         .unwrap();
 
-        let result =
-            combine_key_sources(&[], std::slice::from_ref(&file_path), &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], std::slice::from_ref(&file_path), &config_accessor);
         let err_msg = match result {
             Err(e) => e.to_string(),
             Ok(keys) => panic!("Passing a secret key must fail, got ok value {:?}", keys),
@@ -679,8 +694,8 @@ mod tests {
         let file_path = temp_dir.path().join("with_short_secret_key.pub");
         std::fs::write(&file_path, "asfaload-priv:abc\n").unwrap();
 
-        let result =
-            combine_key_sources(&[], std::slice::from_ref(&file_path), &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], std::slice::from_ref(&file_path), &config_accessor);
         let err_msg = match result {
             Err(e) => e.to_string(),
             Ok(keys) => panic!("Passing a secret key must fail, got ok value {:?}", keys),
@@ -710,7 +725,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = combine_key_sources(&[], &[file_path], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[file_path], &config_accessor);
         assert!(
             result.is_ok(),
             "Expected Ok despite empty lines, got: {:?}",
@@ -734,7 +750,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = combine_key_sources(&[], &[file_path], &CliConfig::default());
+        let (_config_dir, config_accessor) = accessor_for(&CliConfig::default());
+        let result = combine_key_sources(&[], &[file_path], &config_accessor);
         assert!(
             result.is_ok(),
             "Duplicate keys are currently accepted, got: {:?}",
@@ -744,6 +761,15 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].to_base64(), key0_b64.trim());
         assert_eq!(parsed[1].to_base64(), key0_b64.trim());
+    }
+
+    // The accessor loads the file lazily, so the returned dir must outlive its use.
+    fn accessor_for(config: &CliConfig) -> (TempDir, ConfigAccessor) {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        save_config(config, Some(&config_path)).unwrap();
+        let accessor = ConfigAccessor::new(&Some(config_path)).unwrap();
+        (temp_dir, accessor)
     }
 
     fn config_with_aliases(keys: &TestKeys) -> CliConfig {
@@ -760,14 +786,14 @@ mod tests {
     #[test]
     fn combine_key_sources_resolves_aliases_in_string_keys() {
         let keys = TestKeys::new(3);
-        let config = config_with_aliases(&keys);
+        let (_config_dir, config_accessor) = accessor_for(&config_with_aliases(&keys));
         let string_keys = vec![
             "alice".to_string(),
             keys.pub_key(2).unwrap().to_base64(),
             "bob".to_string(),
         ];
 
-        match combine_key_sources(&string_keys, &[], &config) {
+        match combine_key_sources(&string_keys, &[], &config_accessor) {
             Ok(parsed) => {
                 let expected: Vec<AsfaloadPublicKeys> = [0, 2, 1]
                     .iter()
@@ -782,10 +808,10 @@ mod tests {
     #[test]
     fn combine_key_sources_unknown_alias_returns_error() {
         let keys = TestKeys::new(2);
-        let config = config_with_aliases(&keys);
+        let (_config_dir, config_accessor) = accessor_for(&config_with_aliases(&keys));
         let string_keys = vec!["alice".to_string(), "carol".to_string()];
 
-        match combine_key_sources(&string_keys, &[], &config) {
+        match combine_key_sources(&string_keys, &[], &config_accessor) {
             Err(ClientCliError::SignersFile(msg)) => {
                 assert!(
                     msg.contains("'carol' is not a known alias"),
@@ -800,12 +826,12 @@ mod tests {
     #[test]
     fn combine_key_sources_does_not_resolve_aliases_in_files() {
         let keys = TestKeys::new(2);
-        let config = config_with_aliases(&keys);
+        let (_config_dir, config_accessor) = accessor_for(&config_with_aliases(&keys));
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("aliases.pub");
         fs::write(&file_path, "alice\n").unwrap();
 
-        match combine_key_sources(&[], std::slice::from_ref(&file_path), &config) {
+        match combine_key_sources(&[], std::slice::from_ref(&file_path), &config_accessor) {
             Err(ClientCliError::SignersFile(msg)) => {
                 assert!(
                     msg.contains("Failed to read public key from file"),

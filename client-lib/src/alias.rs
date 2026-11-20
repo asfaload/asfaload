@@ -24,13 +24,24 @@ pub fn input_to_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{CliConfig, save_config};
     use features_lib::{ASFALOAD_PUB_PREFIX, AsfaloadSecretKeys, KeyFormat};
+    use tempfile::TempDir;
     use test_helpers::{TestKeys, fixtures_dir};
 
     fn config_with_alice(keys: &TestKeys) -> anyhow::Result<CliConfig> {
         let mut config = CliConfig::default();
         config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
         Ok(config)
+    }
+
+    // The accessor loads the file lazily, so the returned dir must outlive its use.
+    fn accessor_for(config: &CliConfig) -> anyhow::Result<(TempDir, ConfigAccessor)> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        save_config(config, Some(&config_path))?;
+        let accessor = ConfigAccessor::new(&Some(config_path))?;
+        Ok((temp_dir, accessor))
     }
 
     // The line of an OpenSSH public key file: "ssh-ed25519 <base64> <comment>".
@@ -65,8 +76,9 @@ mod tests {
             ("with comment", line.clone()),
             ("without comment", without_comment),
         ];
+        let (_config_dir, accessor) = accessor_for(&config_with_alice(&TestKeys::new(1))?)?;
         for (description, input) in cases {
-            let result = input_to_key(&config_with_alice(&TestKeys::new(1))?, &input)
+            let result = input_to_key(&accessor, &input)
                 .unwrap_or_else(|e| panic!("case {description}: unexpected error {e}"));
             assert_eq!(result, expected, "case {description}");
         }
@@ -80,8 +92,9 @@ mod tests {
         let alias = ssh_key_type()?;
         let mut config = config_with_alice(&keys)?;
         config.add_alias(keys.pub_key(1).unwrap(), &alias, false)?;
+        let (_config_dir, accessor) = accessor_for(&config)?;
 
-        let result = input_to_key(&config, &alias)?;
+        let result = input_to_key(&accessor, &alias)?;
         assert_eq!(&result, keys.pub_key(1).unwrap());
         Ok(())
     }
@@ -89,10 +102,11 @@ mod tests {
     #[test]
     fn input_to_key_parses_public_key() -> anyhow::Result<()> {
         let keys = TestKeys::new(2);
+        let (_config_dir, accessor) = accessor_for(&config_with_alice(&keys)?)?;
         // The key of an alias and a key without alias must both parse the same way.
         for n in 0..2 {
             let key = keys.pub_key(n).unwrap();
-            let result = input_to_key(&config_with_alice(&keys)?, &key.to_base64())?;
+            let result = input_to_key(&accessor, &key.to_base64())?;
             assert_eq!(&result, key, "key {n}");
         }
         Ok(())
@@ -101,7 +115,8 @@ mod tests {
     #[test]
     fn input_to_key_resolves_alias() -> anyhow::Result<()> {
         let keys = TestKeys::new(1);
-        let result = input_to_key(&config_with_alice(&keys)?, "alice")?;
+        let (_config_dir, accessor) = accessor_for(&config_with_alice(&keys)?)?;
+        let result = input_to_key(&accessor, "alice")?;
         assert_eq!(&result, keys.pub_key(0).unwrap());
         Ok(())
     }
@@ -111,8 +126,9 @@ mod tests {
         let keys = TestKeys::new(1);
         // Alias lookup is exact: no case folding and no trimming.
         let cases = vec!["bob", "", "Alice", " alice", "alice "];
+        let (_config_dir, accessor) = accessor_for(&config_with_alice(&keys)?)?;
         for input in cases {
-            match input_to_key(&config_with_alice(&keys)?, input) {
+            match input_to_key(&accessor, input) {
                 Err(ClientLibError::AliasNotFound(msg)) => {
                     assert!(msg.contains(&format!("'{input}'")), "case {input:?}: {msg}")
                 }
@@ -135,10 +151,11 @@ mod tests {
             ("ssh invalid base64", format!("{ssh_key_type} !!!")),
             ("ssh wrong length", format!("{ssh_key_type} AAAA")),
         ];
+        let (_config_dir, accessor) = accessor_for(&config_with_alice(&keys)?)?;
         for (description, input) in cases {
             // The user must see why the key was rejected, not only that no alias matched.
             let parse_error = AsfaloadPublicKeys::from_base64(&input).unwrap_err();
-            match input_to_key(&config_with_alice(&keys)?, &input) {
+            match input_to_key(&accessor, &input) {
                 Err(ClientLibError::AliasNotFound(msg)) => assert!(
                     msg.starts_with(&format!("'{input}'"))
                         && msg.ends_with(&parse_error.to_string()),
@@ -147,6 +164,26 @@ mod tests {
                 Err(e) => panic!("case {description}: expected AliasNotFound, got {e}"),
                 Ok(k) => panic!("case {description}: expected an error, got key {k:?}"),
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn input_to_key_does_not_read_config_for_public_key() -> anyhow::Result<()> {
+        let keys = TestKeys::new(1);
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        std::fs::write(&config_path, "this is = = not toml")?;
+        let accessor = ConfigAccessor::new(&Some(config_path))?;
+
+        // An invalid config file must not break commands that get only public keys.
+        let key = keys.pub_key(0).unwrap();
+        let result = input_to_key(&accessor, &key.to_base64())?;
+        assert_eq!(&result, key);
+        match input_to_key(&accessor, "alice") {
+            Err(ClientLibError::ConfigError(_)) => {}
+            Err(e) => panic!("expected ConfigError, got {e}"),
+            Ok(k) => panic!("expected an error, got key {k:?}"),
         }
         Ok(())
     }

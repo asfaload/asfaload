@@ -330,6 +330,70 @@ mod tests {
         Ok(())
     }
 
+    fn config_with_alice(keys: &TestKeys) -> anyhow::Result<CliConfig> {
+        let mut config = CliConfig::default();
+        config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
+        Ok(config)
+    }
+
+    #[test]
+    fn config_accessor_returns_default_for_missing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("a").join("config.toml");
+
+        let accessor = ConfigAccessor::new(&Some(config_path))?;
+        assert!(accessor.get()?.aliases.is_empty());
+        assert!(!temp_dir.path().join("a").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_loads_existing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let config = config_with_alice(&TestKeys::new(1))?;
+        write(&config_path, toml::to_string(&config)?)?;
+
+        let accessor = ConfigAccessor::new(&Some(config_path))?;
+        assert_eq!(accessor.get()?.aliases, config.aliases);
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_reports_invalid_file_on_get_only() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write(&config_path, "this is = = not toml")?;
+
+        // Commands that do not need the config must not fail on an invalid config file.
+        let accessor = ConfigAccessor::new(&Some(config_path))?;
+        match accessor.get() {
+            Err(ClientLibError::ConfigError(msg)) => assert!(
+                msg.starts_with("Could not parse config file"),
+                "unexpected message {msg}"
+            ),
+            Err(e) => panic!("expected ConfigError, got {e}"),
+            Ok(config) => panic!("expected an error, got config {config:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_reads_file_on_first_get_only() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let accessor = ConfigAccessor::new(&Some(config_path.clone()))?;
+        // The file is written after new(), so a config loaded by new() would be empty.
+        let config = config_with_alice(&TestKeys::new(1))?;
+        write(&config_path, toml::to_string(&config)?)?;
+
+        assert_eq!(accessor.get()?.aliases, config.aliases);
+        // Once loaded, the config is kept and the file is not read again.
+        write(&config_path, "this is = = not toml")?;
+        assert_eq!(accessor.get()?.aliases, config.aliases);
+        Ok(())
+    }
+
     #[test]
     fn check_alias_name_accepts_and_rejects() {
         let cases = vec![

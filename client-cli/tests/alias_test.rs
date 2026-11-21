@@ -356,6 +356,38 @@ fn alias_delete_by_name_key_or_pair() -> anyhow::Result<()> {
 }
 
 #[test]
+fn alias_delete_without_force_requires_terminal() -> anyhow::Result<()> {
+    let keys = TestKeys::new(1);
+    let key_0 = keys.pub_key(0).unwrap();
+    // (description, arguments)
+    let cases: Vec<(&str, Vec<String>)> = vec![
+        ("by name", vec!["alice".to_string()]),
+        ("by key", vec!["--key".to_string(), key_0.to_base64()]),
+        (
+            "by pair",
+            vec!["alice".to_string(), "--key".to_string(), key_0.to_base64()],
+        ),
+    ];
+    for (description, args) in cases {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write_config(&config_path, &[("alice", key_0)])?;
+
+        // Stdin of the command is not a terminal, so the confirmation cannot be asked.
+        alias_cmd(&config_path)
+            .args(&args)
+            .arg("--delete")
+            .assert()
+            .failure()
+            .stderr(contains("use --force"));
+
+        let unchanged = BTreeMap::from([("alice".to_string(), key_0.clone())]);
+        assert_eq!(aliases_in(&config_path)?, unchanged, "case {description}");
+    }
+    Ok(())
+}
+
+#[test]
 fn alias_delete_rejects_invalid_arguments() -> anyhow::Result<()> {
     let keys = TestKeys::new(2);
     let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());

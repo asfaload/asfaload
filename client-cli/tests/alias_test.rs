@@ -341,6 +341,7 @@ fn alias_delete_by_name_key_or_pair() -> anyhow::Result<()> {
         alias_cmd(&config_path)
             .args(&args)
             .arg("--delete")
+            .arg("--force")
             .assert()
             .success()
             .stdout(contains(format!(
@@ -366,21 +367,13 @@ fn alias_delete_rejects_invalid_arguments() -> anyhow::Result<()> {
             "required arguments were not provided".to_string(),
         ),
         (
-            "with force",
-            vec![
-                "alice".to_string(),
-                "--delete".to_string(),
-                "--force".to_string(),
-            ],
-            "cannot be used with".to_string(),
-        ),
-        (
             "pair with other key",
             vec![
                 "alice".to_string(),
                 "--key".to_string(),
                 key_1.to_base64(),
                 "--delete".to_string(),
+                "--force".to_string(),
             ],
             format!("Alias alice is not an alias for key {}", key_1.to_base64()),
         ),

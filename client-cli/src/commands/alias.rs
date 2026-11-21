@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use client_lib::config::{CliConfig, ConfigAccessor};
+use client_lib::config::ConfigAccessor;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 
 use crate::error::ClientCliError;
@@ -80,12 +80,12 @@ pub fn add_alias(
     }
 }
 
-fn remove_and_save(
-    mut config: CliConfig,
+pub fn remove_alias_and_save_config(
     config_accessor: &mut ConfigAccessor,
     name: &str,
     json: bool,
 ) -> Result<String, ClientCliError> {
+    let mut config = config_accessor.get()?.clone();
     let key = config
         .remove_alias(name)
         .ok_or_else(|| ClientCliError::AliasNotFound(name.to_string()))?;
@@ -102,8 +102,7 @@ pub fn delete_alias(
     name: &str,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = config_accessor.get()?.clone();
-    remove_and_save(config, config_accessor, name, json)
+    remove_alias_and_save_config(config_accessor, name, json)
 }
 
 pub fn delete_alias_of_key(
@@ -111,12 +110,8 @@ pub fn delete_alias_of_key(
     key: &AsfaloadPublicKeys,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = config_accessor.get()?.clone();
-    let name = config
-        .get_alias(key)
-        .ok_or_else(|| ClientCliError::NoAliasForKey(key.to_base64()))?
-        .to_string();
-    remove_and_save(config, config_accessor, &name, json)
+    let name = check_exists(config_accessor, None, &Some(key.clone()))?;
+    remove_alias_and_save_config(config_accessor, &name, json)
 }
 
 pub fn delete_alias_pair(
@@ -125,18 +120,39 @@ pub fn delete_alias_pair(
     name: &str,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = config_accessor.get()?.clone();
-    match config.get_key(name) {
-        None => return Err(ClientCliError::AliasNotFound(name.to_string())),
-        Some(k) if k != key => {
-            return Err(ClientCliError::AliasNotForKey(
-                name.to_string(),
-                key.to_base64(),
-            ));
+    check_exists(config_accessor, Some(name), &Some(key.clone()))?;
+    remove_alias_and_save_config(config_accessor, name, json)
+}
+
+pub fn check_exists(
+    config_accessor: &ConfigAccessor,
+    name: Option<&str>,
+    key: &Option<AsfaloadPublicKeys>,
+) -> Result<String, ClientCliError> {
+    let config = config_accessor.get()?;
+    match (name, key) {
+        (Some(n), Some(k)) => {
+            let aliased_key = config
+                .get_key(n)
+                .ok_or_else(|| ClientCliError::AliasNotFound(n.to_string()))?;
+            if aliased_key == k {
+                Ok(n.to_string())
+            } else {
+                Err(ClientCliError::AliasNotForKey(n.to_string(), k.to_base64()))
+            }
         }
-        Some(_) => {}
+        (None, Some(k)) => config
+            .get_alias(k)
+            .ok_or_else(|| ClientCliError::NoAliasForKey(k.to_base64()))
+            .map(|n| n.to_string()),
+        (Some(n), None) => config
+            .get_key(n)
+            .ok_or_else(|| ClientCliError::AliasNotFound(n.to_string()))
+            .map(|_| n.to_string()),
+        (None, None) => Err(ClientCliError::InvalidInput(
+            "No name nor key received for alias lookup".to_string(),
+        )),
     }
-    remove_and_save(config, config_accessor, name, json)
 }
 
 #[cfg(test)]

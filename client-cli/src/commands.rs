@@ -4,8 +4,8 @@ use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
     commands::{
         alias::{
-            add_alias, delete_alias, delete_alias_of_key, delete_alias_pair, display_key,
-            list_aliases,
+            add_alias, check_exists, delete_alias, delete_alias_of_key, delete_alias_pair,
+            display_key, list_aliases, remove_alias_and_save_config,
         },
         complete::handle_complete,
         fetch_file::handle_fetch_file,
@@ -607,17 +607,19 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 (Some(_), None, false, _) => list_aliases(&config_accessor, name, json)?,
                 (Some(n), None, true, true) => delete_alias(&mut config_accessor, n, json)?,
                 (Some(n), None, true, false) => {
+                    let name = check_exists(&config_accessor, name.as_deref(), &pub_key)?;
                     if confirm_deletion(n)? {
-                        delete_alias(&mut config_accessor, n, json)?
+                        remove_alias_and_save_config(&mut config_accessor, &name, json)?
                     } else {
                         canceled_string(json_args.json)
                     }
                 }
                 (None, Some(k), false, _) => display_key(&config_accessor, k, json)?,
                 (None, Some(k), true, true) => delete_alias_of_key(&mut config_accessor, k, json)?,
-                (None, Some(k), true, false) => {
-                    if confirm_deletion(&k.to_base64())? {
-                        delete_alias_of_key(&mut config_accessor, k, json)?
+                (None, Some(_), true, false) => {
+                    let name = check_exists(&config_accessor, name.as_deref(), &pub_key)?;
+                    if confirm_deletion(&name)? {
+                        remove_alias_and_save_config(&mut config_accessor, &name, json)?
                     } else {
                         canceled_string(json_args.json)
                     }
@@ -628,9 +630,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 (Some(n), Some(k), true, true) => {
                     delete_alias_pair(&mut config_accessor, k, n, json)?
                 }
-                (Some(n), Some(k), true, false) => {
+                (Some(n), Some(_k), true, false) => {
+                    check_exists(&config_accessor, name.as_deref(), &pub_key)?;
                     if confirm_deletion(n)? {
-                        delete_alias_pair(&mut config_accessor, k, n, json)?
+                        remove_alias_and_save_config(&mut config_accessor, n, json)?
                     } else {
                         canceled_string(json_args.json)
                     }

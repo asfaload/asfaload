@@ -29,6 +29,18 @@ The arguments that you give select the operation:
 - If you add an alias that already exists for the same key, nothing changes.
 - An alias starts with an ASCII letter or digit. It contains only ASCII letters, digits, `-`, `_` and `.`. Thus, an alias is safe to use in a shell, and it cannot be read as a public key.
 
+## Delete confirmation
+
+Before a delete operation, the command asks for confirmation:
+
+    Are you sure you want to delete alias alice?
+
+- The question always shows the alias, also when you give only `--key`.
+- The command first finds the alias. If the alias is not found, or if it is not the alias of `KEY`, the command fails and does not ask.
+- Type `y` to delete the alias. Type `n` to keep it: the command writes `Canceled` and exits with `0`.
+- If you push Esc or Ctrl+C, the command fails and keeps the alias.
+- If the standard input is not a terminal, the command cannot ask, and it fails. In scripts, use `--force` to delete without confirmation.
+
 ## Configuration file
 
 The default location is `asfaload-cli/config.toml` in your configuration directory:
@@ -67,7 +79,7 @@ When the key already has an alias, replace that alias with `NAME`. With `--delet
 
 ### `-d --delete`
 
-Delete an alias. Requires `NAME`, `--key`, or both. Asks for confirmation, except with `--force`. Refer to [Operations](#operations).
+Delete an alias. Requires `NAME`, `--key`, or both. Asks for confirmation, except with `--force`. Refer to [Operations](#operations) and [Delete confirmation](#delete-confirmation).
 
 ### `-c --config-file <CONFIG_FILE>`
 
@@ -98,10 +110,18 @@ Delete an alias:
 
     Alias bob deleted for asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU
 
+Delete canceled at the confirmation:
+
+    Canceled
+
 JSON (with `--json`). To show all aliases, the object contains all aliases. For all other operations, it contains the alias that was found, added or deleted:
 
     {"alice":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","bob":"asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU"}
     {"alice":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"}
+
+Delete canceled at the confirmation, with `--json`:
+
+    {"canceled": true}
 
 ## Examples
 
@@ -117,10 +137,13 @@ JSON (with `--json`). To show all aliases, the object contains all aliases. For 
     # rename the alias of a key
     asfaload-cli alias alicia --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 --force
 
-    # delete an alias
+    # delete an alias, after confirmation
     asfaload-cli alias alicia --delete
+
+    # delete an alias without confirmation, for use in a script
+    asfaload-cli alias alicia --delete --force
 
 ## Exit codes
 
-- `0` — the operation succeeded. The operation that shows all aliases also succeeds when no alias exists.
-- non-zero — error. For example, the alias or the key is not found, the alias rules prevent the change, or the configuration file is not valid.
+- `0` — the operation succeeded. The operation that shows all aliases also succeeds when no alias exists. A delete operation that you cancel with `n` at the confirmation also exits with `0`. To know if the alias was deleted, read the output.
+- non-zero — error. For example, the alias or the key is not found, the alias rules prevent the change, the configuration file is not valid, or a delete operation without `--force` cannot ask for confirmation because the standard input is not a terminal.

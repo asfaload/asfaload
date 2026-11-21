@@ -40,7 +40,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("config.toml");
         save_config(config, Some(&config_path))?;
-        let accessor = ConfigAccessor::new(&Some(config_path))?;
+        let accessor = ConfigAccessor::new(&Some(config_path));
         Ok((temp_dir, accessor))
     }
 
@@ -174,7 +174,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config_path = temp_dir.path().join("config.toml");
         std::fs::write(&config_path, "this is = = not toml")?;
-        let accessor = ConfigAccessor::new(&Some(config_path))?;
+        let accessor = ConfigAccessor::new(&Some(config_path));
 
         // An invalid config file must not break commands that get only public keys.
         let key = keys.pub_key(0).unwrap();

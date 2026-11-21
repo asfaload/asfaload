@@ -768,7 +768,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.toml");
         save_config(config, Some(&config_path)).unwrap();
-        let accessor = ConfigAccessor::new(&Some(config_path)).unwrap();
+        let accessor = ConfigAccessor::new(&Some(config_path));
         (temp_dir, accessor)
     }
 

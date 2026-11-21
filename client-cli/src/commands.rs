@@ -156,7 +156,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             json_args,
             config_args,
         } => {
-            let config_accessor = ConfigAccessor::new(&config_args.config_file)?;
+            let config_accessor = ConfigAccessor::new(&config_args.config_file);
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
                 artifact_signers_file,

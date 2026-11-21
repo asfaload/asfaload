@@ -572,7 +572,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         Commands::Alias {
             name,
             key,
-            config_file,
+            config_args,
             force,
             delete,
             json_args,
@@ -601,31 +601,36 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     "Canceled".to_string()
                 }
             };
+            let mut config_accessor = ConfigAccessor::new(&config_args.config_file);
             let output = match (name, &pub_key, delete, force) {
-                (None, None, _, _) => list_aliases(config_file, &None, json)?,
-                (Some(_), None, false, _) => list_aliases(config_file, name, json)?,
-                (Some(n), None, true, true) => delete_alias(config_file, n, json)?,
+                (None, None, _, _) => list_aliases(&config_accessor, &None, json)?,
+                (Some(_), None, false, _) => list_aliases(&config_accessor, name, json)?,
+                (Some(n), None, true, true) => delete_alias(&mut config_accessor, n, json)?,
                 (Some(n), None, true, false) => {
                     if confirm_deletion(n)? {
-                        delete_alias(config_file, n, json)?
+                        delete_alias(&mut config_accessor, n, json)?
                     } else {
                         canceled_string(json_args.json)
                     }
                 }
-                (None, Some(k), false, _) => display_key(config_file, k, json)?,
-                (None, Some(k), true, true) => delete_alias_of_key(config_file, k, json)?,
+                (None, Some(k), false, _) => display_key(&config_accessor, k, json)?,
+                (None, Some(k), true, true) => delete_alias_of_key(&mut config_accessor, k, json)?,
                 (None, Some(k), true, false) => {
                     if confirm_deletion(&k.to_base64())? {
-                        delete_alias_of_key(config_file, k, json)?
+                        delete_alias_of_key(&mut config_accessor, k, json)?
                     } else {
                         canceled_string(json_args.json)
                     }
                 }
-                (Some(n), Some(k), false, _) => add_alias(config_file, k, n, *force, json)?,
-                (Some(n), Some(k), true, true) => delete_alias_pair(config_file, k, n, json)?,
+                (Some(n), Some(k), false, _) => {
+                    add_alias(&mut config_accessor, k, n, *force, json)?
+                }
+                (Some(n), Some(k), true, true) => {
+                    delete_alias_pair(&mut config_accessor, k, n, json)?
+                }
                 (Some(n), Some(k), true, false) => {
                     if confirm_deletion(n)? {
-                        delete_alias_pair(config_file, k, n, json)?
+                        delete_alias_pair(&mut config_accessor, k, n, json)?
                     } else {
                         canceled_string(json_args.json)
                     }

@@ -39,6 +39,10 @@ Shell command to run; its standard output is read as the password. Useful for pa
 
 Backend API URL. Defaults to `https://backend.asfaload.com`.
 
+### `-c --config-file <CONFIG_FILE>`
+
+The configuration file to read aliases from, instead of the default file. Refer to [alias](alias.md#configuration-file).
+
 ### `--json`
 
 Emit output as JSON instead of human-readable text.
@@ -81,6 +85,8 @@ Human-readable (default), when more signatures are necessary:
            --secret-key <secret-key>
 
 Send the `sign-pending` command to the signers. Each signer replaces `<secret-key>` with their secret key file. The digest is the digest of the index that you signed. Run the `signature-status` command with your secret key file to see which keys can still sign. When you use a backend other than the default, the commands contain `--backend-url`. If the backend returns an unexpected index file path, a warning replaces the commands.
+
+A key that has an [alias](alias.md) shows as `<base64 public key> (<alias>)`. If the configuration file cannot be read or is not valid, the command writes a warning to the standard error and shows the keys without aliases. The JSON output never shows aliases.
 
 When your signature completes the aggregate signature, the output says that the release is fully signed:
 

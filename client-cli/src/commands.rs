@@ -107,6 +107,13 @@ pub(crate) mod keys_helpers {
         )?;
         writeln!(buf, "    key in signers files. Here it is:")?;
         writeln!(buf, "    {public_key}")?;
+        writeln!(buf,)?;
+        writeln!(
+            buf,
+            "    To refer to my key by a name, create an alias for it:"
+        )?;
+        // The name is last, so the recipient can copy the command and append it.
+        writeln!(buf, "    asfaload-cli alias --key {public_key} <name>")?;
         Ok(buf)
     }
 }

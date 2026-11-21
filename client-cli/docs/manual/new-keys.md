@@ -63,6 +63,9 @@ Human-readable (default):
         key in signers files. Here it is:
         asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
 
+        To refer to my key by a name, create an alias for it:
+        asfaload-cli alias --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 <name>
+
 The trailing message is the same text printed by [`share-key`](share-key.md); it can be copy-pasted directly when sharing the key.
 
 JSON (with `--json`):

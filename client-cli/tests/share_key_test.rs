@@ -260,3 +260,42 @@ fn test_share_key_raw_default_unchanged() {
         .stdout(predicate::str::contains("The public key is safe to share"))
         .stdout(predicate::str::contains(fixture_pub_key_0()));
 }
+
+// -------------------------------------------------------------------
+// Alias suggestion
+// -------------------------------------------------------------------
+
+#[test]
+fn test_share_key_message_suggests_alias() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0));
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "asfaload-cli alias --key {} <name>",
+            fixture_pub_key_0()
+        )));
+}
+
+#[test]
+fn test_share_key_json_message_suggests_alias() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0))
+        .arg("--json");
+
+    let output = cmd.assert().success().get_output().stdout.clone();
+    let json: serde_json::Value =
+        serde_json::from_slice(&output).expect("stdout should be valid JSON");
+    let message = json["message"]
+        .as_str()
+        .expect("message should be a string");
+    assert!(message.contains(&format!(
+        "asfaload-cli alias --key {} <name>",
+        fixture_pub_key_0()
+    )));
+}

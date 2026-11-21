@@ -63,11 +63,11 @@ The public key, in the format `asfaload-pub:...`. Optional.
 
 ### `-f --force`
 
-When the key already has an alias, replace that alias with `NAME`. Used only to add an alias. Conflicts with `--delete`.
+When the key already has an alias, replace that alias with `NAME`. With `--delete`, delete the alias without confirmation.
 
 ### `-d --delete`
 
-Delete an alias. Requires `NAME`, `--key`, or both. Refer to [Operations](#operations).
+Delete an alias. Requires `NAME`, `--key`, or both. Asks for confirmation, except with `--force`. Refer to [Operations](#operations).
 
 ### `-c --config-file <CONFIG_FILE>`
 

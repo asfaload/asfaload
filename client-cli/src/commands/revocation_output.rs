@@ -1,4 +1,5 @@
 use anstyle::Style;
+use client_lib::config::CliConfig;
 use common::AsfaloadHashes;
 use common::fs::names::{is_pending_revocation_file_path, pending_revocation_path_for};
 use rest_api_types::RevokeFileResponse;
@@ -42,6 +43,7 @@ pub fn print_revocation_overview(
     file_path: &str,
     digest: &AsfaloadHashes,
     backend_url: &str,
+    config: &CliConfig,
 ) {
     let non_default_backend = (backend_url != DEFAULT_BACKEND).then_some(backend_url);
     // anstream removes the styles when stdout is not a terminal.
@@ -53,6 +55,7 @@ pub fn print_revocation_overview(
             digest,
             non_default_backend,
             &program_name(),
+            config,
             true,
         )
     );
@@ -80,6 +83,7 @@ pub fn revocation_overview(
     digest: &AsfaloadHashes,
     backend_url: Option<&str>,
     executable: &str,
+    config: &CliConfig,
     with_ansi: bool,
 ) -> String {
     let bold = if with_ansi { BOLD } else { Style::new() };
@@ -104,6 +108,7 @@ pub fn revocation_overview(
     lines.extend(signatures_to_collect_lines(
         &SignaturesToCollect {
             required_signers: &response.required_signers,
+            config,
             file_path: pending_revocation_path.as_deref(),
             digest,
             complete_message: REVOCATION_COMPLETE_MESSAGE,
@@ -138,7 +143,15 @@ mod tests {
     }
 
     fn overview_for(response: &RevokeFileResponse, file_path: &str) -> String {
-        revocation_overview(response, file_path, &digest(), None, "asfaload-cli", false)
+        revocation_overview(
+            response,
+            file_path,
+            &digest(),
+            None,
+            "asfaload-cli",
+            &CliConfig::default(),
+            false,
+        )
     }
 
     #[test]
@@ -190,6 +203,7 @@ mod tests {
             &digest(),
             Some("http://localhost:3000"),
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         );
         assert!(

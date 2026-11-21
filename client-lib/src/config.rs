@@ -62,6 +62,14 @@ impl CliConfig {
             .map(|(name, _)| name.as_str())
     }
 
+    /// The key as base64, followed by its alias when it has one: `asfaload-pub:... (alice)`.
+    pub fn humanise_key(&self, k: &AsfaloadPublicKeys) -> String {
+        match self.get_alias(k) {
+            Some(alias) => format!("{} ({alias})", k.to_base64()),
+            None => k.to_base64(),
+        }
+    }
+
     pub fn aliases(&self) -> &Aliases {
         &self.aliases
     }
@@ -557,6 +565,21 @@ mod tests {
         assert_eq!(config.get_alias(key), Some("alicia"));
         assert_eq!(config.get_key("alicia"), Some(key));
         assert_eq!(config.get_key("alice"), None);
+        Ok(())
+    }
+
+    #[test]
+    fn humanise_key_adds_alias_when_present() -> anyhow::Result<()> {
+        let keys = TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        let mut config = CliConfig::default();
+        config.add_alias(key_0, "alice", false)?;
+
+        assert_eq!(
+            config.humanise_key(key_0),
+            format!("{} (alice)", key_0.to_base64())
+        );
+        assert_eq!(config.humanise_key(key_1), key_1.to_base64());
         Ok(())
     }
 

@@ -121,3 +121,110 @@ fn revoke_local_copy_not_matching_file_is_rejected() {
         )));
     revoke.assert();
 }
+
+// Like mock_revoke, but the backend reports that key_1 can still sign.
+fn mock_revoke_pending(server: &mut mockito::Server) -> (mockito::Mock, mockito::Mock) {
+    let file = server
+        .mock("GET", format!("/v1/files/{}", FILE_PATH).as_str())
+        .with_status(200)
+        .with_body(CONTENT)
+        .create();
+    let body = serde_json::json!({
+        "success": true,
+        "message": "revocation pending",
+        "required_signers": [fixture_pub_key(1)],
+    });
+    let revoke = server
+        .mock("POST", "/v1/revoke")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body.to_string())
+        .create();
+    (file, revoke)
+}
+
+fn fixture_pub_key(n: usize) -> String {
+    std::fs::read_to_string(test_helpers::fixtures_pub_key(n))
+        .unwrap()
+        .trim()
+        .to_owned()
+}
+
+fn write_config(dir: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, content).unwrap();
+    path
+}
+
+#[test]
+fn revoke_shows_alias_of_keys_that_can_still_sign() {
+    let mut server = mockito::Server::new();
+    let _mocks = mock_revoke_pending(&mut server);
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = write_config(
+        &dir,
+        &format!("[aliases]\nbob = \"{}\"\n", fixture_pub_key(1)),
+    );
+
+    revoke_cmd(&server)
+        .arg("--digest")
+        .arg(sha512_digest_str(CONTENT))
+        .arg("--config-file")
+        .arg(&config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "{} (bob)",
+            fixture_pub_key(1)
+        )));
+}
+
+#[test]
+fn revoke_with_invalid_config_warns_and_shows_keys() {
+    let mut server = mockito::Server::new();
+    let _mocks = mock_revoke_pending(&mut server);
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = write_config(&dir, "[alias]\n");
+
+    revoke_cmd(&server)
+        .arg("--digest")
+        .arg(sha512_digest_str(CONTENT))
+        .arg("--config-file")
+        .arg(&config)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Warning: could not load aliases from the config file",
+        ))
+        .stdout(predicate::str::contains(fixture_pub_key(1)));
+}
+
+#[test]
+fn revoke_json_output_has_no_alias() {
+    let mut server = mockito::Server::new();
+    let _mocks = mock_revoke_pending(&mut server);
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = write_config(
+        &dir,
+        &format!("[aliases]\nbob = \"{}\"\n", fixture_pub_key(1)),
+    );
+
+    let output = revoke_cmd(&server)
+        .arg("--digest")
+        .arg(sha512_digest_str(CONTENT))
+        .arg("--config-file")
+        .arg(&config)
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bob").not())
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value =
+        serde_json::from_slice(&output).expect("stdout should be valid JSON");
+    assert_eq!(
+        json["required_signers"],
+        serde_json::json!([fixture_pub_key(1)])
+    );
+}

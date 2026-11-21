@@ -28,13 +28,17 @@ Password for the secret key. Conflicts with `--password-file` and `--password-co
 
 File containing the password. Conflicts with `--password` and `--password-command`.
 
-### `-c --password-command <COMMAND>`
+### `-C --password-command <COMMAND>`
 
 Shell command to run; its standard output is read as the password. Useful for password managers (`pass`, `op`, `bw`, etc.). Conflicts with `--password` and `--password-file`. The command string is parsed with shell-style quoting (no shell is spawned, so pipes and redirections don't apply); trailing newlines are stripped from the output.
 
 ### `-u --backend-url <URL>`
 
 Backend API URL. Defaults to `https://backend.asfaload.com`.
+
+### `-c --config-file <CONFIG_FILE>`
+
+The configuration file to read aliases from, instead of the default file. Refer to [alias](alias.md#configuration-file).
 
 ### `--json`
 
@@ -62,6 +66,8 @@ Human-readable (default):
       <base64 public key>
 
 A key is in the list when it has no valid signature yet. The list does not tell how many signatures are still necessary.
+
+A key that has an [alias](alias.md) shows as `<base64 public key> (<alias>)`. If the configuration file cannot be read or is not valid, the command writes a warning to the standard error and shows the keys without aliases. The JSON output never shows aliases.
 
 or
 

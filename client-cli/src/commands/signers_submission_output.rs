@@ -1,7 +1,8 @@
 use anstyle::Style;
+use client_lib::config::CliConfig;
 use common::AsfaloadHashes;
 use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
-use features_lib::{Forge, SignersConfigMetadata};
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, Forge, SignersConfigMetadata};
 use forge_url::{ForgeInfo, ForgeTrait, Forges};
 use rest_api_types::RegisterRepoResponse;
 
@@ -42,6 +43,7 @@ pub fn print_submission_overview(
     response: &RegisterRepoResponse,
     digest: &AsfaloadHashes,
     backend_url: &str,
+    config: &CliConfig,
 ) {
     let non_default_backend = (backend_url != DEFAULT_BACKEND).then_some(backend_url);
     // anstream removes the styles when stdout is not a terminal.
@@ -53,6 +55,7 @@ pub fn print_submission_overview(
             digest,
             non_default_backend,
             &program_name(),
+            config,
             true,
         )
     );
@@ -68,6 +71,7 @@ pub fn submission_overview(
     digest: &AsfaloadHashes,
     backend_url: Option<&str>,
     executable: &str,
+    config: &CliConfig,
     with_ansi: bool,
 ) -> String {
     let bold = if with_ansi { BOLD } else { Style::new() };
@@ -82,6 +86,7 @@ pub fn submission_overview(
         is_safe_to_show_command(response).then_some(response.signers_file_path.as_str());
     let to_collect = SignaturesToCollect {
         required_signers: &response.required_signers,
+        config,
         file_path,
         digest,
         complete_message: "The signers file is active. No more signatures are necessary.",
@@ -103,6 +108,8 @@ pub fn submission_overview(
 pub(crate) struct SignaturesToCollect<'a> {
     /// Keys that can still sign, empty when the signature is complete.
     pub required_signers: &'a [String],
+    /// Gives the aliases shown next to the keys.
+    pub config: &'a CliConfig,
     /// The path of the file to sign, `None` when the backend data is not
     /// safe to put in a command.
     pub file_path: Option<&'a str>,
@@ -114,12 +121,20 @@ pub(crate) struct SignaturesToCollect<'a> {
 }
 
 /// The heading and the keys that can still sign, one key per line.
-pub(crate) fn keys_that_can_sign_lines(keys: &[String], bold: Style) -> Vec<String> {
+pub(crate) fn keys_that_can_sign_lines(
+    keys: &[String],
+    config: &CliConfig,
+    bold: Style,
+) -> Vec<String> {
     std::iter::once(format!("{bold}Keys that can still sign{bold:#}"))
-        .chain(
-            keys.iter()
-                .map(|key| format!("  {}", strip_control_chars(key))),
-        )
+        .chain(keys.iter().map(|key| {
+            // A key that does not parse cannot have an alias.
+            let shown = match AsfaloadPublicKeys::from_base64(key) {
+                Ok(k) => config.humanise_key(&k),
+                Err(_) => strip_control_chars(key),
+            };
+            format!("  {shown}")
+        }))
         .collect()
 }
 
@@ -136,7 +151,7 @@ pub(crate) fn signatures_to_collect_lines(
     if to_collect.required_signers.is_empty() {
         return vec![to_collect.complete_message.to_string()];
     }
-    let mut lines = keys_that_can_sign_lines(to_collect.required_signers, bold);
+    let mut lines = keys_that_can_sign_lines(to_collect.required_signers, to_collect.config, bold);
     lines.push(String::new());
     match to_collect.file_path {
         Some(file_path) => {
@@ -365,8 +380,30 @@ mod tests {
     fn keys_that_can_sign_lines_lists_keys_without_control_chars() {
         let keys = vec!["key1".to_string(), "ke\x1by2".to_string()];
         assert_eq!(
-            keys_that_can_sign_lines(&keys, Style::new()),
+            keys_that_can_sign_lines(&keys, &CliConfig::default(), Style::new()),
             vec!["Keys that can still sign", "  key1", "  key2"]
+        );
+    }
+
+    #[test]
+    fn keys_that_can_sign_lines_shows_aliases() {
+        let keys = test_helpers::TestKeys::new(2);
+        let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
+        let mut config = CliConfig::default();
+        config.add_alias(key_0, "alice", false).unwrap();
+        let listed = vec![
+            key_0.to_base64(),
+            key_1.to_base64(),
+            "not-a-key".to_string(),
+        ];
+        assert_eq!(
+            keys_that_can_sign_lines(&listed, &config, Style::new()),
+            vec![
+                "Keys that can still sign".to_string(),
+                format!("  {} (alice)", key_0.to_base64()),
+                format!("  {}", key_1.to_base64()),
+                "  not-a-key".to_string(),
+            ]
         );
     }
 
@@ -398,6 +435,7 @@ mod tests {
             &digest(),
             None,
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         );
         let expected = format!(
@@ -436,6 +474,7 @@ mod tests {
             &digest(),
             None,
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         );
         assert_eq!(
@@ -454,6 +493,7 @@ mod tests {
             &digest(),
             Some("http://localhost:3000"),
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         );
         assert!(
@@ -480,6 +520,7 @@ mod tests {
             &digest(),
             None,
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         );
         assert!(
@@ -497,6 +538,7 @@ mod tests {
                 &digest(),
                 None,
                 "asfaload-cli",
+                &CliConfig::default(),
                 with_ansi,
             )
         };
@@ -511,6 +553,7 @@ mod tests {
             &digest(),
             None,
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         )
     }

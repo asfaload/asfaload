@@ -1,6 +1,8 @@
 use crate::commands::prepare_signed_submission;
 use crate::commands::signers_submission_output::print_submission_overview;
 use crate::error::{ClientCliError, Result, ensure_backend_success};
+use crate::utils::config_for_display;
+use client_lib::config::ConfigAccessor;
 use common::AsfaloadHashes;
 
 pub async fn handle_register_repo_command(
@@ -10,6 +12,7 @@ pub async fn handle_register_repo_command(
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
+    config_accessor: &ConfigAccessor,
 ) -> Result<()> {
     // All failable local steps happen before any network request
     let sub = prepare_signed_submission(backend_url, secret_key_path, password).await?;
@@ -33,11 +36,13 @@ pub async fn handle_register_repo_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else {
+        let config = config_for_display(config_accessor);
         print_submission_overview(
             "Repository registered",
             &response,
             expected_digest,
             backend_url,
+            &config,
         );
     }
 

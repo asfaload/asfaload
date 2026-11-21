@@ -48,6 +48,7 @@ pub mod release_registration_output;
 pub mod revocation_output;
 pub mod revoke;
 pub mod shell;
+pub mod signers_config_output;
 pub mod signers_submission_output;
 pub mod update_signers;
 
@@ -107,6 +108,13 @@ pub(crate) mod keys_helpers {
         )?;
         writeln!(buf, "    key in signers files. Here it is:")?;
         writeln!(buf, "    {public_key}")?;
+        writeln!(buf,)?;
+        writeln!(
+            buf,
+            "    To refer to my key by a name, create an alias for it:"
+        )?;
+        // The name is last, so the recipient can copy the command and append it.
+        writeln!(buf, "    asfaload-cli alias --key {public_key} <name>")?;
         Ok(buf)
     }
 }
@@ -285,6 +293,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -307,6 +316,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::RegisterRepo {
@@ -317,6 +327,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             // First check valid digest was provided
             let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
@@ -342,6 +353,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::RegisterAssets {
@@ -351,6 +363,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -376,6 +389,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::UpdateSigners {
@@ -386,6 +400,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             // First check valid digest was provided
             let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
@@ -411,6 +426,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::Revoke {
@@ -420,6 +436,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             backend_url_args,
             digest_args,
             json_args,
+            config_args,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -445,6 +462,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 password.as_str(),
                 &expected_digest,
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::Ping {
@@ -522,6 +540,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             signers_path,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             let url = backend_url_args
                 .backend_url
@@ -532,6 +551,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 signers_path,
                 &url,
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::FetchFile {

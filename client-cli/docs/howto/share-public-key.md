@@ -24,6 +24,9 @@ You can share your public key, for example with an admin, with this message:
     I have a key-pair to use with Asfaload. You can use my public
     key in signers files. Here it is:
     asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+
+    To refer to my key by a name, create an alias for it:
+    asfaload-cli alias --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 <name>
 ```
 
 ### 2. Print only the key with `--raw`

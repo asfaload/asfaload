@@ -59,7 +59,7 @@ asfaload-cli new-keys --name ci-key --output-dir ./keys --password-file /run/sec
 
 The file should contain the password on a single line. Trailing newlines are stripped.
 
-Or fetch the password from a password manager (or any external command) with `--password-command` (`-c`). The command's standard output is used as the password:
+Or fetch the password from a password manager (or any external command) with `--password-command` (`-C`). The command's standard output is used as the password:
 
 ```sh
 asfaload-cli new-keys --name ci-key --output-dir ./keys \

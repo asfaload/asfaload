@@ -1,5 +1,7 @@
 use crate::commands::revocation_output::{RevocationJsonOutput, print_revocation_overview};
 use crate::error::{ClientCliError, Result, ensure_backend_success};
+use crate::utils::config_for_display;
+use client_lib::config::ConfigAccessor;
 use common::AsfaloadHashes;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
@@ -27,6 +29,7 @@ pub async fn handle_revoke_command(
     password: &str,
     expected_digest: &AsfaloadHashes,
     json: bool,
+    config_accessor: &ConfigAccessor,
 ) -> Result<RevokeFileResponse> {
     // Load secret key and derive public key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
@@ -85,7 +88,8 @@ pub async fn handle_revoke_command(
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
-        print_revocation_overview(&response, file_path, &revocation_hash, backend_url);
+        let config = config_for_display(config_accessor);
+        print_revocation_overview(&response, file_path, &revocation_hash, backend_url, &config);
     }
 
     Ok(response)

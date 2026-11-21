@@ -1,6 +1,8 @@
 use crate::commands::release_registration_output::print_registration_overview;
 use crate::error::{ClientCliError, Result, ensure_backend_success};
+use crate::utils::config_for_display;
 use admin_lib::v1::RegistrationMode;
+use client_lib::config::ConfigAccessor;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
 use forge_url::github::is_github_release_host;
@@ -11,6 +13,7 @@ pub async fn handle_register_assets_command(
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
+    config_accessor: &ConfigAccessor,
 ) -> Result<()> {
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
@@ -27,7 +30,8 @@ pub async fn handle_register_assets_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else {
-        print_registration_overview(&response, &registered.index_digest, backend_url);
+        let config = config_for_display(config_accessor);
+        print_registration_overview(&response, &registered.index_digest, backend_url, &config);
     }
 
     Ok(())

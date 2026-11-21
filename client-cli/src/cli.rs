@@ -19,7 +19,7 @@ pub struct PasswordArgs {
     pub password_file: Option<PathBuf>,
 
     /// Command printing the password to its stdout
-    #[arg(long, short = 'c', env = "ASFALOAD_PASSWORD_COMMAND")]
+    #[arg(long, short = 'C', env = "ASFALOAD_PASSWORD_COMMAND")]
     pub password_command: Option<String>,
 }
 
@@ -116,7 +116,7 @@ pub enum Commands {
         #[command(flatten)]
         password_args: PasswordArgs,
         ///
-        /// Accept week passwords, bypassing password strength validations (INSECURE!)
+        /// Accept weak passwords, bypassing password strength validations (INSECURE!)
         #[arg(long)]
         accept_weak_password: bool,
 
@@ -275,6 +275,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
 
     /// Register a repository with the backend
@@ -302,6 +305,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
 
     /// Register assets with the backend (GitHub release or checksums files)
@@ -325,6 +331,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
 
     /// Propose an update to an existing signers file
@@ -352,6 +361,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
 
     /// Revoke a signed file on the mirror
@@ -373,6 +385,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
 
     /// Ping the backend, optionally testing your credentials
@@ -432,6 +447,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
     /// Generate a shell completion script
     ///

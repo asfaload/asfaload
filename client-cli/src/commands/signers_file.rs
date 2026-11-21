@@ -3,8 +3,9 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use crate::commands::signers_config_output::signer_groups_lines;
 use crate::error::{ClientCliError, Result};
-use crate::utils::{ensure_dir_exists, executable_name, validate_threshold};
+use crate::utils::{config_for_display, ensure_dir_exists, executable_name, validate_threshold};
 use anstyle::Style;
 use client_lib::alias::input_to_key;
 use client_lib::config::ConfigAccessor;
@@ -15,19 +16,6 @@ use features_lib::{
 };
 
 const BOLD: Style = Style::new().bold();
-const DIM: Style = Style::new().dimmed();
-
-/// Describe a signer group for the human overview, e.g. "2 of 3 keys must sign".
-/// Returns None when the group has no keys.
-fn group_summary(keys_count: usize, threshold: Option<u32>) -> Option<String> {
-    match threshold {
-        Some(threshold) if keys_count > 0 => {
-            let noun = if keys_count == 1 { "key" } else { "keys" };
-            Some(format!("{threshold} of {keys_count} {noun} must sign"))
-        }
-        _ => None,
-    }
-}
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
@@ -206,34 +194,12 @@ pub fn handle_new_signers_file_command(
         |p: &PathBuf| -> std::result::Result<(), crate::error::ClientCliError> {
             let digest = sha512_for_file(p)?;
             let executable = executable_name();
-            let groups = [
-                (
-                    "Artifact signers",
-                    group_summary(all_artifact_signers_count, Some(artifact_threshold)),
-                ),
-                (
-                    "Admin keys",
-                    group_summary(all_admin_keys_count, admin_threshold),
-                ),
-                (
-                    "Master keys",
-                    group_summary(all_master_keys_count, master_threshold),
-                ),
-                (
-                    "Revocation keys",
-                    group_summary(all_revocation_keys_count, revocation_threshold),
-                ),
-            ];
-
             // anstream removes the styles when stdout is not a terminal.
             anstream::println!("{BOLD}Signers file created:{BOLD:#} {}", p.display());
             anstream::println!();
-            anstream::println!("{BOLD}Signer groups{BOLD:#}");
-            for (label, summary) in groups {
-                match summary {
-                    Some(summary) => anstream::println!("  {label:<18} {summary}"),
-                    None => anstream::println!("  {label:<18} {DIM}none{DIM:#}"),
-                }
+            let cli_config = config_for_display(config_accessor);
+            for line in signer_groups_lines(&signers_config, &cli_config, BOLD) {
+                anstream::println!("{line}");
             }
             anstream::println!();
             anstream::println!("{BOLD}Digest{BOLD:#}");
@@ -357,23 +323,6 @@ mod tests {
 
     // A valid public key base64 string (from fixtures key_0)
     const VALID_PUBKEY_B64: &str = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8";
-
-    #[test]
-    fn group_summary_cases() {
-        let cases = [
-            (3, Some(2), Some("2 of 3 keys must sign")),
-            (1, Some(1), Some("1 of 1 key must sign")),
-            (0, None, None),
-            (0, Some(1), None),
-        ];
-        for (keys_count, threshold, expected) in cases {
-            assert_eq!(
-                group_summary(keys_count, threshold).as_deref(),
-                expected,
-                "unexpected summary for {keys_count} keys and threshold {threshold:?}"
-            );
-        }
-    }
 
     #[test]
     fn combine_key_sources_empty_inputs() {

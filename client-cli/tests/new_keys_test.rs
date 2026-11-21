@@ -1,4 +1,5 @@
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use predicates::prelude::*;
 use tempfile::TempDir;
 
 const TEST_PASSWORD: &str = "test_password_123";
@@ -20,7 +21,7 @@ fn test_new_keys_password_command_produces_loadable_key() {
         .arg("mykey")
         .arg("-d")
         .arg(temp_dir.path())
-        .arg("-c")
+        .arg("-C")
         .arg(&cmd_str)
         .arg("--accept-weak-password");
     cmd.assert().success();
@@ -45,11 +46,33 @@ fn test_new_keys_password_command_trims_trailing_newline() {
         .arg("mykey")
         .arg("-d")
         .arg(temp_dir.path())
-        .arg("-c")
+        .arg("-C")
         .arg(&cmd_str)
         .arg("--accept-weak-password");
     cmd.assert().success();
 
     AsfaloadSecretKeys::from_file(&key_path, TEST_PASSWORD)
         .expect("trailing newline from echo should be trimmed before the password is used");
+}
+
+#[test]
+fn test_new_keys_message_suggests_alias() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-keys")
+        .arg("-n")
+        .arg("mykey")
+        .arg("-d")
+        .arg(temp_dir.path())
+        .arg("-p")
+        .arg(TEST_PASSWORD)
+        .arg("--accept-weak-password");
+    let assert = cmd.assert().success();
+
+    let pub_key = std::fs::read_to_string(temp_dir.path().join("mykey.pub")).unwrap();
+    assert.stdout(predicate::str::contains(format!(
+        "asfaload-cli alias --key {} <name>",
+        pub_key.trim()
+    )));
 }

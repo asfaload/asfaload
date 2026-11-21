@@ -23,7 +23,7 @@ Password to protect the secret key. Conflicts with `--password-file` and `--pass
 
 File containing the password. Conflicts with `--password` and `--password-command`.
 
-### `-c --password-command <COMMAND>`
+### `-C --password-command <COMMAND>`
 
 Shell command to run; its standard output is read as the password. Useful for password managers (`pass`, `op`, `bw`, etc.). Conflicts with `--password` and `--password-file`. The command string is parsed with shell-style quoting (no shell is spawned, so pipes and redirections don't apply); trailing newlines are stripped from the output.
 
@@ -62,6 +62,9 @@ Human-readable (default):
         I have a key-pair to use with Asfaload. You can use my public
         key in signers files. Here it is:
         asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+
+        To refer to my key by a name, create an alias for it:
+        asfaload-cli alias --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 <name>
 
 The trailing message is the same text printed by [`share-key`](share-key.md); it can be copy-pasted directly when sharing the key.
 

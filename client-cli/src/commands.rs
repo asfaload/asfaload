@@ -540,6 +540,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             signers_path,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             let url = backend_url_args
                 .backend_url
@@ -550,6 +551,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 signers_path,
                 &url,
                 json_args.json,
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::FetchFile {

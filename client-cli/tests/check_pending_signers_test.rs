@@ -5,8 +5,25 @@ use sha2::{Digest, Sha512};
 
 const SIGNERS_REL_PATH: &str = "acme/tool/asfaload.signers.pending/index.json";
 
-const SOURCE_CONTENT: &[u8] = br#"{"version":1}"#;
-const PENDING_CONTENT: &[u8] = br#"{"version":2}"#;
+fn build_signers_content(n: usize) -> Vec<u8> {
+    let keys = test_helpers::TestKeys::new(n + 1);
+    features_lib::SignersConfig::with_artifact_signers_only(
+        1,
+        (vec![keys.pub_key(n).unwrap().clone()], 1),
+    )
+    .unwrap()
+    .to_json()
+    .unwrap()
+    .into_bytes()
+}
+
+// A signers file with key `n` as only artifact signer. The content embeds a
+// timestamp, so it is built once per key to stay byte-identical across calls.
+fn signers_content(n: usize) -> Vec<u8> {
+    static CONTENTS: std::sync::LazyLock<[Vec<u8>; 2]> =
+        std::sync::LazyLock::new(|| [build_signers_content(0), build_signers_content(1)]);
+    CONTENTS[n].clone()
+}
 
 const SOURCE_PATH: &str = "/acme/tool/asfaload.signers/index.json";
 
@@ -21,6 +38,19 @@ fn signers_path(file_server: &mockito::Server) -> String {
         forge_url::path_prefix_from_url(&parsed).unwrap(),
         SIGNERS_REL_PATH
     )
+}
+
+fn fixture_pub_key(n: usize) -> String {
+    std::fs::read_to_string(test_helpers::fixtures_pub_key(n))
+        .unwrap()
+        .trim()
+        .to_owned()
+}
+
+fn write_config(dir: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, content).unwrap();
+    path
 }
 
 fn sha512_digest_str(content: &[u8]) -> String {
@@ -51,7 +81,7 @@ fn mock_backend_files(
         .with_body(test_helpers::signers_metadata_json(
             FORGE_URL,
             source_url,
-            SOURCE_CONTENT,
+            &crate::signers_content(0),
         ))
         .create();
     (signers, metadata)
@@ -83,7 +113,8 @@ fn check_pending_signers_help_lists_flags() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("--backend-url"))
-        .stdout(predicate::str::contains("--json"));
+        .stdout(predicate::str::contains("--json"))
+        .stdout(predicate::str::contains("--config-file"));
 }
 
 #[test]
@@ -92,16 +123,108 @@ fn check_pending_signers_matching_source_succeeds() {
     let mut file_server = mockito::Server::new();
     let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &source_url, &signers_path);
-    let _source = mock_source(&mut file_server, SOURCE_CONTENT);
+    let _mocks = mock_backend_files(
+        &mut backend,
+        &signers_content(0),
+        &source_url,
+        &signers_path,
+    );
+    let _source = mock_source(&mut file_server, &signers_content(0));
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = write_config(&dir, "");
 
     check_pending_cmd(&backend, &signers_path)
+        .arg("--config-file")
+        .arg(&config)
         .assert()
         .success()
         .stdout(format!(
-            "✓ Pending signers file matches the content published at {source_url}\n{}\n",
-            sha512_digest_str(SOURCE_CONTENT)
+            "✓ Pending signers file matches the content published at {source_url}\n{}\n\n\
+             Signer groups\n  Artifact signers   1 of 1 key must sign\n    {}\n  \
+             Admin keys         none (fallback to artifact signers)\n  \
+             Master keys        none\n  \
+             Revocation keys    none (fallback to admin keys)\n",
+            sha512_digest_str(&signers_content(0)),
+            fixture_pub_key(0)
         ));
+}
+
+#[test]
+fn check_pending_signers_shows_signer_groups_with_aliases() {
+    let mut backend = mockito::Server::new();
+    let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+    let source_url = format!("{}{SOURCE_PATH}", file_server.url());
+    let _mocks = mock_backend_files(
+        &mut backend,
+        &signers_content(0),
+        &source_url,
+        &signers_path,
+    );
+    let _source = mock_source(&mut file_server, &signers_content(0));
+    let dir = tempfile::TempDir::new().unwrap();
+    let config = write_config(
+        &dir,
+        &format!("[aliases]\nalice = \"{}\"\n", fixture_pub_key(0)),
+    );
+
+    check_pending_cmd(&backend, &signers_path)
+        .arg("-c")
+        .arg(&config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Signer groups"))
+        .stdout(predicate::str::contains(
+            "  Artifact signers   1 of 1 key must sign",
+        ))
+        .stdout(predicate::str::contains(format!(
+            "    {} (alice)",
+            fixture_pub_key(0)
+        )));
+}
+
+#[test]
+fn check_pending_signers_rejects_invalid_signers_content() {
+    let mut backend = mockito::Server::new();
+    let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+    let source_url = format!("{}{SOURCE_PATH}", file_server.url());
+    let invalid: &[u8] = br#"{"version":1}"#;
+    let _mocks = mock_backend_files(&mut backend, invalid, &source_url, &signers_path);
+    let _source = mock_source(&mut file_server, invalid);
+
+    check_pending_cmd(&backend, &signers_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Pending signers file is not a valid signers file",
+        ));
+}
+
+#[test]
+fn check_pending_signers_rejects_invalid_signers_content_json() {
+    let mut backend = mockito::Server::new();
+    let mut file_server = mockito::Server::new();
+    let signers_path = signers_path(&file_server);
+    let source_url = format!("{}{SOURCE_PATH}", file_server.url());
+    let invalid: &[u8] = br#"{"version":1}"#;
+    let _mocks = mock_backend_files(&mut backend, invalid, &source_url, &signers_path);
+    let _source = mock_source(&mut file_server, invalid);
+
+    let output = check_pending_cmd(&backend, &signers_path)
+        .arg("--json")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(output.get_output().stderr.clone()).unwrap();
+    let v: Value = serde_json::from_str(stderr.trim()).unwrap();
+    assert!(
+        v["error"]
+            .as_str()
+            .expect("error field must be a string")
+            .contains("Pending signers file is not a valid signers file"),
+        "expected invalid signers file error, got: {stderr}"
+    );
 }
 
 #[test]
@@ -110,8 +233,13 @@ fn check_pending_signers_json_output() {
     let mut file_server = mockito::Server::new();
     let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &source_url, &signers_path);
-    let _source = mock_source(&mut file_server, SOURCE_CONTENT);
+    let _mocks = mock_backend_files(
+        &mut backend,
+        &signers_content(0),
+        &source_url,
+        &signers_path,
+    );
+    let _source = mock_source(&mut file_server, &signers_content(0));
 
     let output = check_pending_cmd(&backend, &signers_path)
         .arg("--json")
@@ -121,7 +249,7 @@ fn check_pending_signers_json_output() {
     let v: Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(v["signers_path"], signers_path);
     assert_eq!(v["retrieval_url"], source_url);
-    assert_eq!(v["hash"], sha512_digest_str(SOURCE_CONTENT));
+    assert_eq!(v["hash"], sha512_digest_str(&signers_content(0)));
     assert_eq!(
         v.as_object().unwrap().len(),
         3,
@@ -135,8 +263,13 @@ fn check_pending_signers_mismatch_fails_naming_source() {
     let mut file_server = mockito::Server::new();
     let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, PENDING_CONTENT, &source_url, &signers_path);
-    let _source = mock_source(&mut file_server, SOURCE_CONTENT);
+    let _mocks = mock_backend_files(
+        &mut backend,
+        &signers_content(1),
+        &source_url,
+        &signers_path,
+    );
+    let _source = mock_source(&mut file_server, &signers_content(0));
 
     check_pending_cmd(&backend, &signers_path)
         .assert()
@@ -151,8 +284,13 @@ fn check_pending_signers_mismatch_json_error() {
     let mut file_server = mockito::Server::new();
     let signers_path = signers_path(&file_server);
     let source_url = format!("{}{SOURCE_PATH}", file_server.url());
-    let _mocks = mock_backend_files(&mut backend, PENDING_CONTENT, &source_url, &signers_path);
-    let _source = mock_source(&mut file_server, SOURCE_CONTENT);
+    let _mocks = mock_backend_files(
+        &mut backend,
+        &signers_content(1),
+        &source_url,
+        &signers_path,
+    );
+    let _source = mock_source(&mut file_server, &signers_content(0));
 
     let output = check_pending_cmd(&backend, &signers_path)
         .arg("--json")
@@ -184,7 +322,7 @@ fn check_pending_signers_fails_on_malformed_metadata() {
     let _signers = backend
         .mock("GET", format!("/v1/files/{signers_path}").as_str())
         .with_status(200)
-        .with_body(SOURCE_CONTENT)
+        .with_body(signers_content(0))
         .create();
     let _metadata = backend
         .mock("GET", format!("/v1/files/{metadata_path}").as_str())
@@ -219,11 +357,16 @@ fn check_pending_signers_rejects_source_outside_realm() {
             forge_url::path_prefix_from_url(&parsed).unwrap()
         )
     };
-    let _mocks = mock_backend_files(&mut backend, SOURCE_CONTENT, &attacker_url, &signers_path);
+    let _mocks = mock_backend_files(
+        &mut backend,
+        &signers_content(0),
+        &attacker_url,
+        &signers_path,
+    );
     let fake_source = attacker_server
         .mock("GET", SOURCE_PATH)
         .with_status(200)
-        .with_body(SOURCE_CONTENT)
+        .with_body(signers_content(0))
         .expect(0)
         .create();
 

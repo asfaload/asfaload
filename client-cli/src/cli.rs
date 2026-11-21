@@ -447,6 +447,9 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        config_args: ConfigFile,
     },
     /// Generate a shell completion script
     ///

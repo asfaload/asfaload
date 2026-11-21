@@ -116,7 +116,7 @@ pub enum Commands {
         #[command(flatten)]
         password_args: PasswordArgs,
         ///
-        /// Accept week passwords, bypassing password strength validations (INSECURE!)
+        /// Accept weak passwords, bypassing password strength validations (INSECURE!)
         #[arg(long)]
         accept_weak_password: bool,
 

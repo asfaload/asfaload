@@ -33,7 +33,7 @@ pub enum ClientCliError {
     #[error("Shell program {0} was not found on PATH")]
     ShellNotFound(String),
 
-    #[error("Password is too week")]
+    #[error("Password is too weak")]
     PasswordStrengthError(String),
 
     #[error("Password confirmation does not match")]

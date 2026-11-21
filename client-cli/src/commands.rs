@@ -31,6 +31,7 @@ use client_lib::config::ConfigAccessor;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
 };
+use inquire::prompt_confirmation;
 use rest_api_types::models::ClientPendingFile;
 
 pub mod check_index;
@@ -581,14 +582,54 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .as_deref()
                 .map(AsfaloadPublicKeys::from_base64)
                 .transpose()?;
-            let output = match (name, &pub_key, delete) {
-                (None, None, _) => list_aliases(config_file, &None, json)?,
-                (Some(_), None, false) => list_aliases(config_file, name, json)?,
-                (Some(n), None, true) => delete_alias(config_file, n, json)?,
-                (None, Some(k), false) => display_key(config_file, k, json)?,
-                (None, Some(k), true) => delete_alias_of_key(config_file, k, json)?,
-                (Some(n), Some(k), false) => add_alias(config_file, k, n, *force, json)?,
-                (Some(n), Some(k), true) => delete_alias_pair(config_file, k, n, json)?,
+            let confirm_deletion = |name: &str| -> Result<bool> {
+                // Without this check, inquire reads the answer from /dev/tty, not from stdin.
+                if !std::io::stdin().is_terminal() {
+                    return Err(anyhow::Error::new(ClientCliError::InvalidInput(
+                        "Stdin is not a terminal: use --force to delete without confirmation"
+                            .into(),
+                    )));
+                }
+                Ok(prompt_confirmation(format!(
+                    "Are you sure you want to delete alias {name}?"
+                ))?)
+            };
+            let canceled_string = |b: bool| {
+                if b {
+                    "{\"canceled\": true}".to_string()
+                } else {
+                    "Canceled".to_string()
+                }
+            };
+            let output = match (name, &pub_key, delete, force) {
+                (None, None, _, _) => list_aliases(config_file, &None, json)?,
+                (Some(_), None, false, _) => list_aliases(config_file, name, json)?,
+                (Some(n), None, true, true) => delete_alias(config_file, n, json)?,
+                (Some(n), None, true, false) => {
+                    if confirm_deletion(n)? {
+                        delete_alias(config_file, n, json)?
+                    } else {
+                        canceled_string(json_args.json)
+                    }
+                }
+                (None, Some(k), false, _) => display_key(config_file, k, json)?,
+                (None, Some(k), true, true) => delete_alias_of_key(config_file, k, json)?,
+                (None, Some(k), true, false) => {
+                    if confirm_deletion(&k.to_base64())? {
+                        delete_alias_of_key(config_file, k, json)?
+                    } else {
+                        canceled_string(json_args.json)
+                    }
+                }
+                (Some(n), Some(k), false, _) => add_alias(config_file, k, n, *force, json)?,
+                (Some(n), Some(k), true, true) => delete_alias_pair(config_file, k, n, json)?,
+                (Some(n), Some(k), true, false) => {
+                    if confirm_deletion(n)? {
+                        delete_alias_pair(config_file, k, n, json)?
+                    } else {
+                        canceled_string(json_args.json)
+                    }
+                }
             };
             println!("{}", output);
         }

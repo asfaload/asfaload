@@ -472,12 +472,13 @@ pub enum Commands {
         #[arg(short, long)]
         config_file: Option<PathBuf>,
         /// When the key already has an alias, rename that alias to NAME.
+        /// With --delete, delete without confirmation.
         #[arg(short, long, default_value = "false")]
         force: bool,
         #[command(flatten)]
         json_args: JsonArgs,
         /// Delete the alias. With NAME and --key, the alias must be for that key.
-        #[arg(long, short, requires = "alias_target", conflicts_with = "force")]
+        #[arg(long, short, requires = "alias_target")]
         delete: bool,
     },
 }

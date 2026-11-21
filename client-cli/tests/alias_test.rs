@@ -401,3 +401,62 @@ fn alias_delete_rejects_invalid_arguments() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+fn new_signers_file_cmd(config_path: &Path) -> assert_cmd::Command {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-signers-file")
+        .arg("--config-file")
+        .arg(config_path);
+    cmd
+}
+
+#[test]
+fn new_signers_file_resolves_aliases_from_config_file() -> anyhow::Result<()> {
+    let temp_dir = TempDir::new()?;
+    let config_path = temp_dir.path().join("config.toml");
+    let keys = TestKeys::new(3);
+    let (key_0, key_1, key_2) = (
+        keys.pub_key(0).unwrap(),
+        keys.pub_key(1).unwrap(),
+        keys.pub_key(2).unwrap(),
+    );
+    write_config(&config_path, &[("alice", key_0), ("bob", key_1)])?;
+
+    let output = new_signers_file_cmd(&config_path)
+        .args(["-a", "alice", "-a", &key_2.to_base64(), "-A", "2"])
+        .args(["-d", "bob", "-D", "1"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let signers_config =
+        signers_file_types::parse_signers_config(&String::from_utf8(output.stdout)?)?;
+    let group_keys = |groups: &[signers_file_types::SignerGroup]| -> Vec<AsfaloadPublicKeys> {
+        groups
+            .iter()
+            .flat_map(|g| g.signers.iter().map(|s| s.data.pubkey.clone()))
+            .collect()
+    };
+    assert_eq!(
+        group_keys(signers_config.artifact_signers()),
+        vec![key_0.clone(), key_2.clone()]
+    );
+    assert_eq!(group_keys(signers_config.admin_keys()), vec![key_1.clone()]);
+    Ok(())
+}
+
+#[test]
+fn new_signers_file_fails_for_unknown_alias() -> anyhow::Result<()> {
+    let temp_dir = TempDir::new()?;
+    let config_path = temp_dir.path().join("config.toml");
+    let keys = TestKeys::new(1);
+    write_config(&config_path, &[("alice", keys.pub_key(0).unwrap())])?;
+
+    new_signers_file_cmd(&config_path)
+        .args(["-a", "carol", "-A", "1"])
+        .assert()
+        .failure()
+        .stderr(contains("'carol' is not a known alias"));
+    Ok(())
+}

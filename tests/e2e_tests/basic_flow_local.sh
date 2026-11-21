@@ -62,18 +62,63 @@ cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signe
     -A 2 \
     -o "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNERS_SUFFIX}.json"
 
-# Generate signers file 2 (4 artifact signers threshold 3, 3 revocation keys threshold 2)
+# Aliases are resolved only for keys given as strings, not for keys in files.
+CONFIG_DIR=$(mktemp -d)
+to_delete_on_filesystem+=("$CONFIG_DIR")
+ALIASES_CONFIG="$CONFIG_DIR/aliases.toml"
+for n in 0 1 2 3 4 5 6; do
+    key_var="KEY_$n"
+    cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- alias \
+        -c "$ALIASES_CONFIG" -k "$(pubkey_of "${!key_var}")" "key$n" > /dev/null
+done
+
+# Generate signers file 2 with aliases (4 artifact signers threshold 3, 3 revocation keys threshold 2)
 cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
-    --artifact-signers-file "$KEY_0.pub" \
-    --artifact-signers-file "$KEY_1.pub" \
-    --artifact-signers-file "$KEY_2.pub" \
-    --artifact-signers-file "$KEY_3.pub" \
+    --artifact-signer key0 \
+    --artifact-signer key1 \
+    --artifact-signer key2 \
+    --artifact-signer key3 \
     -A 3 \
-    --revocation-keys-file "$KEY_4.pub" \
-    --revocation-keys-file "$KEY_5.pub" \
-    --revocation-keys-file "$KEY_6.pub" \
+    --revocation-key key4 \
+    --revocation-key key5 \
+    --revocation-key key6 \
     -R 2 \
+    -c "$ALIASES_CONFIG" \
     -o "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
+
+# The config is read only to resolve aliases, so an invalid config file must
+# not break a command that gets only public keys. Check first that the config
+# is effectively rejected when an alias has to be resolved.
+BROKEN_CONFIG="$CONFIG_DIR/broken.toml"
+printf 'this is = = not toml\n' > "$BROKEN_CONFIG"
+if broken_config_output=$(cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
+    --artifact-signer key0 -A 1 -c "$BROKEN_CONFIG" 2>&1) \
+    || ! grep -q "Could not parse config file" <<<"$broken_config_output"; then
+    printf '%s✗%s\n' "$RED" "$RESET"
+    printf '%sAlias resolution with an invalid config file did not fail on the config: %s%s\n' "$RED" "$broken_config_output" "$RESET"
+    exit 1
+fi
+SIGNERS_FILE_2_WITHOUT_ALIASES="$CONFIG_DIR/signers_file_2_without_aliases.json"
+cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
+    --artifact-signer "$(pubkey_of "$KEY_0")" \
+    --artifact-signer "$(pubkey_of "$KEY_1")" \
+    --artifact-signer "$(pubkey_of "$KEY_2")" \
+    --artifact-signer "$(pubkey_of "$KEY_3")" \
+    -A 3 \
+    --revocation-key "$(pubkey_of "$KEY_4")" \
+    --revocation-key "$(pubkey_of "$KEY_5")" \
+    --revocation-key "$(pubkey_of "$KEY_6")" \
+    -R 2 \
+    -c "$BROKEN_CONFIG" \
+    -o "$SIGNERS_FILE_2_WITHOUT_ALIASES"
+# The same signers file proves that the aliases were resolved to the expected keys.
+# The timestamp is the time of generation, so it is not compared.
+if ! diff -q <(jq -S 'del(.timestamp)' "$SIGNERS_FILE_2_WITHOUT_ALIASES") \
+    <(jq -S 'del(.timestamp)' "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json") > /dev/null; then
+    printf '%s✗%s\n' "$RED" "$RESET"
+    printf '%sSigners file generated with aliases differs from the one generated with public keys.%s\n' "$RED" "$RESET"
+    exit 1
+fi
 
 # Append a trailing newline, as a text editor commonly would on save. The exact
 # bytes of the signers file are what gets signed, so chain validation must read

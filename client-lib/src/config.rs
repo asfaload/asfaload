@@ -2,6 +2,7 @@ use etcetera::{BaseStrategy, choose_base_strategy};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::OnceCell,
     collections::{BTreeMap, HashSet},
     io::Write,
     path::{Path, PathBuf},
@@ -10,7 +11,7 @@ use std::{
 use crate::ClientLibError;
 
 type Aliases = BTreeMap<String, AsfaloadPublicKeys>;
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 /// Configuration of the client CLI
 pub struct CliConfig {
@@ -80,6 +81,31 @@ impl CliConfig {
             }
         }
         Ok(())
+    }
+}
+
+/// The ConfigAccessor loads the config lazily, preventing config failures for commands that don't
+/// use the config.
+pub struct ConfigAccessor {
+    path: Option<PathBuf>,
+    config: OnceCell<CliConfig>,
+}
+
+impl ConfigAccessor {
+    pub fn new(path_in: &Option<PathBuf>) -> Self {
+        ConfigAccessor {
+            path: path_in.clone(),
+            config: OnceCell::new(),
+        }
+    }
+
+    pub fn get(&self) -> Result<&CliConfig, ClientLibError> {
+        let config_path = build_config_path(self.path.as_deref())?;
+        if let Some(config) = self.config.get() {
+            return Ok(config);
+        }
+        let config = load_config_or_default(Some(&config_path))?;
+        Ok(self.config.get_or_init(|| config))
     }
 }
 
@@ -301,6 +327,70 @@ mod tests {
             ClientLibError::ConfigError(_) => {}
             e => panic!("expected ConfigError, got {e}"),
         }
+        Ok(())
+    }
+
+    fn config_with_alice(keys: &TestKeys) -> anyhow::Result<CliConfig> {
+        let mut config = CliConfig::default();
+        config.add_alias(keys.pub_key(0).unwrap(), "alice", false)?;
+        Ok(config)
+    }
+
+    #[test]
+    fn config_accessor_returns_default_for_missing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("a").join("config.toml");
+
+        let accessor = ConfigAccessor::new(&Some(config_path));
+        assert!(accessor.get()?.aliases.is_empty());
+        assert!(!temp_dir.path().join("a").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_loads_existing_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let config = config_with_alice(&TestKeys::new(1))?;
+        write(&config_path, toml::to_string(&config)?)?;
+
+        let accessor = ConfigAccessor::new(&Some(config_path));
+        assert_eq!(accessor.get()?.aliases, config.aliases);
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_reports_invalid_file_on_get_only() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        write(&config_path, "this is = = not toml")?;
+
+        // Commands that do not need the config must not fail on an invalid config file.
+        let accessor = ConfigAccessor::new(&Some(config_path));
+        match accessor.get() {
+            Err(ClientLibError::ConfigError(msg)) => assert!(
+                msg.starts_with("Could not parse config file"),
+                "unexpected message {msg}"
+            ),
+            Err(e) => panic!("expected ConfigError, got {e}"),
+            Ok(config) => panic!("expected an error, got config {config:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_reads_file_on_first_get_only() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let accessor = ConfigAccessor::new(&Some(config_path.clone()));
+        // The file is written after new(), so a config loaded by new() would be empty.
+        let config = config_with_alice(&TestKeys::new(1))?;
+        write(&config_path, toml::to_string(&config)?)?;
+
+        assert_eq!(accessor.get()?.aliases, config.aliases);
+        // Once loaded, the config is kept and the file is not read again.
+        write(&config_path, "this is = = not toml")?;
+        assert_eq!(accessor.get()?.aliases, config.aliases);
         Ok(())
     }
 

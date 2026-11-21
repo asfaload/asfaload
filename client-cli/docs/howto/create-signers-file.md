@@ -30,15 +30,31 @@ asfaload-cli new-signers-file \
     --output-file signers.json
 ```
 
-The command prints a summary, ending with the SHA-512 digest of the created file (use it to spot-check the file later with [`get-digest`](../manual/get-digest.md)):
+The command prints a summary. It shows the keys of each group and the SHA-512 digest of the created file (use the digest to spot-check the file later with [`get-digest`](../manual/get-digest.md)):
 
 ```
-Signers file created successfully at: signers.json
-Artifact signers: 3 (threshold: 2)
-Admin keys: 0 (threshold: none)
-Master keys: 0 (threshold: none)
-Revocation keys: 0 (threshold: none)
-Generated file's digest: sha512:2e2fde4e...
+Signers file created: signers.json
+
+Signer groups
+  Artifact signers   2 of 3 keys must sign
+    asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+    asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU
+    asfaload-pub:YCuPAtMNZQaYPDjWmp8voWh6bVg0bRyLu2zEkH6zYZI
+  Admin keys         none (fallback to artifact signers)
+  Master keys        none
+  Revocation keys    none (fallback to admin keys)
+
+Digest
+  sha512:2e2fde4e...
+
+Next steps
+  1. Commit this file to your git repository and publish it.
+  2. Register your repository. Replace <url> with the URL of the
+     published file and <secret-key> with your secret key file:
+
+     asfaload-cli register-repo \
+       --digest sha512:2e2fde4e... \
+       --secret-key <secret-key> <url>
 ```
 
 ![Demo: create the signers file](demos/create-signers-file.gif)

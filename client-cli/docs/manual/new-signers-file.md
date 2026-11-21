@@ -79,14 +79,32 @@ Emit output as JSON instead of human-readable text.
 
 Human-readable (default):
 
-    Signers file created successfully at: signers.json
-    Artifact signers: 3 (threshold: 2)
-    Admin keys: 1 (threshold: 1)
-    Master keys: 0 (threshold: none)
-    Revocation keys: 0 (threshold: none)
-    Generated file's digest: sha512:2e2fde4e...
+    Signers file created: signers.json
 
-The trailing digest identifies the created file; see [`get-digest`](get-digest.md) for how to recompute and compare it later.
+    Signer groups
+      Artifact signers   2 of 3 keys must sign
+        asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 (alice)
+        asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU (bob)
+        asfaload-pub:YCuPAtMNZQaYPDjWmp8voWh6bVg0bRyLu2zEkH6zYZI
+      Admin keys         none (fallback to artifact signers)
+      Master keys        none
+      Revocation keys    none (fallback to admin keys)
+
+    Digest
+      sha512:2e2fde4e...
+
+    Next steps
+      1. Commit this file to your git repository and publish it.
+      2. Register your repository. Replace <url> with the URL of the
+         published file and <secret-key> with your secret key file:
+
+         asfaload-cli register-repo \
+           --digest sha512:2e2fde4e... \
+           --secret-key <secret-key> <url>
+
+A key that has an [alias](alias.md) shows as `<base64 public key> (<alias>)`. If the configuration file cannot be read or is not valid, the command writes a warning to the standard error and shows the keys without aliases. The JSON output never shows aliases.
+
+The digest identifies the created file; see [`get-digest`](get-digest.md) for how to recompute and compare it later.
 
 JSON (with `--json`):
 

@@ -178,7 +178,9 @@ fn test_new_signers_file_human_output_includes_revocation_keys() {
         .stdout(predicate::str::contains(
             "Artifact signers   1 of 1 key must sign",
         ))
-        .stdout(predicate::str::contains("Admin keys         none"))
+        .stdout(predicate::str::contains(
+            "Admin keys         none (fallback to artifact signers)",
+        ))
         .stdout(predicate::str::contains(
             "Revocation keys    1 of 1 key must sign",
         ));

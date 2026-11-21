@@ -21,7 +21,7 @@ fn test_new_keys_password_command_produces_loadable_key() {
         .arg("mykey")
         .arg("-d")
         .arg(temp_dir.path())
-        .arg("-c")
+        .arg("-C")
         .arg(&cmd_str)
         .arg("--accept-weak-password");
     cmd.assert().success();
@@ -46,7 +46,7 @@ fn test_new_keys_password_command_trims_trailing_newline() {
         .arg("mykey")
         .arg("-d")
         .arg(temp_dir.path())
-        .arg("-c")
+        .arg("-C")
         .arg(&cmd_str)
         .arg("--accept-weak-password");
     cmd.assert().success();

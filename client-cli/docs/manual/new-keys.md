@@ -23,7 +23,7 @@ Password to protect the secret key. Conflicts with `--password-file` and `--pass
 
 File containing the password. Conflicts with `--password` and `--password-command`.
 
-### `-c --password-command <COMMAND>`
+### `-C --password-command <COMMAND>`
 
 Shell command to run; its standard output is read as the password. Useful for password managers (`pass`, `op`, `bw`, etc.). Conflicts with `--password` and `--password-file`. The command string is parsed with shell-style quoting (no shell is spawned, so pipes and redirections don't apply); trailing newlines are stripped from the output.
 

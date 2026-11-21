@@ -292,6 +292,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -314,7 +315,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
-                &ConfigAccessor::new(&None),
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::RegisterRepo {
@@ -325,6 +326,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             // First check valid digest was provided
             let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
@@ -350,7 +352,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
-                &ConfigAccessor::new(&None),
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::RegisterAssets {
@@ -360,6 +362,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -385,7 +388,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
-                &ConfigAccessor::new(&None),
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::UpdateSigners {
@@ -396,6 +399,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            config_args,
         } => {
             // First check valid digest was provided
             let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
@@ -421,7 +425,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
-                &ConfigAccessor::new(&None),
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::Revoke {
@@ -431,6 +435,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             backend_url_args,
             digest_args,
             json_args,
+            config_args,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -456,7 +461,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 password.as_str(),
                 &expected_digest,
                 json_args.json,
-                &ConfigAccessor::new(&None),
+                &ConfigAccessor::new(&config_args.config_file),
             ))?;
         }
         Commands::Ping {

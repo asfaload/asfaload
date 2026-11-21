@@ -314,6 +314,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&None),
             ))?;
         }
         Commands::RegisterRepo {
@@ -349,6 +350,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&None),
             ))?;
         }
         Commands::RegisterAssets {
@@ -383,6 +385,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&None),
             ))?;
         }
         Commands::UpdateSigners {
@@ -418,6 +421,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
+                &ConfigAccessor::new(&None),
             ))?;
         }
         Commands::Revoke {
@@ -452,6 +456,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 password.as_str(),
                 &expected_digest,
                 json_args.json,
+                &ConfigAccessor::new(&None),
             ))?;
         }
         Commands::Ping {

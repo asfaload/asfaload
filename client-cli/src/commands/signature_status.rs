@@ -2,22 +2,31 @@ use crate::commands::signers_submission_output::{
     BOLD, command_tail, is_safe_project_id, keys_that_can_sign_lines,
 };
 use crate::error::Result;
-use crate::utils::strip_control_chars;
+use crate::utils::{config_for_display, strip_control_chars};
 use anstyle::Style;
+use client_lib::config::{CliConfig, ConfigAccessor};
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
 use rest_api_types::GetSignatureStatusResponse;
 
 /// Build the human output of signature-status. For a pending signature, it
 /// also lists the keys that can still sign.
-pub fn signature_status_overview(response: &GetSignatureStatusResponse, with_ansi: bool) -> String {
+pub fn signature_status_overview(
+    response: &GetSignatureStatusResponse,
+    config: &CliConfig,
+    with_ansi: bool,
+) -> String {
     let bold = if with_ansi { BOLD } else { Style::new() };
     let file_path = strip_control_chars(&response.file_path);
     if response.is_complete {
         return format!("{file_path}: complete\n");
     }
     let mut lines = vec![format!("{file_path}: pending"), String::new()];
-    lines.extend(keys_that_can_sign_lines(&response.required_signers, bold));
+    lines.extend(keys_that_can_sign_lines(
+        &response.required_signers,
+        config,
+        bold,
+    ));
     let mut output = lines.join("\n");
     output.push('\n');
     output
@@ -33,6 +42,7 @@ pub async fn handle_signature_status_command(
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
+    config_accessor: &ConfigAccessor,
 ) -> Result<()> {
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
@@ -42,8 +52,9 @@ pub async fn handle_signature_status_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else {
+        let config = config_for_display(config_accessor);
         // anstream removes the styles when stdout is not a terminal.
-        anstream::print!("{}", signature_status_overview(&response, true));
+        anstream::print!("{}", signature_status_overview(&response, &config, true));
     }
 
     Ok(())
@@ -97,6 +108,7 @@ pub(crate) fn signature_status_command_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use features_lib::AsfaloadPublicKeyTrait;
 
     #[test]
     fn status_hint_with_default_backend() {
@@ -139,7 +151,7 @@ mod tests {
     #[test]
     fn complete_status() {
         assert_eq!(
-            signature_status_overview(&response(true, &[]), false),
+            signature_status_overview(&response(true, &[]), &CliConfig::default(), false),
             "project/asfaload.index.json: complete\n"
         );
     }
@@ -147,8 +159,28 @@ mod tests {
     #[test]
     fn pending_status_lists_keys() {
         assert_eq!(
-            signature_status_overview(&response(false, &["key1", "key2"]), false),
+            signature_status_overview(
+                &response(false, &["key1", "key2"]),
+                &CliConfig::default(),
+                false
+            ),
             "project/asfaload.index.json: pending\n\nKeys that can still sign\n  key1\n  key2\n"
+        );
+    }
+
+    #[test]
+    fn pending_status_shows_aliases() {
+        let keys = test_helpers::TestKeys::new(1);
+        let key_0 = keys.pub_key(0).unwrap();
+        let mut config = CliConfig::default();
+        config.add_alias(key_0, "alice", false).unwrap();
+        let status = response(false, &[&key_0.to_base64()]);
+        assert_eq!(
+            signature_status_overview(&status, &config, false),
+            format!(
+                "project/asfaload.index.json: pending\n\nKeys that can still sign\n  {} (alice)\n",
+                key_0.to_base64()
+            )
         );
     }
 
@@ -157,7 +189,7 @@ mod tests {
         let mut status = response(true, &[]);
         status.file_path = "pro\x1b[2Kject".to_string();
         assert_eq!(
-            signature_status_overview(&status, false),
+            signature_status_overview(&status, &CliConfig::default(), false),
             "pro[2Kject: complete\n"
         );
     }

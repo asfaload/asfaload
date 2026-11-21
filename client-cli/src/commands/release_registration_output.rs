@@ -1,4 +1,5 @@
 use anstyle::Style;
+use client_lib::config::CliConfig;
 use common::AsfaloadHashes;
 use features_lib::constants::INDEX_FILE;
 use rest_api_types::RegisterAssetsResponse;
@@ -20,6 +21,7 @@ pub fn print_registration_overview(
     response: &RegisterAssetsResponse,
     index_digest: &AsfaloadHashes,
     backend_url: &str,
+    config: &CliConfig,
 ) {
     let non_default_backend = (backend_url != DEFAULT_BACKEND).then_some(backend_url);
     // anstream removes the styles when stdout is not a terminal.
@@ -30,6 +32,7 @@ pub fn print_registration_overview(
             index_digest,
             non_default_backend,
             &program_name(),
+            config,
             true,
         )
     );
@@ -44,6 +47,7 @@ pub fn registration_overview(
     index_digest: &AsfaloadHashes,
     backend_url: Option<&str>,
     executable: &str,
+    config: &CliConfig,
     with_ansi: bool,
 ) -> String {
     let bold = if with_ansi { BOLD } else { Style::new() };
@@ -65,6 +69,7 @@ pub fn registration_overview(
         .filter(|path| is_safe_index_file_path(path));
     let to_collect = SignaturesToCollect {
         required_signers: &response.required_signers,
+        config,
         file_path,
         digest: index_digest,
         complete_message: "The release is fully signed. No more signatures are necessary.",
@@ -103,7 +108,14 @@ mod tests {
     }
 
     fn overview_for(response: &RegisterAssetsResponse) -> String {
-        registration_overview(response, &digest(), None, "asfaload-cli", false)
+        registration_overview(
+            response,
+            &digest(),
+            None,
+            "asfaload-cli",
+            &CliConfig::default(),
+            false,
+        )
     }
 
     #[test]
@@ -156,6 +168,7 @@ mod tests {
             &digest(),
             Some("http://localhost:3000"),
             "asfaload-cli",
+            &CliConfig::default(),
             false,
         );
         assert!(
@@ -224,6 +237,7 @@ mod tests {
                 &digest(),
                 None,
                 "asfaload-cli",
+                &CliConfig::default(),
                 with_ansi,
             )
         };

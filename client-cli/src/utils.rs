@@ -8,6 +8,7 @@ use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
 use clap::CommandFactory;
+use client_lib::config::{CliConfig, ConfigAccessor};
 use common::{AsfaloadHashes, sha512_for_file};
 
 /// Ensures a directory exists, creating it if necessary
@@ -250,6 +251,19 @@ pub fn expected_digest(
         )),
     }
 }
+
+/// The config used to show aliases. The output comes after a backend action,
+/// so a config that cannot load gives a warning and no aliases, not an error.
+pub(crate) fn config_for_display(accessor: &ConfigAccessor) -> CliConfig {
+    match accessor.get() {
+        Ok(config) => config.clone(),
+        Err(e) => {
+            eprintln!("Warning: could not load aliases from the config file: {e}");
+            CliConfig::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +412,15 @@ mod tests {
             "One of --digest or --local-copy is required",
             "no flag",
         );
+    }
+
+    #[test]
+    fn config_for_display_falls_back_to_empty_config() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        // An unknown table makes the config invalid.
+        std::fs::write(&path, "[alias]\n").unwrap();
+        let accessor = ConfigAccessor::new(&Some(path));
+        assert!(config_for_display(&accessor).aliases().is_empty());
     }
 }

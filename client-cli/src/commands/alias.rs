@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
-use client_lib::config::{CliConfig, load_config_or_default, save_config};
+use client_lib::config::ConfigAccessor;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 
 use crate::error::ClientCliError;
@@ -31,11 +30,11 @@ fn format_alias(
 }
 
 pub fn list_aliases(
-    config_file: &Option<PathBuf>,
+    config_accessor: &ConfigAccessor,
     name: &Option<String>,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = load_config_or_default(config_file.as_deref())?;
+    let config = config_accessor.get()?;
     let aliases = config.aliases();
 
     let output = match name {
@@ -51,11 +50,11 @@ pub fn list_aliases(
 }
 
 pub fn display_key(
-    config_file: &Option<PathBuf>,
+    config_accessor: &ConfigAccessor,
     key: &AsfaloadPublicKeys,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = load_config_or_default(config_file.as_deref())?;
+    let config = config_accessor.get()?;
     let output = match config.get_alias(key) {
         Some(alias) => format_alias(alias, key, json)?,
         None => return Err(ClientCliError::NoAliasForKey(key.to_base64())),
@@ -65,15 +64,15 @@ pub fn display_key(
 }
 
 pub fn add_alias(
-    config_file: &Option<PathBuf>,
+    config_accessor: &mut ConfigAccessor,
     key: &AsfaloadPublicKeys,
     name: &str,
     force: bool,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let mut config = load_config_or_default(config_file.as_deref())?;
+    let mut config = config_accessor.get()?.clone();
     config.add_alias(key, name, force)?;
-    save_config(&config, config_file.as_deref())?;
+    config_accessor.save(config)?;
     if json {
         format_alias(name, key, json)
     } else {
@@ -81,16 +80,16 @@ pub fn add_alias(
     }
 }
 
-fn remove_and_save(
-    mut config: CliConfig,
-    config_file: &Option<PathBuf>,
+pub fn remove_alias_and_save_config(
+    config_accessor: &mut ConfigAccessor,
     name: &str,
     json: bool,
 ) -> Result<String, ClientCliError> {
+    let mut config = config_accessor.get()?.clone();
     let key = config
         .remove_alias(name)
         .ok_or_else(|| ClientCliError::AliasNotFound(name.to_string()))?;
-    save_config(&config, config_file.as_deref())?;
+    config_accessor.save(config)?;
     if json {
         format_alias(name, &key, json)
     } else {
@@ -99,52 +98,68 @@ fn remove_and_save(
 }
 
 pub fn delete_alias(
-    config_file: &Option<PathBuf>,
+    config_accessor: &mut ConfigAccessor,
     name: &str,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = load_config_or_default(config_file.as_deref())?;
-    remove_and_save(config, config_file, name, json)
+    remove_alias_and_save_config(config_accessor, name, json)
 }
 
 pub fn delete_alias_of_key(
-    config_file: &Option<PathBuf>,
+    config_accessor: &mut ConfigAccessor,
     key: &AsfaloadPublicKeys,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = load_config_or_default(config_file.as_deref())?;
-    let name = config
-        .get_alias(key)
-        .ok_or_else(|| ClientCliError::NoAliasForKey(key.to_base64()))?
-        .to_string();
-    remove_and_save(config, config_file, &name, json)
+    let name = check_exists(config_accessor, None, &Some(key.clone()))?;
+    remove_alias_and_save_config(config_accessor, &name, json)
 }
 
 pub fn delete_alias_pair(
-    config_file: &Option<PathBuf>,
+    config_accessor: &mut ConfigAccessor,
     key: &AsfaloadPublicKeys,
     name: &str,
     json: bool,
 ) -> Result<String, ClientCliError> {
-    let config = load_config_or_default(config_file.as_deref())?;
-    match config.get_key(name) {
-        None => return Err(ClientCliError::AliasNotFound(name.to_string())),
-        Some(k) if k != key => {
-            return Err(ClientCliError::AliasNotForKey(
-                name.to_string(),
-                key.to_base64(),
-            ));
+    check_exists(config_accessor, Some(name), &Some(key.clone()))?;
+    remove_alias_and_save_config(config_accessor, name, json)
+}
+
+pub fn check_exists(
+    config_accessor: &ConfigAccessor,
+    name: Option<&str>,
+    key: &Option<AsfaloadPublicKeys>,
+) -> Result<String, ClientCliError> {
+    let config = config_accessor.get()?;
+    match (name, key) {
+        (Some(n), Some(k)) => {
+            let aliased_key = config
+                .get_key(n)
+                .ok_or_else(|| ClientCliError::AliasNotFound(n.to_string()))?;
+            if aliased_key == k {
+                Ok(n.to_string())
+            } else {
+                Err(ClientCliError::AliasNotForKey(n.to_string(), k.to_base64()))
+            }
         }
-        Some(_) => {}
+        (None, Some(k)) => config
+            .get_alias(k)
+            .ok_or_else(|| ClientCliError::NoAliasForKey(k.to_base64()))
+            .map(|n| n.to_string()),
+        (Some(n), None) => config
+            .get_key(n)
+            .ok_or_else(|| ClientCliError::AliasNotFound(n.to_string()))
+            .map(|_| n.to_string()),
+        (None, None) => Err(ClientCliError::InvalidInput(
+            "No name nor key received for alias lookup".to_string(),
+        )),
     }
-    remove_and_save(config, config_file, name, json)
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use client_lib::config::{CliConfig, load_config};
+    use client_lib::config::{CliConfig, load_config, save_config};
     use tempfile::TempDir;
     use test_helpers::TestKeys;
 
@@ -172,8 +187,9 @@ mod tests {
             config_path.as_deref().unwrap(),
             &[("alice", key_0), ("bob", key_1)],
         )?;
+        let accessor = ConfigAccessor::new(&config_path);
 
-        let output = list_aliases(&config_path, &None, false)?;
+        let output = list_aliases(&accessor, &None, false)?;
 
         let expected = format!(
             "alice = \"{}\"\nbob = \"{}\"",
@@ -195,16 +211,17 @@ mod tests {
             &[("alice", key_0), ("release.v1", key_1)],
         )?;
         let expected = load_config(config_path.as_deref())?;
+        let accessor = ConfigAccessor::new(&config_path);
 
         // A '.' in an unquoted TOML key creates a nested table, so the name must be quoted.
-        let single = list_aliases(&config_path, &Some("release.v1".to_string()), false)?;
+        let single = list_aliases(&accessor, &Some("release.v1".to_string()), false)?;
         assert_eq!(
             single,
             format!("\"release.v1\" = \"{}\"", key_1.to_base64())
         );
 
         let copied_path = temp_dir.path().join("copied.toml");
-        let listed = list_aliases(&config_path, &None, false)?;
+        let listed = list_aliases(&accessor, &None, false)?;
         std::fs::write(&copied_path, format!("[aliases]\n{listed}\n"))?;
         let copied = load_config(Some(&copied_path))?;
         assert_eq!(copied.aliases(), expected.aliases());
@@ -218,11 +235,12 @@ mod tests {
         let keys = TestKeys::new(1);
         let key_0 = keys.pub_key(0).unwrap();
         write_config(config_path.as_deref().unwrap(), &[("alice", key_0)])?;
+        let accessor = ConfigAccessor::new(&config_path);
 
-        let output = list_aliases(&config_path, &Some("alice".to_string()), false)?;
+        let output = list_aliases(&accessor, &Some("alice".to_string()), false)?;
         assert_eq!(output, format!("alice = \"{}\"", key_0.to_base64()));
 
-        match list_aliases(&config_path, &Some("carol".to_string()), false) {
+        match list_aliases(&accessor, &Some("carol".to_string()), false) {
             Err(ClientCliError::AliasNotFound(name)) => assert_eq!(name, "carol"),
             result => panic!("expected AliasNotFound, got {result:?}"),
         }
@@ -236,11 +254,12 @@ mod tests {
         let keys = TestKeys::new(2);
         let (key_0, key_1) = (keys.pub_key(0).unwrap(), keys.pub_key(1).unwrap());
         write_config(config_path.as_deref().unwrap(), &[("alice", key_0)])?;
+        let accessor = ConfigAccessor::new(&config_path);
 
-        let output = display_key(&config_path, key_0, false)?;
+        let output = display_key(&accessor, key_0, false)?;
         assert_eq!(output, format!("alice = \"{}\"", key_0.to_base64()));
 
-        match display_key(&config_path, key_1, false) {
+        match display_key(&accessor, key_1, false) {
             Err(ClientCliError::NoAliasForKey(key)) => assert_eq!(key, key_1.to_base64()),
             result => panic!("expected NoAliasForKey, got {result:?}"),
         }
@@ -254,10 +273,11 @@ mod tests {
         let config_path = Some(path.clone());
         let keys = TestKeys::new(1);
         let key_0 = keys.pub_key(0).unwrap();
+        let accessor = ConfigAccessor::new(&config_path);
 
-        assert_eq!(list_aliases(&config_path, &None, false)?.trim(), "");
-        assert!(list_aliases(&config_path, &Some("alice".to_string()), false).is_err());
-        assert!(display_key(&config_path, key_0, false).is_err());
+        assert_eq!(list_aliases(&accessor, &None, false)?.trim(), "");
+        assert!(list_aliases(&accessor, &Some("alice".to_string()), false).is_err());
+        assert!(display_key(&accessor, key_0, false).is_err());
 
         assert!(!path.exists());
         Ok(())
@@ -269,8 +289,9 @@ mod tests {
         let config_path = Some(temp_dir.path().join("config.toml"));
         let keys = TestKeys::new(1);
         let key_0 = keys.pub_key(0).unwrap();
+        let mut accessor = ConfigAccessor::new(&config_path);
 
-        let output = add_alias(&config_path, key_0, "alice", false, false)?;
+        let output = add_alias(&mut accessor, key_0, "alice", false, false)?;
 
         assert_eq!(
             output,
@@ -281,7 +302,7 @@ mod tests {
         Ok(())
     }
 
-    type AliasCall<'a> = Box<dyn Fn(&Option<PathBuf>) -> Result<String, ClientCliError> + 'a>;
+    type AliasCall<'a> = Box<dyn Fn(&mut ConfigAccessor) -> Result<String, ClientCliError> + 'a>;
 
     #[test]
     fn delete_removes_only_the_requested_alias() -> anyhow::Result<()> {
@@ -291,15 +312,15 @@ mod tests {
         let cases: Vec<(&str, AliasCall<'_>)> = vec![
             (
                 "by name",
-                Box::new(|path| delete_alias(path, "alice", false)),
+                Box::new(|accessor| delete_alias(accessor, "alice", false)),
             ),
             (
                 "by key",
-                Box::new(|path| delete_alias_of_key(path, key_0, false)),
+                Box::new(|accessor| delete_alias_of_key(accessor, key_0, false)),
             ),
             (
                 "by pair",
-                Box::new(|path| delete_alias_pair(path, key_0, "alice", false)),
+                Box::new(|accessor| delete_alias_pair(accessor, key_0, "alice", false)),
             ),
         ];
         for (description, call) in cases {
@@ -310,7 +331,7 @@ mod tests {
                 &[("alice", key_0), ("bob", key_1)],
             )?;
 
-            let output = call(&config_path)?;
+            let output = call(&mut ConfigAccessor::new(&config_path))?;
 
             assert_eq!(
                 output,
@@ -332,22 +353,22 @@ mod tests {
         let cases: Vec<(&str, AliasCall<'_>, ClientCliError)> = vec![
             (
                 "unknown name",
-                Box::new(|path| delete_alias(path, "carol", false)),
+                Box::new(|accessor| delete_alias(accessor, "carol", false)),
                 ClientCliError::AliasNotFound("carol".to_string()),
             ),
             (
                 "key without alias",
-                Box::new(|path| delete_alias_of_key(path, key_1, false)),
+                Box::new(|accessor| delete_alias_of_key(accessor, key_1, false)),
                 ClientCliError::NoAliasForKey(key_1.to_base64()),
             ),
             (
                 "pair with unknown name",
-                Box::new(|path| delete_alias_pair(path, key_0, "carol", false)),
+                Box::new(|accessor| delete_alias_pair(accessor, key_0, "carol", false)),
                 ClientCliError::AliasNotFound("carol".to_string()),
             ),
             (
                 "pair with other key",
-                Box::new(|path| delete_alias_pair(path, key_1, "alice", false)),
+                Box::new(|accessor| delete_alias_pair(accessor, key_1, "alice", false)),
                 ClientCliError::AliasNotForKey("alice".to_string(), key_1.to_base64()),
             ),
         ];
@@ -358,7 +379,7 @@ mod tests {
             write_config(&path, &[("alice", key_0)])?;
             let before = std::fs::read_to_string(&path)?;
 
-            match call(&config_path) {
+            match call(&mut ConfigAccessor::new(&config_path)) {
                 Err(e) => assert_eq!(e.to_string(), expected.to_string(), "case {description}"),
                 Ok(output) => panic!("case {description}: expected an error, got {output:?}"),
             }
@@ -378,10 +399,11 @@ mod tests {
         let config_path = Some(path.clone());
         let keys = TestKeys::new(1);
         let key_0 = keys.pub_key(0).unwrap();
+        let mut accessor = ConfigAccessor::new(&config_path);
 
-        assert!(delete_alias(&config_path, "alice", false).is_err());
-        assert!(delete_alias_of_key(&config_path, key_0, false).is_err());
-        assert!(delete_alias_pair(&config_path, key_0, "alice", false).is_err());
+        assert!(delete_alias(&mut accessor, "alice", false).is_err());
+        assert!(delete_alias_of_key(&mut accessor, key_0, false).is_err());
+        assert!(delete_alias_pair(&mut accessor, key_0, "alice", false).is_err());
 
         assert!(!path.exists());
         Ok(())
@@ -400,27 +422,27 @@ mod tests {
         let cases: Vec<(&str, AliasCall<'_>, Expected<'_>)> = vec![
             (
                 "list all",
-                Box::new(|path| list_aliases(path, &None, true)),
+                Box::new(|accessor| list_aliases(accessor, &None, true)),
                 vec![("alice", key_0), ("bob", key_1)],
             ),
             (
                 "lookup by name",
-                Box::new(|path| list_aliases(path, &Some("bob".to_string()), true)),
+                Box::new(|accessor| list_aliases(accessor, &Some("bob".to_string()), true)),
                 vec![("bob", key_1)],
             ),
             (
                 "lookup by key",
-                Box::new(|path| display_key(path, key_0, true)),
+                Box::new(|accessor| display_key(accessor, key_0, true)),
                 vec![("alice", key_0)],
             ),
             (
                 "add",
-                Box::new(|path| add_alias(path, key_2, "carol", false, true)),
+                Box::new(|accessor| add_alias(accessor, key_2, "carol", false, true)),
                 vec![("carol", key_2)],
             ),
             (
                 "delete",
-                Box::new(|path| delete_alias(path, "bob", true)),
+                Box::new(|accessor| delete_alias(accessor, "bob", true)),
                 vec![("bob", key_1)],
             ),
         ];
@@ -432,7 +454,7 @@ mod tests {
                 &[("alice", key_0), ("bob", key_1)],
             )?;
 
-            let output = call(&config_path)?;
+            let output = call(&mut ConfigAccessor::new(&config_path))?;
 
             let listed: HashMap<String, String> = serde_json::from_str(&output)?;
             let expected: HashMap<String, String> = expected

@@ -107,6 +107,14 @@ impl ConfigAccessor {
         let config = load_config_or_default(Some(&config_path))?;
         Ok(self.config.get_or_init(|| config))
     }
+
+    /// Write the config to the file of the accessor, and keep it for the next get().
+    pub fn save(&mut self, config: CliConfig) -> Result<(), ClientLibError> {
+        let config_path = build_config_path(self.path.as_deref())?;
+        save_config(&config, Some(&config_path))?;
+        self.config = OnceCell::from(config);
+        Ok(())
+    }
 }
 
 // Restricted to characters that are safe in a shell and cannot form a public key ("asfaload-pub:...").
@@ -391,6 +399,22 @@ mod tests {
         // Once loaded, the config is kept and the file is not read again.
         write(&config_path, "this is = = not toml")?;
         assert_eq!(accessor.get()?.aliases, config.aliases);
+        Ok(())
+    }
+
+    #[test]
+    fn config_accessor_save_writes_file_and_updates_get() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path().join("config.toml");
+        let mut accessor = ConfigAccessor::new(&Some(config_path.clone()));
+        assert!(accessor.get()?.aliases.is_empty());
+
+        let config = config_with_alice(&TestKeys::new(1))?;
+        accessor.save(config.clone())?;
+
+        // get() must not return the config loaded before the save.
+        assert_eq!(accessor.get()?.aliases, config.aliases);
+        assert_eq!(load_config(Some(&config_path))?.aliases, config.aliases);
         Ok(())
     }
 

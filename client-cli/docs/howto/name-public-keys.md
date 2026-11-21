@@ -59,6 +59,18 @@ asfaload-cli alias alicia --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiW
 asfaload-cli alias alicia --delete
 ```
 
+The command asks for confirmation. Type `y` to delete the alias, or `n` to keep it. If you type `n`, the output is `Canceled`.
+
+If the alias is not found, the command fails before it asks for confirmation.
+
+In a script, add `--force` to delete the alias without confirmation:
+
+```sh
+asfaload-cli alias alicia --delete --force
+```
+
+Without `--force`, the command fails if its standard input is not a terminal.
+
 ![Demo: give names to public keys](demos/name-public-keys.gif)
 
 ## Reference

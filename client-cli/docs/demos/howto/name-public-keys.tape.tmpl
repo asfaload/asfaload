@@ -32,9 +32,13 @@ Enter
 Type 'asfaload-cli alias robert --key "$(cat ~/.asfaload/key_1.pub)" --force'
 Enter
 $SLEEP 2s
-Type "# Delete an alias"
+Type "# Delete an alias, and confirm"
 Enter
 Type "asfaload-cli alias alice --delete"
+Enter
+$SLEEP 2s
+Type "y"
+$SLEEP 1s
 Enter
 $SLEEP 2s
 Type "asfaload-cli alias"

@@ -1,7 +1,6 @@
 # `asfaload-cli alias`
 
 - **Usage**: `asfaload-cli alias [OPTIONS] [NAME]`
-- **Source**: [`src/commands/alias.rs`](../../src/commands/alias.rs)
 
 Give a name to a public key, show the aliases, or delete an alias. An alias is easier to read than a public key.
 

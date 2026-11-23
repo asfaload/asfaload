@@ -1,7 +1,6 @@
 # `asfaload-cli get-digest`
 
 - **Usage**: `asfaload-cli get-digest [OPTIONS] <FILE>`
-- **Source**: [`src/commands/get_digest.rs`](../../src/commands/get_digest.rs)
 
 Compute the SHA-512 digest of a local file or a file served over HTTP(S) and display it.
 

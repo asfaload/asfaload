@@ -1,7 +1,6 @@
 # `asfaload-cli new-keys`
 
 - **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME>`
-- **Source**: [`src/commands/keys.rs`](../../src/commands/keys.rs)
 
 Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
 

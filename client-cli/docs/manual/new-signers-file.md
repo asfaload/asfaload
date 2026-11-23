@@ -1,7 +1,6 @@
 # `asfaload-cli new-signers-file`
 
 - **Usage**: `asfaload-cli new-signers-file [OPTIONS] --artifact-threshold <ARTIFACT_THRESHOLD>`
-- **Source**: [`src/commands/signers_file.rs`](../../src/commands/signers_file.rs)
 
 Create a new signers file that defines who can sign artifacts, administer, and manage the project. At minimum, one artifact signer and its threshold are required.
 

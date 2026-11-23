@@ -1,7 +1,6 @@
 # `asfaload-cli check-index`
 
 - **Usage**: `asfaload-cli check-index [OPTIONS] <INDEX_PATH>`
-- **Source**: [`src/commands/check_index.rs`](../../src/commands/check_index.rs)
 
 Fetch an index file (`asfaload.index.json`) from the mirror and validate every digest it records against its original digest source. The digest sources are fetched over the network from the URLs recorded in the index itself. As a result, the mirror — and anyone who can write to it — controls which URLs the CLI contacts when validating, so only trust indexes from mirrors you trust.
 

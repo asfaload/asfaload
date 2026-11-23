@@ -1,7 +1,6 @@
 # `asfaload-cli shell`
 
 - **Usage**: `asfaload-cli shell [OPTIONS]`
-- **Source**: [`src/commands/shell.rs`](../../src/commands/shell.rs)
 
 Start an interactive shell in which completion for `asfaload-cli` is active. You do not need to install a completion script.
 

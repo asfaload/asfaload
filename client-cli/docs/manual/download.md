@@ -1,7 +1,6 @@
 # `asfaload-cli download`
 
 - **Usage**: `asfaload-cli download [OPTIONS] <FILE_URL>`
-- **Source**: [`src/commands/download.rs`](../../src/commands/download.rs)
 
 Download a file and verify its signatures before saving. The command fetches the index and its signatures from the backend, validates the full signers chain history, probes for a revocation, and downloads the actual file. The download, chain validation and revocation probe run in parallel: a failed verification or a detected revocation aborts the in-flight download. Signatures are verified once the file is downloaded, then the file hash is checked before saving. Full signers chain validation is always performed; there is no option to skip it.
 

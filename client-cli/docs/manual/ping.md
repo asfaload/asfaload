@@ -1,7 +1,6 @@
 # `asfaload-cli ping`
 
 - **Usage**: `asfaload-cli ping [OPTIONS]`
-- **Source**: [`src/commands/ping.rs`](../../src/commands/ping.rs)
 
 Check that the backend is reachable. Without a secret key the request is unauthenticated and simply confirms connectivity. With a secret key the request is authenticated, and the backend reports whether your credentials were accepted and for which public key — useful for diagnosing key or clock problems before running a command that signs.
 

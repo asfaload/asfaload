@@ -1,7 +1,6 @@
 # `asfaload-cli sign-pending`
 
 - **Usage**: `asfaload-cli sign-pending [OPTIONS] -K <SECRET_KEY> <--digest <DIGEST>|--local-copy <PATH>> [FILE_PATH]`
-- **Source**: [`src/commands/sign_pending.rs`](../../src/commands/sign_pending.rs)
 
 Sign a pending file. The command fetches all files associated with the given path from the backend, computes a SHA-512 hash of each, signs them with your secret key, and submits the signatures in a single request.
 

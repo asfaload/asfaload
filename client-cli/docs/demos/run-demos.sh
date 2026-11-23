@@ -337,6 +337,7 @@ for tape in "${TAPES[@]}"; do
         cd "$TAPES_DIR"
         HOME="$FIXTURE/home" \
         XDG_CONFIG_HOME="$FIXTURE/home/.config" \
+        XDG_DATA_HOME="$FIXTURE/home/.local/share" \
         PATH="$REPO_ROOT/target/debug:$PATH" \
         ASFALOAD_BACKEND_URL="$BACKEND_URL" \
         ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE" \

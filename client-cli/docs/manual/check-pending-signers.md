@@ -1,7 +1,6 @@
 # `asfaload-cli check-pending-signers`
 
 - **Usage**: `asfaload-cli check-pending-signers [OPTIONS] <SIGNERS_PATH>`
-- **Source**: [`src/commands/check_pending_signers.rs`](../../src/commands/check_pending_signers.rs)
 
 Fetch a pending signers file (`asfaload.signers.pending/index.json`) from the mirror, together with its metadata file, and verify that the file is byte-identical to the content served at the retrieval URL recorded in the metadata. The source is fetched from the metadata's retrieval URL and both contents are compared by SHA-512. A compromised mirror could otherwise hold a signers file that differs from the one the project actually published on its forge.
 

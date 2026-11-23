@@ -1,7 +1,6 @@
 # `asfaload-cli update-signers`
 
 - **Usage**: `asfaload-cli update-signers [OPTIONS] -K <SECRET_KEY> (--digest <VALUE> | --local-copy <PATH>) <SIGNERS_FILE_URL>`
-- **Source**: [`src/commands/update_signers.rs`](../../src/commands/update_signers.rs)
 
 Propose an update to an existing project's signers file. The CLI signs the new signers file and the metadata with your secret key, and the backend records both signatures.
 

@@ -1,7 +1,6 @@
 # `asfaload-cli revoke`
 
 - **Usage**: `asfaload-cli revoke [OPTIONS] -K <SECRET_KEY> <--digest <DIGEST>|--local-copy <PATH>> <FILE_PATH>`
-- **Source**: [`src/commands/revoke.rs`](../../src/commands/revoke.rs)
 
 Revoke a previously signed file on the mirror. The command fetches the file from the backend and compares its SHA-512 digest with the expected digest that you give with `--digest` or `--local-copy`. If the two digests are not the same, the command stops and sends nothing to the backend. Then the command builds a revocation document (timestamped, with the initiator's public key and the file's SHA-512 digest), signs it, and submits it.
 

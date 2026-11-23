@@ -1,7 +1,6 @@
 # `asfaload-cli new-signers-file`
 
 - **Usage**: `asfaload-cli new-signers-file [OPTIONS] --artifact-threshold <ARTIFACT_THRESHOLD>`
-- **Source**: [`src/commands/signers_file.rs`](../../src/commands/signers_file.rs)
 
 Create a new signers file that defines who can sign artifacts, administer, and manage the project. At minimum, one artifact signer and its threshold are required.
 
@@ -25,6 +24,8 @@ Number of artifact signers required to complete a signature. Must be between 1 a
 
 ### Admin keys (optional)
 
+When admin keys are not specified, there is a fallback to artifact signers keys.
+
 #### `-d --admin-key <PUB_KEY>`
 
 Admin public key as a base64 string. Repeatable.
@@ -39,6 +40,8 @@ Required when admin keys are provided. Number of admins required to approve chan
 
 ### Master keys (optional)
 
+Master keys can approve a signers file update in place of the admin keys. Keep them offline. When master keys are not specified, only the admin keys can approve an update.
+
 #### `-m --master-key <PUB_KEY>`
 
 Master public key as a base64 string. Repeatable.
@@ -52,6 +55,8 @@ Path to a file holding master public keys, **one per line**. Repeatable. Combine
 Required when master keys are provided.
 
 ### Revocation keys (optional)
+
+When revocation keys are not specified, there is a fallback to the admin keys.
 
 #### `-r --revocation-key <PUB_KEY>`
 
@@ -74,6 +79,10 @@ Path for the new signers file. The file must not already exist — the command r
 #### `--json`
 
 Emit output as JSON instead of human-readable text.
+
+#### `-c --config-file <CONFIG_FILE>`
+
+The configuration file to read aliases from, instead of the default file. Refer to [alias](alias.md#configuration-file).
 
 ## Output
 

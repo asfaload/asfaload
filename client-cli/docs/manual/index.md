@@ -1,6 +1,6 @@
 # asfaload-cli manual
 
-Reference for all `asfaload-cli` commands.
+Reference for all `asfaload-cli` commands. To show the page of a command in the terminal, use `asfaload-cli manual <COMMAND>` or `asfaload-cli <COMMAND> --manual`.
 
 ## Keys
 
@@ -21,6 +21,7 @@ Reference for all `asfaload-cli` commands.
 
 - [`list-pending`](list-pending.md) — list files that still need your signature
 - [`sign-pending`](sign-pending.md) — sign a pending file
+- [`fetch-file`](fetch-file.md) — fetch a file from the backend, for example to examine it before you sign it
 - [`signature-status`](signature-status.md) — check a file's signature collection status
 
 ## Revocation
@@ -41,10 +42,15 @@ Reference for all `asfaload-cli` commands.
 ## Shell integration
 
 - [`shell`](shell.md) — start a shell in which completion for `asfaload-cli` is active
+- [`complete`](complete.md) — generate a completion script for your shell
 
 ## Local configuration
 
 - [`alias`](alias.md) — give names to public keys, and show or delete these names
+
+## Help
+
+- [`manual`](manual.md) — show the manual page of a command in the terminal
 
 ## Common notes
 

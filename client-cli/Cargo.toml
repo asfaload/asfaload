@@ -39,6 +39,8 @@ inquire = "0.9.4"
 clap_complete_command = "0.6.1"
 tempfile = "3.14"
 toml = "1.2.1+spec-1.1.0"
+termimad = "0.34.1"
+minus = { version = "5.8.0", features = ["static_output"] }
 
 [dev-dependencies]
 mockito = "1.2"

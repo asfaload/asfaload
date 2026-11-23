@@ -1,7 +1,6 @@
 # `asfaload-cli register-assets`
 
 - **Usage**: `asfaload-cli register-assets [OPTIONS] -K <SECRET_KEY>`
-- **Source**: [`src/commands/register_assets.rs`](../../src/commands/register_assets.rs)
 
 Register assets for signing. Tell the backend about a new set of files — either a GitHub release or one or more checksum files — so that the signature collection process can begin.
 

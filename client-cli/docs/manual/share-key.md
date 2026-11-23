@@ -1,7 +1,6 @@
 # `asfaload-cli share-key`
 
 - **Usage**: `asfaload-cli share-key [OPTIONS] -k <PUBLIC_KEY>`
-- **Source**: [`src/commands/share_key.rs`](../../src/commands/share_key.rs)
 
 Print your public key in the base64 form used in signers files, along with a ready-to-send message for sharing it. The public key is safe to share — it is how others verify your signatures.
 

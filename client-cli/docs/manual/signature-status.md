@@ -1,7 +1,6 @@
 # `asfaload-cli signature-status`
 
 - **Usage**: `asfaload-cli signature-status [OPTIONS] <FILE_PATH>`
-- **Source**: [`src/commands/signature_status.rs`](../../src/commands/signature_status.rs)
 - **Related endpoint**: [`GET /v1/signatures/{file_path}`](../../../rest-api/docs/manual/signature-status.md)
 
 Query the backend for the signature collection status of a file. The caller must be an authorized signer in the file's current signers file; see the linked endpoint for the exact authorization rule.

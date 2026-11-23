@@ -1,7 +1,6 @@
 # `asfaload-cli list-pending`
 
 - **Usage**: `asfaload-cli list-pending [OPTIONS] -K <SECRET_KEY>`
-- **Source**: [`src/commands/list_pending.rs`](../../src/commands/list_pending.rs)
 
 List all files on the backend that still need your signature. The command authenticates with your secret key and returns only the files where your public key is among the expected signers.
 

@@ -5,6 +5,7 @@ use std::io::{IsTerminal, Write};
 
 use clap::CommandFactory;
 use termimad::crossterm::style::Color;
+use termimad::minimad::Alignment;
 use termimad::{CompoundStyle, MadSkin};
 
 use crate::cli::Cli;
@@ -14,6 +15,10 @@ const MANUAL_FLAG: &str = "--manual";
 const END_OF_OPTIONS: &str = "--";
 // Width used when the output is not a terminal, or when the terminal width is not available.
 const DEFAULT_WIDTH: usize = 80;
+const BODY_INDENT: usize = 7;
+const NESTED_INDENT: usize = 4;
+// Below this width the indentation takes too much space.
+const MIN_INDENTED_WIDTH: usize = 40;
 
 macro_rules! page {
     ($name:literal) => {
@@ -159,15 +164,67 @@ fn linked_page(target: &str) -> Option<&str> {
     (!page.is_empty() && !page.contains('/')).then_some(page)
 }
 
-/// Renders Markdown as terminal text, wrapped at `width` columns. Without `styled`, the
-/// text has no ANSI escape codes.
+/// Renders Markdown as terminal text, wrapped at `width` columns, with the indentation of
+/// man pages. Without `styled`, the text has no ANSI escape codes.
 pub fn render(markdown: &str, styled: bool, width: usize) -> String {
-    let skin = if styled {
+    let mut skin = if styled {
         styled_skin()
     } else {
         MadSkin::no_style()
     };
-    skin.text(markdown, Some(width)).to_string()
+    skin.headers[0].align = Alignment::Center;
+    if width < MIN_INDENTED_WIDTH {
+        return skin.text(markdown, Some(width)).to_string();
+    }
+    let mut output = String::new();
+    let mut body = String::new();
+    let mut body_indent = BODY_INDENT;
+    for line in markdown.split_inclusive('\n') {
+        match heading_level(line) {
+            Some(level) => {
+                output.push_str(&render_indented(&skin, &body, width, body_indent));
+                body.clear();
+                let (heading_indent, next_body_indent) = indents_for(level);
+                output.push_str(&render_indented(&skin, line, width, heading_indent));
+                body_indent = next_body_indent;
+            }
+            None => body.push_str(line),
+        }
+    }
+    output.push_str(&render_indented(&skin, &body, width, body_indent));
+    output
+}
+
+fn heading_level(line: &str) -> Option<usize> {
+    let level = line.chars().take_while(|c| *c == '#').count();
+    (level > 0 && line[level..].starts_with(' ')).then_some(level)
+}
+
+// Returns the indentation of a heading and of the text under it, as in `man git`.
+fn indents_for(level: usize) -> (usize, usize) {
+    match level {
+        1 | 2 => (0, BODY_INDENT),
+        _ => {
+            let heading_indent = BODY_INDENT + NESTED_INDENT * (level - 3);
+            (heading_indent, heading_indent + NESTED_INDENT)
+        }
+    }
+}
+
+fn render_indented(skin: &MadSkin, markdown: &str, width: usize, indent: usize) -> String {
+    let prefix = " ".repeat(indent);
+    skin.text(markdown, Some(width - indent))
+        .to_string()
+        .lines()
+        .map(str::trim_end)
+        .map(|line| {
+            if line.is_empty() {
+                "\n".to_string()
+            } else {
+                format!("{prefix}{line}\n")
+            }
+        })
+        .collect()
 }
 
 // The default skin gives code a gray background, which is hard to read with light terminal themes.
@@ -342,6 +399,79 @@ mod tests {
     #[test]
     fn render_with_style_has_escape_codes() {
         assert!(render("Some **bold** text", true, 80).contains('\x1b'));
+    }
+
+    #[test]
+    fn heading_level_detects_markdown_headings() {
+        let cases = vec![
+            ("# Title\n", Some(1)),
+            ("### `-o --output`\n", Some(3)),
+            ("#### Sub\n", Some(4)),
+            ("#no space\n", None),
+            ("text # not a heading\n", None),
+            ("    # comment in code\n", None),
+            ("", None),
+        ];
+        for (line, expected) in cases {
+            assert_eq!(heading_level(line), expected, "line: {line:?}");
+        }
+    }
+
+    // Column of the first character of the line that contains `text`.
+    fn column_of(rendered: &str, text: &str) -> usize {
+        let line = rendered
+            .lines()
+            .find(|line| line.contains(text))
+            .unwrap_or_else(|| panic!("{text} not in: {rendered}"));
+        line.len() - line.trim_start().len()
+    }
+
+    #[test]
+    fn render_indents_like_man_pages() {
+        let markdown = "# Title\n\nIntro text.\n\n## Options\n\n### `-o`\n\nOption text.\n\n    code line\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n#### Sub\n\nSub text.\n\n## Notes\n\nNote text.\n";
+        let text = render(markdown, false, 60);
+        let cases = vec![
+            ("Intro text.", 7),
+            ("Options", 0),
+            ("-o", 7),
+            ("Option text.", 11),
+            ("code line", 11),
+            ("│ a", 11),
+            ("Sub", 11),
+            ("Sub text.", 15),
+            ("Notes", 0),
+            ("Note text.", 7),
+        ];
+        for (content, column) in cases {
+            assert_eq!(column_of(&text, content), column, "{content} in: {text}");
+        }
+        assert!(
+            column_of(&text, "Title") > 20,
+            "title not centered in: {text}"
+        );
+        assert!(
+            text.lines().all(|line| line == line.trim_end()),
+            "trailing spaces in: {text:?}"
+        );
+    }
+
+    #[test]
+    fn render_does_not_indent_in_narrow_terminals() {
+        let text = render("## Options\n\nOption text.\n", false, 30);
+        assert_eq!(column_of(&text, "Option text."), 0, "{text}");
+    }
+
+    #[test]
+    fn each_page_fits_the_width() {
+        for width in [40, 60, 80] {
+            for (name, source) in PAGES {
+                let text = render(&rewrite_links(source, "asfaload-cli"), false, width);
+                assert!(
+                    text.lines().all(|line| line.chars().count() <= width),
+                    "line wider than {width} in page {name}"
+                );
+            }
+        }
     }
 
     fn args(line: &str) -> Vec<OsString> {

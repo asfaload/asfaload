@@ -62,3 +62,25 @@ fn help_lists_the_manual_flag() {
     let text = stdout_of(&["download", "--help"]);
     assert!(text.contains("--manual"), "{text}");
 }
+
+#[test]
+fn manual_subcommand_shows_the_same_page_as_the_flag() {
+    assert_eq!(
+        stdout_of(&["manual", "download"]),
+        stdout_of(&["download", "--manual"])
+    );
+}
+
+#[test]
+fn manual_subcommand_without_command_shows_the_index() {
+    assert_eq!(stdout_of(&["manual"]), stdout_of(&["--manual"]));
+}
+
+#[test]
+fn manual_subcommand_with_unknown_command_fails() {
+    cli()
+        .args(["manual", "downlaod"])
+        .assert()
+        .code(2)
+        .stderr(contains("invalid value"));
+}

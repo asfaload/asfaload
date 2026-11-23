@@ -503,6 +503,12 @@ pub enum Commands {
         #[arg(long, short, requires = "alias_target")]
         delete: bool,
     },
+    /// Show the manual of asfaload-cli, or the manual page of one command
+    Manual {
+        /// Command to show the manual page of. Without it, show the index page.
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::manual::page_names()))]
+        command: Option<String>,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -543,6 +549,7 @@ impl Commands {
             Self::Complete { .. } => "COMPLETE",
             Self::Shell { .. } => "SHELL",
             Self::Alias { .. } => "ALIAS",
+            Self::Manual { .. } => "MANUAL",
         }
     }
 
@@ -582,6 +589,7 @@ impl Commands {
             Self::Download { .. } => false,
             Self::Complete { .. } => false,
             Self::Shell { .. } => false,
+            Self::Manual { .. } => false,
         }
     }
 }

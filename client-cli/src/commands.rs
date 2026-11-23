@@ -661,6 +661,9 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             };
             println!("{}", output);
         }
+        Commands::Manual { command } => {
+            crate::manual::show(command.as_deref().unwrap_or(crate::manual::INDEX_PAGE))?;
+        }
     }
     Ok(())
 }

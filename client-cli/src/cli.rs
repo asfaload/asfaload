@@ -99,6 +99,10 @@ pub struct ForgeTypeArgs {
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
+
+    /// Show the manual page of the command, or the index page without a command
+    #[arg(long, global = true)]
+    pub manual: bool,
 }
 
 #[derive(Subcommand, Debug)]

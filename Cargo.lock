@@ -637,6 +637,7 @@ dependencies = [
  "hex",
  "index-verification",
  "inquire",
+ "minus",
  "mockito",
  "predicates",
  "rest_api_types",
@@ -2318,6 +2319,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "minus"
+version = "5.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b20be26a360f37e73a59ba17f4bee3ad24cd67417d82b9946acd58173a495bfe"
+dependencies = [
+ "crossbeam-channel",
+ "crossterm",
+ "parking_lot 0.12.5",
+ "textwrap",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "mio"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3741,6 +3755,15 @@ dependencies = [
  "signatures",
  "signers_file_types",
  "tempfile",
+]
+
+[[package]]
+name = "textwrap"
+version = "0.16.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ecfad6c3abc80a577f2b91c1e412ee57e7a060d430b553c1b0c940974ebcd49"
+dependencies = [
+ "unicode-width 0.2.2",
 ]
 
 [[package]]

@@ -1,9 +1,19 @@
 //! Manual pages from `docs/manual/`, embedded at compile time and rendered for the terminal.
 
+use std::ffi::OsString;
+use std::io::{IsTerminal, Write};
+
+use clap::CommandFactory;
 use termimad::crossterm::style::Color;
 use termimad::{CompoundStyle, MadSkin};
 
+use crate::cli::Cli;
+
 pub const INDEX_PAGE: &str = "index";
+const MANUAL_FLAG: &str = "--manual";
+const END_OF_OPTIONS: &str = "--";
+// Width used when the output is not a terminal, or when the terminal width is not available.
+const DEFAULT_WIDTH: usize = 80;
 
 macro_rules! page {
     ($name:literal) => {
@@ -47,6 +57,40 @@ pub fn page_source(name: &str) -> Option<&'static str> {
         .iter()
         .find(|(page, _)| *page == name)
         .map(|(_, source)| *source)
+}
+
+fn page_name(name: &str) -> Option<&'static str> {
+    page_names().find(|page| *page == name)
+}
+
+/// Returns the manual page that `--manual` requests, or `None` when the arguments
+/// do not request a manual page. Required arguments of the subcommand are not
+/// necessary, because clap errors are ignored here.
+pub fn requested_page(args: &[OsString]) -> Option<&'static str> {
+    let user_args: Vec<&OsString> = args
+        .iter()
+        .skip(1)
+        .take_while(|arg| *arg != END_OF_OPTIONS)
+        .collect();
+    if !user_args.iter().any(|arg| *arg == MANUAL_FLAG) {
+        return None;
+    }
+    let matches = Cli::command()
+        .ignore_errors(true)
+        .try_get_matches_from(args)
+        .ok()?;
+    match matches.subcommand_name() {
+        Some(name) => Some(page_name(name).unwrap_or(INDEX_PAGE)),
+        // The top-level command takes no option value, so an argument that is not
+        // an option is an unknown subcommand: let the normal parsing report it.
+        None if user_args
+            .iter()
+            .any(|arg| !arg.to_string_lossy().starts_with('-')) =>
+        {
+            None
+        }
+        None => Some(INDEX_PAGE),
+    }
 }
 
 /// Rewrites the Markdown links, because termimad does not render them.
@@ -135,12 +179,52 @@ fn styled_skin() -> MadSkin {
     skin
 }
 
+/// Shows a manual page: in a pager when stdout is a terminal, else as plain text.
+pub fn show(page: &str) -> anyhow::Result<()> {
+    let source = page_source(page).ok_or_else(|| anyhow::anyhow!("No manual page {page}"))?;
+    let markdown = rewrite_links(source, Cli::command().get_name());
+    let to_terminal = std::io::stdout().is_terminal();
+    let styled = to_terminal && std::env::var_os("NO_COLOR").is_none();
+    let width = if to_terminal {
+        terminal_width()
+    } else {
+        DEFAULT_WIDTH
+    };
+    let text = render(&markdown, styled, width);
+    // If the pager fails, the text is printed directly.
+    if to_terminal && page_text(&text).is_ok() {
+        return Ok(());
+    }
+    write_text(&mut std::io::stdout().lock(), &text)
+}
+
+fn terminal_width() -> usize {
+    termimad::crossterm::terminal::size()
+        .map(|(columns, _)| usize::from(columns))
+        .unwrap_or(DEFAULT_WIDTH)
+}
+
+// A text that fits on the screen is printed without the pager.
+fn page_text(text: &str) -> Result<(), minus::MinusError> {
+    let pager = minus::Pager::new();
+    pager.set_text(text)?;
+    minus::page_all(pager)
+}
+
+// A closed pipe (for example `| head`) is a normal end of the output.
+fn write_text(writer: &mut impl Write, text: &str) -> anyhow::Result<()> {
+    match writer
+        .write_all(text.as_bytes())
+        .and_then(|()| writer.flush())
+    {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        result => Ok(result?),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
-
     use super::*;
-    use crate::cli::Cli;
 
     #[test]
     fn index_page_exists() {
@@ -257,5 +341,77 @@ mod tests {
     #[test]
     fn render_with_style_has_escape_codes() {
         assert!(render("Some **bold** text", true, 80).contains('\x1b'));
+    }
+
+    fn args(line: &str) -> Vec<OsString> {
+        std::iter::once("asfaload-cli")
+            .chain(line.split_whitespace())
+            .map(OsString::from)
+            .collect()
+    }
+
+    #[test]
+    fn requested_page_finds_the_page_to_show() {
+        let cases = vec![
+            ("download https://example.com/f", None),
+            ("--manual", Some(INDEX_PAGE)),
+            ("download --manual", Some("download")),
+            ("download --manual -o x", Some("download")),
+            (
+                "download https://example.com/f --json --manual",
+                Some("download"),
+            ),
+            ("downlaod --manual", None),
+            ("shell -- --manual", None),
+            ("help --manual", None),
+            ("download --manual=x", None),
+        ];
+        for (line, expected) in cases {
+            assert_eq!(requested_page(&args(line)), expected, "arguments: {line}");
+        }
+    }
+
+    struct FailingWriter(std::io::ErrorKind);
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(self.0.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn write_text_ignores_only_broken_pipe() {
+        assert!(write_text(&mut FailingWriter(std::io::ErrorKind::BrokenPipe), "x").is_ok());
+        assert!(
+            write_text(
+                &mut FailingWriter(std::io::ErrorKind::PermissionDenied),
+                "x"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn each_page_link_points_to_an_embedded_page() {
+        for (name, source) in PAGES {
+            for line in source.lines().filter(|line| !line.starts_with("    ")) {
+                let mut rest = line;
+                while let Some(start) = rest.find('[') {
+                    let candidate = &rest[start..];
+                    if let Some((_, target, _)) = parse_link(candidate)
+                        && let Some(page) = linked_page(target)
+                    {
+                        assert!(
+                            page_source(page).is_some(),
+                            "page {name} links to unknown page {page}"
+                        );
+                    }
+                    rest = &candidate[1..];
+                }
+            }
+        }
     }
 }

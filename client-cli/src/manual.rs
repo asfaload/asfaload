@@ -46,6 +46,71 @@ pub fn page_source(name: &str) -> Option<&'static str> {
         .map(|(_, source)| *source)
 }
 
+/// Rewrites the Markdown links, because termimad does not render them.
+/// A link to another manual page refers to the `manual` subcommand, other links keep only their
+/// text. Indented code blocks do not change.
+pub fn rewrite_links(markdown: &str, bin_name: &str) -> String {
+    markdown
+        .split_inclusive('\n')
+        .map(|line| {
+            if line.starts_with("    ") {
+                line.to_string()
+            } else {
+                rewrite_line_links(line, bin_name)
+            }
+        })
+        .collect()
+}
+
+fn rewrite_line_links(line: &str, bin_name: &str) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(start) = rest.find('[') {
+        output.push_str(&rest[..start]);
+        let candidate = &rest[start..];
+        match parse_link(candidate) {
+            Some((text, target, length)) => {
+                output.push_str(&link_replacement(text, target, bin_name));
+                rest = &candidate[length..];
+            }
+            None => {
+                output.push('[');
+                rest = &candidate[1..];
+            }
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
+// Parses `[text](target)` at the start of `input`, and returns the text, the target and the
+// length in bytes of the link.
+fn parse_link(input: &str) -> Option<(&str, &str, usize)> {
+    let text_end = input.find("](")?;
+    let text = &input[1..text_end];
+    if text.contains(['[', ']']) {
+        return None;
+    }
+    let target_start = text_end + 2;
+    let target_length = input[target_start..].find(')')?;
+    let target = &input[target_start..target_start + target_length];
+    Some((text, target, target_start + target_length + 1))
+}
+
+fn link_replacement(text: &str, target: &str, bin_name: &str) -> String {
+    match linked_page(target) {
+        Some(page) => format!("{text} (see: `{bin_name} manual {page}`)"),
+        None => text.to_string(),
+    }
+}
+
+// Returns the page name of a link target `name.md` or `name.md#section`.
+fn linked_page(target: &str) -> Option<&str> {
+    let file = target.split('#').next()?;
+    let page = file.strip_suffix(".md")?;
+    (!page.is_empty() && !page.contains('/')).then_some(page)
+}
+
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
@@ -101,5 +166,55 @@ mod tests {
             missing.is_empty(),
             "flags missing in their manual page: {missing:?}"
         );
+    }
+
+    #[test]
+    fn rewrite_links_keeps_readable_text() {
+        let cases = vec![
+            (
+                "See [alias](alias.md).",
+                "See alias (see: `asfaload-cli manual alias`).",
+            ),
+            (
+                "Refer to [the index](index.md#passwords).",
+                "Refer to the index (see: `asfaload-cli manual index`).",
+            ),
+            ("Go to [section](#passwords).", "Go to section."),
+            ("Code in [file](../../src/main.rs).", "Code in file."),
+            ("Site [docs](https://example.com/a.md).", "Site docs."),
+            (
+                "[a](a.md) and [b](b.md)",
+                "a (see: `asfaload-cli manual a`) and b (see: `asfaload-cli manual b`)",
+            ),
+            (
+                "- [`ping`](ping.md) — check",
+                "- `ping` (see: `asfaload-cli manual ping`) — check",
+            ),
+            ("No link here.\n", "No link here.\n"),
+            ("An array [0] and [1](x", "An array [0] and [1](x"),
+            ("[a] b [c](c.md)", "[a] b c (see: `asfaload-cli manual c`)"),
+            ("    [code](code.md)\n", "    [code](code.md)\n"),
+            (
+                "line one\n[x](x.md)\n",
+                "line one\nx (see: `asfaload-cli manual x`)\n",
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                rewrite_links(input, "asfaload-cli"),
+                expected,
+                "input: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_page_has_no_raw_link_after_rewrite() {
+        for (name, source) in PAGES {
+            assert!(
+                !rewrite_links(source, "asfaload-cli").contains("]("),
+                "raw link in page {name}"
+            );
+        }
     }
 }

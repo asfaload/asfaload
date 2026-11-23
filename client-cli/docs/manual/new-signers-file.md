@@ -24,6 +24,8 @@ Number of artifact signers required to complete a signature. Must be between 1 a
 
 ### Admin keys (optional)
 
+When admin keys are not specified, there is a fallback to artifact signers keys.
+
 #### `-d --admin-key <PUB_KEY>`
 
 Admin public key as a base64 string. Repeatable.
@@ -38,6 +40,8 @@ Required when admin keys are provided. Number of admins required to approve chan
 
 ### Master keys (optional)
 
+Master keys can approve a signers file update in place of the admin keys. Keep them offline. When master keys are not specified, only the admin keys can approve an update.
+
 #### `-m --master-key <PUB_KEY>`
 
 Master public key as a base64 string. Repeatable.
@@ -51,6 +55,8 @@ Path to a file holding master public keys, **one per line**. Repeatable. Combine
 Required when master keys are provided.
 
 ### Revocation keys (optional)
+
+When revocation keys are not specified, there is a fallback to the admin keys.
 
 #### `-r --revocation-key <PUB_KEY>`
 

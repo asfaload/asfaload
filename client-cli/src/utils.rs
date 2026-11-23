@@ -1,4 +1,5 @@
 use ClientCliError::PasswordStrengthError;
+use client_lib::paths::get_keys_dir;
 use std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
@@ -261,6 +262,17 @@ pub(crate) fn config_for_display(accessor: &ConfigAccessor) -> CliConfig {
             eprintln!("Warning: could not load aliases from the config file: {e}");
             CliConfig::default()
         }
+    }
+}
+
+// help text displayed by Clap for keys dir
+pub(crate) fn output_dir_help() -> String {
+    match get_keys_dir(None) {
+        Ok(dir) => format!(
+            "Directory to store the keypair [default: {}]",
+            dir.display()
+        ),
+        Err(_) => "Directory to store the keypair [default: user data directory]".to_string(),
     }
 }
 

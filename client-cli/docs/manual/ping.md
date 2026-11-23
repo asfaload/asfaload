@@ -67,7 +67,7 @@ JSON (with `--json`):
     asfaload-cli ping
 
     # verify your credentials are accepted
-    asfaload-cli ping -K ~/.asfaload/mykey
+    asfaload-cli ping -K mykey
 
     # against a non-default backend
     asfaload-cli ping -u https://my-asfaload-deployment.example.com

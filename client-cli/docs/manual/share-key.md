@@ -46,13 +46,13 @@ JSON (with `--json`):
 ## Examples
 
     # print your public key and a sharing message
-    asfaload-cli share-key -k ~/.asfaload/mykey.pub
+    asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub
 
     # print only the key
-    asfaload-cli share-key -k ~/.asfaload/mykey.pub --raw
+    asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub --raw
 
     # machine-readable output
-    asfaload-cli share-key --json -k ~/.asfaload/mykey.pub
+    asfaload-cli share-key --json -k ~/.local/share/asfaload-cli/mykey.pub
 
 ## Exit codes
 

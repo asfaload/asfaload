@@ -24,9 +24,13 @@ The expected `sha512:<128 hexadecimal characters>` digest of the file to sign. G
 
 Path to your local copy of the file to sign, for example the signers file that you received from the project. Its SHA-512 digest is the expected digest, and the command uses it as it uses the value of `--digest`. Use this option when you have the file: you then do not have to get the digest from another person. Conflicts with `--digest`.
 
-### `-K --secret-key <PATH>`
+### `-K --secret-key <PATH|NAME>`
 
-Path to your secret key file. Required.
+Path to your secret key file, or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Required.
+
+### `--keys-dir <DIR>`
+
+Directory where the command looks for the secret key when the value of `--secret-key` is not an existing file. The command then reads `<DIR>/<value of --secret-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 
 ### `-p --password <PASSWORD>`
 
@@ -53,6 +57,7 @@ Emit output as JSON instead of human-readable text.
 These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
 - `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
 - `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
@@ -149,22 +154,22 @@ JSON (with `--json`):
 ## Examples
 
     # sign a pending release index
-    asfaload-cli sign-pending -K ~/.asfaload/key \
+    asfaload-cli sign-pending -K key \
         --digest sha512:2e2fde4e... \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # sign with explicit password (CI usage)
-    asfaload-cli sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
+    asfaload-cli sign-pending -K key -p "$PASSWORD" \
         --digest sha512:2e2fde4e... \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # sign a pending signers file, with your local copy of the signers file
-    asfaload-cli sign-pending -K ~/.asfaload/key \
+    asfaload-cli sign-pending -K key \
         --local-copy ./asfaload.signers/index.json \
         https/github.com/443/acme/repo/asfaload.signers.pending/index.json
 
     # interactive selection of the pending files with the expected digest
-    asfaload-cli sign-pending -K ~/.asfaload/key --digest sha512:2e2fde4e...
+    asfaload-cli sign-pending -K key --digest sha512:2e2fde4e...
 
 ## Exit codes
 

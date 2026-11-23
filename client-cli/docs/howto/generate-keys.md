@@ -8,40 +8,44 @@ Every signer needs their own key pair. This guide walks you through creating one
 
 ## Steps
 
-### 1. Choose a directory
-
-By default the keys are generated in the **current directory**. A common convention, used throughout this guide, is to keep them together in `~/.asfaload/`:
+### 1. Generate the key pair
 
 ```sh
-mkdir -p ~/.asfaload
+asfaload-cli new-keys --name mykey
 ```
-
-### 2. Generate the key pair
-
-```sh
-asfaload-cli new-keys --name mykey --output-dir ~/.asfaload
-```
-
-Omit `--output-dir` to create the keys in the current directory instead.
 
 You'll be prompted for a password to protect the secret key. Pick a strong one — this password is required every time you sign.
+
+The command writes the keys in your keys directory, `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`). If the directory does not exist, the command creates it. Use `--output-dir` to write the keys in another directory.
 
 This creates two files:
 
 | File | Purpose |
 |------|---------|
-| `~/.asfaload/mykey` | Secret key (keep this safe) |
-| `~/.asfaload/mykey.pub` | Public key (share with your team) |
+| `~/.local/share/asfaload-cli/mykey` | Secret key (keep this safe) |
+| `~/.local/share/asfaload-cli/mykey.pub` | Public key (share with your team) |
+
+On Linux and macOS, only you can read the secret key file.
 
 ![Demo: generate a key pair](demos/generate-keys.gif)
 
-### 3. Verify the output
+### 2. Verify the output
 
 ```sh
-ls ~/.asfaload/mykey*
+ls ~/.local/share/asfaload-cli/mykey*
 ```
 
 You should see both `mykey` and `mykey.pub`.
+
+### 3. Use the key by its name
+
+The commands that sign find a key by its name in the keys directory. You do not need to type the full path:
+
+```sh
+asfaload-cli list-pending --secret-key mykey
+```
+
+If a file with this name exists in the current directory, the command uses that file. To keep your keys in another directory, give it with `--keys-dir` or the `ASFALOAD_KEYS_DIR` environment variable.
 
 ## Non-interactive usage
 

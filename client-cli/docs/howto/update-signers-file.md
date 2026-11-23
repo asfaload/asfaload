@@ -41,7 +41,7 @@ asfaload-cli get-digest --json \
     | jq -r .digest
 
 asfaload-cli update-signers \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --digest sha512:2e2fde4e... \
     https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index_v2.json
 ```
@@ -52,7 +52,7 @@ If you still have the new signers file locally and its bytes are identical to th
 
 ```sh
 asfaload-cli update-signers \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --local-copy ./signers_v2.json \
     https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index_v2.json
 ```
@@ -98,13 +98,13 @@ The `update-signers` output gives the ready `sign-pending` command with the dige
 asfaload-cli sign-pending \
     --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json \
-    --secret-key ~/.asfaload/mykey
+    --secret-key mykey
 ```
 
 A signer can also use `list-pending` to find the path. `list-pending` shows only a short digest: take the full digest from the `update-signers` output, or compute it with [`get-digest`](../manual/get-digest.md) on the published signers file:
 
 ```sh
-asfaload-cli list-pending --secret-key ~/.asfaload/mykey
+asfaload-cli list-pending --secret-key mykey
 ```
 
 See [Activate a signers file](activate-signers-file.md) for the full signing flow.

@@ -11,7 +11,7 @@ Once you have a key pair, you need to share the public key with whoever maintain
 ### 1. Print a human-readable sharing message (default)
 
 ```sh
-asfaload-cli share-key -k ~/.asfaload/mykey.pub
+asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub
 ```
 
 This prints your public key together with a ready-to-send message you can forward to a team admin:
@@ -34,7 +34,7 @@ You can share your public key, for example with an admin, with this message:
 When you only need the base64 string — for example, to paste it into a signers file — use `--raw` (`-r`):
 
 ```sh
-asfaload-cli share-key -k ~/.asfaload/mykey.pub --raw
+asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub --raw
 ```
 
 Output:
@@ -58,7 +58,7 @@ asfaload-cli share-key -k ~/.ssh/id_ed25519.pub --raw
 For scripting, use `--json`:
 
 ```sh
-asfaload-cli share-key -k ~/.asfaload/mykey.pub --json
+asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub --json
 ```
 
 Output:

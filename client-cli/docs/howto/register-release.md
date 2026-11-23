@@ -14,7 +14,7 @@ Pass the release page URL:
 
 ```sh
 asfaload-cli register-assets \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --github-release-url https://github.com/acme/tool/releases/tag/v1.0
 ```
 
@@ -54,7 +54,7 @@ publish a checksums file (using `sha256sum` or `sha512sum`). It is that checksum
 
 ```sh
 asfaload-cli register-assets \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --csum-file https://example.com/releases/v1.0/SHA256SUMS \
     --csum-file https://example.com/releases/v1.0/SHA512SUMS
 ```

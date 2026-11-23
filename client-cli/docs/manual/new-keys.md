@@ -2,7 +2,7 @@
 
 - **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME>`
 
-Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
+Generate a new signing key pair. The command creates both a secret key and a public key in the output directory.
 
 ## Options
 
@@ -12,7 +12,7 @@ Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (pu
 
 ### `-d --output-dir <DIR>`
 
-Directory to write the key files into. Defaults to the current directory; `~/.asfaload` is a common place to keep keys. Created automatically if it doesn't exist.
+Directory to write the key files into. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`). The commands that use a secret key look in this directory when you give them a key name (see `--keys-dir` in their manual page). If the directory does not exist, the command creates it. On Linux and macOS, only you can access a directory that the command creates, and only you can read the secret key file.
 
 ### `-p --password <PASSWORD>`
 
@@ -50,8 +50,8 @@ Human-readable (default):
     Generated keypair 'mykey'
 
       Public key string:  asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
-      Public key file: /home/user/.asfaload/mykey.pub
-      Secret key file: /home/user/.asfaload/mykey
+      Public key file: /home/user/.local/share/asfaload-cli/mykey.pub
+      Secret key file: /home/user/.local/share/asfaload-cli/mykey
 
     WARNING: Keep the secret key private. Treat it like a password -- never share, copy, or commit it.
     The public key is safe to share -- that's how others verify your signatures.
@@ -69,15 +69,18 @@ The trailing message is the same text printed by [`share-key`](share-key.md); it
 
 JSON (with `--json`):
 
-    {"public_key_path":"/home/user/.asfaload/mykey.pub","public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","secret_key_path":"/home/user/.asfaload/mykey"}
+    {"public_key_path":"/home/user/.local/share/asfaload-cli/mykey.pub","public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","secret_key_path":"/home/user/.local/share/asfaload-cli/mykey"}
 
 ## Examples
 
-    # generate a key pair in the current directory
+    # generate a key pair in the default keys directory
     asfaload-cli new-keys -n mykey
 
-    # store keys in the usual location
-    asfaload-cli new-keys -n mykey -d ~/.asfaload
+    # use the key by its name in other commands
+    asfaload-cli ping -K mykey
+
+    # store keys in another directory
+    asfaload-cli new-keys -n mykey -d ~/keys
 
     # non-interactive usage in CI
     asfaload-cli new-keys -n ci-key -d ./keys -p "$KEY_PASSWORD"

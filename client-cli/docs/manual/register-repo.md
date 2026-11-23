@@ -28,9 +28,13 @@ Digest of the signers file that must be found at the remote URL before register-
 
 Path to a local copy of the signers file. Its digest is computed with sha512 and used as the expected value.
 
-### `-K --secret-key <PATH>`
+### `-K --secret-key <PATH|NAME>`
 
-Path to your secret key file. Required.
+Path to your secret key file, or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Required.
+
+### `--keys-dir <DIR>`
+
+Directory where the command looks for the secret key when the value of `--secret-key` is not an existing file. The command then reads `<DIR>/<value of --secret-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 
 ### `-p --password <PASSWORD>`
 
@@ -61,6 +65,7 @@ Emit output as JSON instead of human-readable text.
 These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
 - `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
 - `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
@@ -109,12 +114,12 @@ JSON (with `--json`):
 ## Examples
 
     # register a GitHub-hosted signers file; get the digest with get-digest
-    asfaload-cli register-repo -K ~/.asfaload/key \
+    asfaload-cli register-repo -K key \
         --digest sha512:2e2fde4e... \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
     # with a local copy of the signers file, and an explicit backend
-    asfaload-cli register-repo -K ~/.asfaload/key \
+    asfaload-cli register-repo -K key \
         --local-copy ~/Downloads/index.json \
         -u https://asfaload.example.com \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json

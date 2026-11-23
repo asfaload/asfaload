@@ -12,7 +12,7 @@ The person who registers a release signs its index at registration. If the signe
 ### 1. List pending files
 
 ```sh
-asfaload-cli list-pending --secret-key ~/.asfaload/mykey
+asfaload-cli list-pending --secret-key mykey
 ```
 
 Each pending file is listed with its path and a short digest:
@@ -28,7 +28,7 @@ digest: sha512:2e2fde4e....c41438d7
 Copy the path from the output above. `sign-pending` also needs the full expected digest of the release index. Do not take it from the backend. Get it from the person who registered the release: the output of `register-assets` gives the full `sign-pending` command. Make sure that the short digest in the `list-pending` output agrees with the start and the end of this digest:
 
 ```sh
-asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
+asfaload-cli sign-pending --secret-key mykey \
     --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
@@ -71,7 +71,7 @@ Next step
 At any point, you can check whether the threshold has been reached:
 
 ```sh
-asfaload-cli signature-status --secret-key ~/.asfaload/mykey \
+asfaload-cli signature-status --secret-key mykey \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 

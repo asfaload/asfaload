@@ -14,7 +14,7 @@ Each signer performs steps 1–2 independently.
 ### 1. Check for pending work
 
 ```sh
-asfaload-cli list-pending --secret-key ~/.asfaload/mykey
+asfaload-cli list-pending --secret-key mykey
 ```
 
 If the signers file is waiting for your signature, you'll see its path and a short digest:
@@ -32,7 +32,7 @@ If nothing is pending for you, the output says `No pending signatures found.`
 Copy the path from the output above. `sign-pending` also needs the full expected digest of the signers file. Do not take it from the backend. Get it from the person who registered the repository or proposed the update: the output of `register-repo` and `update-signers` gives the full `sign-pending` command. You can also compute it with [`get-digest`](../manual/get-digest.md) on the signers file published by the project. Make sure that the short digest in the `list-pending` output agrees with the start and the end of this digest:
 
 ```sh
-asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
+asfaload-cli sign-pending --secret-key mykey \
     --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
@@ -40,7 +40,7 @@ asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
 If you have a local copy of the signers file, for example from the repository of the project, give it with `--local-copy` instead of `--digest`. The digest of your copy is then the expected digest, and you do not have to get the digest from another person:
 
 ```sh
-asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
+asfaload-cli sign-pending --secret-key mykey \
     --local-copy ./asfaload.signers/index.json \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
@@ -103,7 +103,7 @@ For CI, supply the password and digest non-interactively:
 
 ```sh
 asfaload-cli sign-pending \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --password-file "/path/to/password-file" \
     --digest "sha512:2e2fde4e..." \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
@@ -112,7 +112,7 @@ asfaload-cli sign-pending \
 If several files are pending, `--digest-filter` (alias `--df`) restricts the `list-pending` output to a single digest:
 
 ```sh
-asfaload-cli list-pending --secret-key ~/.asfaload/mykey --df sha512:2e2fde4e...
+asfaload-cli list-pending --secret-key mykey --df sha512:2e2fde4e...
 ```
 
 On an interactive terminal you can also omit the path: `sign-pending` then shows a selection prompt with the pending files that have the expected digest. You must still give `--digest` or `--local-copy`.

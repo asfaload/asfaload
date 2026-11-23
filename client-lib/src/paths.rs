@@ -32,3 +32,23 @@ pub fn get_keys_dir(user_choice: Option<PathBuf>) -> Result<PathBuf, ClientLibEr
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_keys_dir_returns_given_path() -> anyhow::Result<()> {
+        let path = PathBuf::from("/some/dir/my-keys");
+        assert_eq!(get_keys_dir(Some(path.clone()))?, path);
+        Ok(())
+    }
+
+    #[test]
+    fn default_keys_dir_defaults_to_asfaload_cli_data_dir() -> anyhow::Result<()> {
+        let path = get_keys_dir(None)?;
+        let data_dir = choose_base_strategy()?.data_dir();
+        assert_eq!(path, data_dir.join("asfaload-cli"));
+        Ok(())
+    }
+}

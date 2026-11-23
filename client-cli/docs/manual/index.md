@@ -42,6 +42,7 @@ Reference for all `asfaload-cli` commands.
 ## Shell integration
 
 - [`shell`](shell.md) — start a shell in which completion for `asfaload-cli` is active
+- [`complete`](complete.md) — generate a completion script for your shell
 
 ## Local configuration
 

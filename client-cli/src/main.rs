@@ -1,9 +1,17 @@
+use std::ffi::OsString;
+
 use anyhow::Result;
 use clap::Parser;
-use client_cli::{cli::Cli, commands::handle_command, output::JsonError};
+use client_cli::{cli::Cli, commands::handle_command, manual, output::JsonError};
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    // `--manual` must work without the required arguments of the subcommand, so it is
+    // handled before the parse validates them.
+    let args: Vec<OsString> = std::env::args_os().collect();
+    if let Some(page) = manual::requested_page(&args) {
+        return manual::show(page);
+    }
+    let cli = Cli::parse_from(args);
     let json = cli.command.json_output();
 
     if let Err(e) = handle_command(&cli) {

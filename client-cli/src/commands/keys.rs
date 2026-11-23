@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::commands::keys_helpers::share_pub_key_message;
 use crate::output::NewKeysOutput;
-use crate::utils::ensure_dir_exists;
+use crate::utils::ensure_private_dir_exists;
 use anstream::println;
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
@@ -30,7 +30,7 @@ pub fn handle_new_keys_command(
     password: String,
     json: bool,
 ) -> Result<()> {
-    ensure_dir_exists(output_dir)?;
+    ensure_private_dir_exists(output_dir)?;
 
     let kp = AsfaloadKeyPairs::new(password.as_str())?;
     let location = output_dir.join(name);

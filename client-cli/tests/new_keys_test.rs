@@ -76,3 +76,26 @@ fn test_new_keys_message_suggests_alias() {
         pub_key.trim()
     )));
 }
+
+#[cfg(unix)]
+#[test]
+fn test_new_keys_creates_output_dir_readable_by_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = TempDir::new().unwrap();
+    let output_dir = temp_dir.path().join("new").join("keys");
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-keys")
+        .arg("-n")
+        .arg("mykey")
+        .arg("-d")
+        .arg(&output_dir)
+        .arg("-p")
+        .arg(TEST_PASSWORD)
+        .arg("--accept-weak-password");
+    cmd.assert().success();
+
+    let mode = std::fs::metadata(&output_dir).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700, "unexpected keys dir mode {mode:o}");
+}

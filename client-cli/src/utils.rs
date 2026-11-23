@@ -21,6 +21,23 @@ pub fn ensure_dir_exists(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Ensures a directory for secret keys exists. Directories it creates are only accessible by
+/// their owner on Unix; an existing directory keeps its permissions, as the user chose them.
+/// On non-Unix platforms the directory inherits the access rules of its parent.
+pub fn ensure_private_dir_exists(path: &Path) -> Result<()> {
+    if !path.exists() {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(path).map_err(ClientCliError::Io)?;
+    }
+    Ok(())
+}
+
 /// Validates that a threshold is valid for the given number of keys
 pub fn validate_threshold(threshold: u32, key_count: usize) -> Result<()> {
     if threshold == 0 {
@@ -464,5 +481,22 @@ mod tests {
         std::fs::write(&path, "[alias]\n").unwrap();
         let accessor = ConfigAccessor::new(&Some(path));
         assert!(config_for_display(&accessor).aliases().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_private_dir_exists_keeps_mode_of_existing_dir() -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::TempDir::new()?;
+        let dir = temp_dir.path().join("keys");
+        std::fs::create_dir(&dir)?;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755))?;
+
+        ensure_private_dir_exists(&dir)?;
+
+        let mode = std::fs::metadata(&dir)?.permissions().mode();
+        assert_eq!(mode & 0o777, 0o755, "unexpected mode {mode:o}");
+        Ok(())
     }
 }

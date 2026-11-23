@@ -1,5 +1,5 @@
 use crate::error::{ClientCliError, Result};
-use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use features_lib::AsfaloadSecretKeys;
 use rest_api_types::{PingAuthStatus, PingResponse};
 
 /// Render the human-readable ping result line.
@@ -49,8 +49,7 @@ fn auth_failure_reason(response: &PingResponse) -> Option<String> {
 /// # Arguments
 ///
 /// * `backend_url` - Backend API URL
-/// * `secret_key_path` - Optional path to the user's secret key file
-/// * `password` - Password for the secret key (required when a key is given)
+/// * `secret_key` - Optional secret key of the user
 /// * `json` - Output the raw response as JSON
 ///
 /// # Errors
@@ -60,22 +59,11 @@ fn auth_failure_reason(response: &PingResponse) -> Option<String> {
 /// attempted but failed (so the process exits with a non-zero code).
 pub async fn handle_ping_command(
     backend_url: &str,
-    secret_key_path: Option<&std::path::PathBuf>,
-    password: Option<&str>,
+    secret_key: Option<&AsfaloadSecretKeys>,
     json: bool,
 ) -> Result<PingResponse> {
-    let secret_key = match (secret_key_path, password) {
-        (Some(path), Some(password)) => Some(AsfaloadSecretKeys::from_file(path, password)?),
-        (Some(_), None) => {
-            return Err(ClientCliError::InvalidInput(
-                "a password is required when a secret key is provided".to_string(),
-            ));
-        }
-        (None, _) => None,
-    };
-
     let client = admin_lib::v1::Client::new(backend_url);
-    let response = client.ping(secret_key.as_ref()).await?;
+    let response = client.ping(secret_key).await?;
 
     if json {
         println!("{}", serde_json::to_string(&response)?);
@@ -100,13 +88,6 @@ mod tests {
             message: "pong".to_string(),
             auth,
         }
-    }
-
-    #[tokio::test]
-    async fn test_handle_ping_command_key_without_password_errors() {
-        let path = std::path::PathBuf::from("/nonexistent/key");
-        let result = handle_ping_command("http://127.0.0.1:9", Some(&path), None, false).await;
-        assert!(matches!(result, Err(ClientCliError::InvalidInput(_))));
     }
 
     #[test]

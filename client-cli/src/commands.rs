@@ -493,22 +493,26 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::Ping {
             secret_key,
+            keys_dir,
             password_args,
             backend_url_args,
             json_args,
         } => {
             // The password is only needed when a secret key is used
-            let password = match secret_key {
-                Some(_) => Some(get_password(
-                    password_args.password.clone(),
-                    password_args.password_file.as_deref(),
-                    password_args.password_command.clone(),
-                    &cli.command.password_env_var(),
-                    &cli.command.password_file_env_var(),
-                    "Enter password: ",
-                    WithoutConfirmation,
-                    true,
-                )?),
+            let secret_key = match secret_key {
+                Some(name) => {
+                    let password = get_password(
+                        password_args.password.clone(),
+                        password_args.password_file.as_deref(),
+                        password_args.password_command.clone(),
+                        &cli.command.password_env_var(),
+                        &cli.command.password_file_env_var(),
+                        "Enter password: ",
+                        WithoutConfirmation,
+                        true,
+                    )?;
+                    Some(load_secret_key(keys_dir, name, &password)?)
+                }
                 None => None,
             };
             let url = backend_url_args
@@ -519,7 +523,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(ping::handle_ping_command(
                 &url,
                 secret_key.as_ref(),
-                password.as_deref(),
                 json_args.json,
             ))?;
         }

@@ -14,7 +14,7 @@ use crate::{
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
-        expected_digest, get_password,
+        expected_digest, get_password, load_secret_key,
     },
 };
 
@@ -28,9 +28,7 @@ pub mod signers_file;
 use anyhow::Result;
 use clap::ValueEnum;
 use client_lib::{config::ConfigAccessor, paths::get_keys_dir};
-use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-};
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys};
 use inquire::prompt_confirmation;
 use rest_api_types::models::ClientPendingFile;
 
@@ -52,7 +50,6 @@ pub mod signers_config_output;
 pub mod signers_submission_output;
 pub mod update_signers;
 
-/// Shared state produced by loading keys and creating a client,
 /// used by both `register-repo` and `update-signers`.
 pub(crate) struct PreparedSignersSubmission {
     pub client: admin_lib::v1::Client,
@@ -60,23 +57,20 @@ pub(crate) struct PreparedSignersSubmission {
     pub secret_key: features_lib::AsfaloadSecretKeys,
 }
 
-/// Load secret key, derive public key, and create an API client.
+/// Create an API client.
 /// The caller then decides which API endpoint to call with the result.
 pub(crate) async fn prepare_signed_submission(
     backend_url: &str,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
+    secret_key: &AsfaloadSecretKeys,
 ) -> crate::error::Result<PreparedSignersSubmission> {
-    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
-
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-    let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)?;
+    let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(secret_key)?;
     let client = admin_lib::v1::Client::new(backend_url);
 
     Ok(PreparedSignersSubmission {
         client,
         public_key,
-        secret_key,
+        // FIXME: we might be able to work without this field, to be validated.
+        secret_key: secret_key.clone(),
     })
 }
 
@@ -139,7 +133,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 RequireConfirmation,
                 *accept_weak_password,
             )?;
-            let keys_dir = get_keys_dir(output_dir.clone())?;
+            let keys_dir = get_keys_dir(output_dir)?;
             keys::handle_new_keys_command(name, keys_dir.as_ref(), password, json_args.json)?;
         }
         Commands::ShareKey {
@@ -206,11 +200,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(list_pending::handle_list_pending_command(
                 &url,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 digest_filter.digest_filter.clone(),
                 json_args.json,
             ))?;
@@ -233,8 +231,11 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 WithoutConfirmation,
                 true,
             )?;
-            let secret_key =
-                AsfaloadSecretKeys::from_file(secret_key_args.secret_key.clone(), &password)?;
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
@@ -310,12 +311,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(signature_status::handle_signature_status_command(
                 file_path,
                 &url,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 json_args.json,
                 &ConfigAccessor::new(&config_args.config_file),
             ))?;
@@ -346,13 +352,18 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
+
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(register_repo::handle_register_repo_command(
                 &url,
                 signers_file_url,
                 &expected_digest,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 json_args.json,
                 &ConfigAccessor::new(&config_args.config_file),
             ))?;
@@ -382,13 +393,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
 
             let mode = register_assets::determine_registration_mode(github_release_url, csum_file)?;
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
 
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(register_assets::handle_register_assets_command(
                 &backend,
                 mode,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 json_args.json,
                 &ConfigAccessor::new(&config_args.config_file),
             ))?;
@@ -419,13 +434,18 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
+
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(update_signers::handle_update_signers_command(
                 &url,
                 signers_file_url,
                 &expected_digest,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 json_args.json,
                 &ConfigAccessor::new(&config_args.config_file),
             ))?;
@@ -455,12 +475,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let expected_digest =
                 expected_digest(digest_args.digest.clone(), digest_args.local_copy.clone())?;
+            let secret_key = load_secret_key(
+                &secret_key_args.keys_dir,
+                &secret_key_args.secret_key,
+                &password,
+            )?;
+
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(revoke::handle_revoke_command(
                 &url,
                 file_path,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 &expected_digest,
                 json_args.json,
                 &ConfigAccessor::new(&config_args.config_file),

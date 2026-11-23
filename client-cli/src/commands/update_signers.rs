@@ -1,4 +1,5 @@
 use common::AsfaloadHashes;
+use features_lib::AsfaloadSecretKeys;
 
 use crate::commands::signers_submission_output::print_submission_overview;
 use crate::error::{ClientCliError, Result, ensure_backend_success};
@@ -11,12 +12,11 @@ pub async fn handle_update_signers_command(
     backend_url: &str,
     signers_file_url: &str,
     expected_digest: &AsfaloadHashes,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
+    secret_key: &AsfaloadSecretKeys,
     json: bool,
     config_accessor: &ConfigAccessor,
 ) -> Result<()> {
-    let sub = prepare_signed_submission(backend_url, secret_key_path, password).await?;
+    let sub = prepare_signed_submission(backend_url, secret_key).await?;
 
     let response = sub
         .client

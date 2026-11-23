@@ -1,4 +1,7 @@
-use crate::{commands::shell::ShellKind, utils::output_dir_help};
+use crate::{
+    commands::shell::ShellKind,
+    utils::{keys_dir_help, output_dir_help},
+};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -36,9 +39,13 @@ pub struct DigestArgs {
 }
 #[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
-    /// Path to your secret key file (asfaload or OpenSSH ed25519)
+    /// Path to your secret key file (asfaload or OpenSSH ed25519) OR filename in your keys dir
+    /// (see --keys-dir)
     #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
-    pub secret_key: PathBuf,
+    pub secret_key: String,
+
+    #[arg(long, env = "ASFALOAD_KEYS_DIR", help=keys_dir_help())]
+    pub keys_dir: Option<PathBuf>,
 }
 
 #[derive(clap::Args, Debug)]

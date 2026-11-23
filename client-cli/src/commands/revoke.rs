@@ -9,31 +9,16 @@ use features_lib::{
 };
 use rest_api_types::RevokeFileResponse;
 
-/// Handle the revoke command.
-///
 /// Builds a revocation document, signs it, and submits to the backend.
-///
-/// # Workflow
-/// 1. Load secret key and derive public key
-/// 2. Fetch the file content from backend
-/// 3. Compute sha512 of the fetched content
-/// 4. Build RevocationInfo JSON (timestamp, subject_digest, initiator)
-/// 5. Sign the sha512 of the revocation JSON
-/// 6. Submit to backend via POST /v1/revoke
-/// 7. Fail when the backend reports a failed revocation
-/// 8. Display result
 pub async fn handle_revoke_command(
     backend_url: &str,
     file_path: &str,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
+    secret_key: &AsfaloadSecretKeys,
     expected_digest: &AsfaloadHashes,
     json: bool,
     config_accessor: &ConfigAccessor,
 ) -> Result<RevokeFileResponse> {
-    // Load secret key and derive public key
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-    let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
+    let public_key = AsfaloadPublicKeys::from_secret_key(secret_key)?;
 
     // Create REST client
     let client = admin_lib::v1::Client::new(backend_url);
@@ -70,7 +55,7 @@ pub async fn handle_revoke_command(
             &revocation_json,
             &signature,
             &public_key,
-            &secret_key,
+            secret_key,
         )
         .await?;
 

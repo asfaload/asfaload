@@ -1,8 +1,9 @@
 use ClientCliError::PasswordStrengthError;
-use client_lib::paths::get_keys_dir;
+use client_lib::paths::{get_keys_dir, key_path_from_name};
+use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use std::io::Read;
 use std::io::{Error, ErrorKind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use zxcvbn::{Score, zxcvbn};
@@ -265,15 +266,44 @@ pub(crate) fn config_for_display(accessor: &ConfigAccessor) -> CliConfig {
     }
 }
 
-// help text displayed by Clap for keys dir
+// help text displayed by Clap for --output-dir
 pub(crate) fn output_dir_help() -> String {
-    match get_keys_dir(None) {
+    // calling get_keys_dir_with None returns the platform's default data dir
+    match get_keys_dir(&None) {
         Ok(dir) => format!(
             "Directory to store the keypair [default: {}]",
             dir.display()
         ),
         Err(_) => "Directory to store the keypair [default: user data directory]".to_string(),
     }
+}
+
+// help text displayed by Clap for --keys-dir
+pub(crate) fn keys_dir_help() -> String {
+    // calling get_keys_dir_with None returns the platform's default data dir
+    let location = if let Ok(dir) = std::env::var("ASFALOAD_KEYS_DIR") {
+        dir
+    } else {
+        match get_keys_dir(&None) {
+            Ok(dir) => dir.display().to_string(),
+            Err(_) => "user data directory".to_string(),
+        }
+    };
+    format!("Directory where keys are stored [current: {}]", location)
+}
+
+pub(crate) fn load_secret_key(
+    keys_dir_in: &Option<PathBuf>,
+    name: &str,
+    password: &str,
+) -> Result<AsfaloadSecretKeys> {
+    let path = if Path::new(name).is_file() {
+        PathBuf::from(name)
+    } else {
+        key_path_from_name(keys_dir_in, name)?
+    };
+    let k = AsfaloadSecretKeys::from_file(path, password)?;
+    Ok(k)
 }
 
 #[cfg(test)]

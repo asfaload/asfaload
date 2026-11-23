@@ -22,6 +22,11 @@ mod tests {
         ClientPendingFile::new(pending.path().to_string(), digest)
     }
 
+    fn load_secret_key(path: &Path) -> features_lib::AsfaloadSecretKeys {
+        features_lib::AsfaloadSecretKeys::from_file(path, test_harness::TEST_PASSWORD)
+            .expect("Failed to load secret key")
+    }
+
     /// Mirror shape of a signers project served by a mock forge.
     ///
     /// `_source_server` must be kept alive: dropping it stops the mock forge,
@@ -112,8 +117,7 @@ mod tests {
 
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -169,8 +173,7 @@ mod tests {
         // list-pending should show it.
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -251,8 +254,7 @@ mod tests {
 
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -308,8 +310,7 @@ mod tests {
         // Sign the pending signers file first (two-phase signing)
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -354,8 +355,7 @@ mod tests {
         // Verify the file appears in pending list
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -431,8 +431,7 @@ mod tests {
         // Sign the pending signers file to activate it
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -529,8 +528,7 @@ mod tests {
         // list-pending for key[0] should show the pending signers file
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             None,
             false,
         )
@@ -606,8 +604,7 @@ mod tests {
         // --- Phase 4: Sign artifact (threshold=2) ---
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             None,
             false,
         )

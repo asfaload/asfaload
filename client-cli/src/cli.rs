@@ -114,8 +114,8 @@ pub enum Commands {
         name: String,
 
         /// Directory to store the key
-        #[arg(long, short = 'd', default_value = ".")]
-        output_dir: PathBuf,
+        #[arg(long, short = 'd')]
+        output_dir: Option<PathBuf>,
 
         #[command(flatten)]
         password_args: PasswordArgs,

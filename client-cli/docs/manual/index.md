@@ -21,6 +21,7 @@ Reference for all `asfaload-cli` commands.
 
 - [`list-pending`](list-pending.md) — list files that still need your signature
 - [`sign-pending`](sign-pending.md) — sign a pending file
+- [`fetch-file`](fetch-file.md) — fetch a file from the backend, for example to examine it before you sign it
 - [`signature-status`](signature-status.md) — check a file's signature collection status
 
 ## Revocation

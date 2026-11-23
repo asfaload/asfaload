@@ -74,6 +74,10 @@ Path for the new signers file. The file must not already exist — the command r
 
 Emit output as JSON instead of human-readable text.
 
+#### `-c --config-file <CONFIG_FILE>`
+
+The configuration file to read aliases from, instead of the default file. Refer to [alias](alias.md#configuration-file).
+
 ## Output
 
 Human-readable (default):

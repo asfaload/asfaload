@@ -1,5 +1,8 @@
 //! Manual pages from `docs/manual/`, embedded at compile time and rendered for the terminal.
 
+use termimad::crossterm::style::Color;
+use termimad::{CompoundStyle, MadSkin};
+
 pub const INDEX_PAGE: &str = "index";
 
 macro_rules! page {
@@ -111,6 +114,27 @@ fn linked_page(target: &str) -> Option<&str> {
     (!page.is_empty() && !page.contains('/')).then_some(page)
 }
 
+/// Renders Markdown as terminal text, wrapped at `width` columns. Without `styled`, the
+/// text has no ANSI escape codes.
+pub fn render(markdown: &str, styled: bool, width: usize) -> String {
+    let skin = if styled {
+        styled_skin()
+    } else {
+        MadSkin::no_style()
+    };
+    skin.text(markdown, Some(width)).to_string()
+}
+
+// The default skin gives code a gray background, which is hard to read with light terminal themes.
+fn styled_skin() -> MadSkin {
+    let mut skin = MadSkin {
+        inline_code: CompoundStyle::with_fg(Color::Yellow),
+        ..Default::default()
+    };
+    skin.code_block.compound_style = CompoundStyle::with_fg(Color::Yellow);
+    skin
+}
+
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
@@ -216,5 +240,22 @@ mod tests {
                 "raw link in page {name}"
             );
         }
+    }
+
+    #[test]
+    fn render_without_style_has_no_escape_codes_and_fits_the_width() {
+        let markdown = "# Title\n\nSome **bold** and `code` text in a paragraph that is much longer than the width.\n\n| a | b |\n|---|---|\n| one | two |\n";
+        let text = render(markdown, false, 30);
+        assert!(!text.contains('\x1b'), "escape code in: {text:?}");
+        assert!(
+            text.lines().all(|line| line.chars().count() <= 30),
+            "line too wide in: {text}"
+        );
+        assert!(text.contains('│'), "no table in: {text}");
+    }
+
+    #[test]
+    fn render_with_style_has_escape_codes() {
+        assert!(render("Some **bold** text", true, 80).contains('\x1b'));
     }
 }

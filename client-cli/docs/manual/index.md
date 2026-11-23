@@ -1,6 +1,6 @@
 # asfaload-cli manual
 
-Reference for all `asfaload-cli` commands.
+Reference for all `asfaload-cli` commands. To show the page of a command in the terminal, use `asfaload-cli manual <COMMAND>` or `asfaload-cli <COMMAND> --manual`.
 
 ## Keys
 
@@ -47,6 +47,10 @@ Reference for all `asfaload-cli` commands.
 ## Local configuration
 
 - [`alias`](alias.md) — give names to public keys, and show or delete these names
+
+## Help
+
+- [`manual`](manual.md) — show the manual page of a command in the terminal
 
 ## Common notes
 

@@ -20,3 +20,15 @@ pub fn build_config_path(path_in: Option<&Path>) -> Result<PathBuf, ClientLibErr
         }
     }
 }
+
+pub fn get_keys_dir(user_choice: Option<PathBuf>) -> Result<PathBuf, ClientLibError> {
+    match user_choice {
+        Some(p) => Ok(p),
+        None => {
+            let strategy = choose_base_strategy().map_err(|e| {
+                ClientLibError::ConfigError(format!("Problem determining data location: {e}"))
+            })?;
+            Ok(strategy.data_dir().join("asfaload-cli"))
+        }
+    }
+}

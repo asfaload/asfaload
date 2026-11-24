@@ -297,32 +297,41 @@ pub(crate) fn keys_dir_help() -> String {
     format!("Directory where keys are stored [current: {}]", location)
 }
 
+// Returns `name` if it is an existing file, else the file `name` in the keys dir.
+// `label` names the kind of key in the error message, e.g. "Secret key".
+pub(crate) fn resolve_key_path(
+    keys_dir_in: &Option<PathBuf>,
+    name: &str,
+    label: &str,
+) -> Result<PathBuf> {
+    if Path::new(name).is_file() {
+        return Ok(PathBuf::from(name));
+    }
+    let path_built = key_path_from_name(keys_dir_in, name)?;
+    if !path_built.is_file() {
+        let keys_dir = get_keys_dir(keys_dir_in)?;
+        // An absolute name replaces the keys dir when joined to it.
+        let msg = if path_built.starts_with(&keys_dir) {
+            format!(
+                "{} '{}' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
+                label,
+                name,
+                keys_dir.display()
+            )
+        } else {
+            format!("{} file '{}' not found", label, name)
+        };
+        return Err(ClientCliError::InvalidInput(msg));
+    }
+    Ok(path_built)
+}
+
 pub(crate) fn load_secret_key(
     keys_dir_in: &Option<PathBuf>,
     name: &str,
     password: &str,
 ) -> Result<AsfaloadSecretKeys> {
-    let path = if Path::new(name).is_file() {
-        PathBuf::from(name)
-    } else {
-        let path_built = key_path_from_name(keys_dir_in, name)?;
-        if !path_built.is_file() {
-            let keys_dir = get_keys_dir(keys_dir_in)?;
-            // An absolute name replaces the keys dir when joined to it.
-            let msg = if path_built.starts_with(&keys_dir) {
-                format!(
-                    "Secret key '{}' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
-                    name,
-                    keys_dir.display()
-                )
-            } else {
-                format!("Secret key file '{}' not found", name)
-            };
-            return Err(ClientCliError::InvalidInput(msg));
-        } else {
-            path_built
-        }
-    };
+    let path = resolve_key_path(keys_dir_in, name, "Secret key")?;
     let k = AsfaloadSecretKeys::from_file(path, password)?;
     Ok(k)
 }

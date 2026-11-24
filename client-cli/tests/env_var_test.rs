@@ -80,7 +80,7 @@ fn test_secret_key_taken_from_env() {
         // Got past clap: this is no longer the required-argument error.
         .stderr(predicate::str::contains("required").not())
         // Reached key loading with the env-provided path.
-        .stderr(predicate::str::contains("Key error"));
+        .stderr(predicate::str::contains("/nonexistent/key_from_env.json"));
 }
 
 // -------------------------------------------------------------------

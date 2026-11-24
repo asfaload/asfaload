@@ -172,7 +172,7 @@ cp "$KEY_1" "$KEY_2" "$CUSTOM_KEYS_DIR/"
 # Before the copy, the name is not found: the steps below cannot find the key by
 # another path.
 expect_fail_json "List pending for key1 by name, absent from default keys dir" \
-    '.error | contains("Keypair fs io error")' \
+    '.error | contains("not a file in keys dir")' \
     env -u ASFALOAD_KEYS_DIR XDG_DATA_HOME="$XDG_DATA_DIR" \
     cargo run --quiet -- list-pending --secret-key "$(basename "$KEY_1")" -u "$backend" --password $key_password
 

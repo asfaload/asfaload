@@ -317,7 +317,23 @@ pub(crate) fn load_secret_key(
     let path = if Path::new(name).is_file() {
         PathBuf::from(name)
     } else {
-        key_path_from_name(keys_dir_in, name)?
+        let path_built = key_path_from_name(keys_dir_in, name)?;
+        if !path_built.is_file() {
+            let keys_dir = get_keys_dir(keys_dir_in)?;
+            // An absolute name replaces the keys dir when joined to it.
+            let msg = if path_built.starts_with(&keys_dir) {
+                format!(
+                    "Secret key '{}' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
+                    name,
+                    keys_dir.display()
+                )
+            } else {
+                format!("Secret key file '{}' not found", name)
+            };
+            return Err(ClientCliError::InvalidInput(msg));
+        } else {
+            path_built
+        }
     };
     let k = AsfaloadSecretKeys::from_file(path, password)?;
     Ok(k)
@@ -535,8 +551,38 @@ mod tests {
         );
 
         match result {
-            Err(ClientCliError::KeyError(_)) => {}
-            Err(e) => panic!("Expected ClientCliError::KeyError but got {e}"),
+            Err(ClientCliError::InvalidInput(msg)) => assert_eq!(
+                msg,
+                format!(
+                    "Secret key 'missing_key' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
+                    keys_dir.path().display()
+                )
+            ),
+            Err(e) => panic!("Expected ClientCliError::InvalidInput but got {e}"),
+            Ok(_) => panic!("Expected an error for a missing key, got a key"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn load_secret_key_fails_when_absolute_path_is_missing() -> anyhow::Result<()> {
+        let keys_dir = tempfile::TempDir::new()?;
+        let other_dir = tempfile::TempDir::new()?;
+        let missing_path = other_dir.path().join("missing_key");
+
+        let result = load_secret_key(
+            &Some(keys_dir.path().to_path_buf()),
+            missing_path.to_str().unwrap(),
+            FIXTURE_PASSWORD,
+        );
+
+        // The keys dir is not used for an absolute path, so the message does not name it.
+        match result {
+            Err(ClientCliError::InvalidInput(msg)) => assert_eq!(
+                msg,
+                format!("Secret key file '{}' not found", missing_path.display())
+            ),
+            Err(e) => panic!("Expected ClientCliError::InvalidInput but got {e}"),
             Ok(_) => panic!("Expected an error for a missing key, got a key"),
         }
         Ok(())

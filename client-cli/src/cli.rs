@@ -5,6 +5,9 @@ use std::path::PathBuf;
 /// Default backend API URL
 pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
 
+/// Environment variable giving the keys dir
+pub const KEYS_DIR_ENV_VAR: &str = "ASFALOAD_KEYS_DIR";
+
 // helpers for clap
 
 #[derive(clap::Args, Debug)]
@@ -48,7 +51,7 @@ pub struct SecretKeyArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct KeysDirArgs {
-    #[arg(long, short = 'd', env = "ASFALOAD_KEYS_DIR", help = keys_dir_help())]
+    #[arg(long, short = 'd', env = KEYS_DIR_ENV_VAR, help = keys_dir_help())]
     pub keys_dir: Option<PathBuf>,
 }
 

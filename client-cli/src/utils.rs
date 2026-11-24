@@ -8,6 +8,7 @@ use std::process::Command;
 use std::str::FromStr;
 use zxcvbn::{Score, zxcvbn};
 
+use crate::cli::KEYS_DIR_ENV_VAR;
 use crate::error::{ClientCliError, Result};
 use clap::CommandFactory;
 use client_lib::config::{CliConfig, ConfigAccessor};
@@ -285,8 +286,8 @@ pub(crate) fn config_for_display(accessor: &ConfigAccessor) -> CliConfig {
 
 // help text displayed by Clap for --keys-dir
 pub(crate) fn keys_dir_help() -> String {
-    // calling get_keys_dir_with None returns the platform's default data dir
-    let location = if let Ok(dir) = std::env::var("ASFALOAD_KEYS_DIR") {
+    // Show the dir used without --keys-dir: the env var if set, else the platform's default.
+    let location = if let Ok(dir) = std::env::var(KEYS_DIR_ENV_VAR) {
         dir
     } else {
         match get_keys_dir(&None) {

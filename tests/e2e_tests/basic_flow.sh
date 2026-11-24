@@ -162,12 +162,31 @@ assert_pending_signers_signatures_contain_keys "$KEY_0"
 assert_pending_metadata_signature_count 1
 assert_pending_metadata_signatures_contain_keys "$KEY_0"
 
+# Some steps load secret keys by name, from copies of the fixture keys:
+# XDG_DATA_DIR replaces the default data dir of the CLI, CUSTOM_KEYS_DIR is
+# given with --keys-dir or ASFALOAD_KEYS_DIR.
+XDG_DATA_DIR=$(mktemp -d); to_delete_on_filesystem+=("$XDG_DATA_DIR")
+CUSTOM_KEYS_DIR=$(mktemp -d); to_delete_on_filesystem+=("$CUSTOM_KEYS_DIR")
+cp "$KEY_1" "$KEY_2" "$CUSTOM_KEYS_DIR/"
+
+# Before the copy, the name is not found: the steps below cannot find the key by
+# another path.
+expect_fail_json "List pending for key1 by name, absent from default keys dir" \
+    '.error | contains("Keypair fs io error")' \
+    env -u ASFALOAD_KEYS_DIR XDG_DATA_HOME="$XDG_DATA_DIR" \
+    cargo run --quiet -- list-pending --secret-key "$(basename "$KEY_1")" -u "$backend" --password $key_password
+
+# The CLI default keys dir is <data dir>/asfaload-cli.
+mkdir "$XDG_DATA_DIR/asfaload-cli"
+cp "$KEY_1" "$XDG_DATA_DIR/asfaload-cli/"
+
 run_step_json "List pending for key1" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
-run_step_json "Sign signers file with key1" \
+run_step_json "Sign signers file with key1 (loaded by name from default keys dir)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+    env -u ASFALOAD_KEYS_DIR XDG_DATA_HOME="$XDG_DATA_DIR" \
+    cargo run --quiet -- sign-pending --secret-key "$(basename "$KEY_1")" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify 2nd signature on pending signers and metadata ---
 assert_pending_signers_signature_count 2
@@ -175,9 +194,9 @@ assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
 assert_pending_metadata_signature_count 2
 assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1"
 
-run_step_json "Sign signers file with key2 (completes signature)" \
+run_step_json "Sign signers file with key2 (loaded by name with --keys-dir, completes signature)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+    cargo run --quiet -- sign-pending --keys-dir "$CUSTOM_KEYS_DIR" --secret-key "$(basename "$KEY_2")" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify signers activated ---
 assert_signers_active
@@ -354,9 +373,10 @@ run_step_json "List pending for key1 (should show pending)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 
-run_step_json "Sign pending signers with key1" \
+run_step_json "Sign pending signers with key1 (loaded by name with ASFALOAD_KEYS_DIR)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
+    env ASFALOAD_KEYS_DIR="$CUSTOM_KEYS_DIR" \
+    cargo run --quiet -- sign-pending --secret-key "$(basename "$KEY_1")" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 2
 assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"

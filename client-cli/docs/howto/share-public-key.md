@@ -11,8 +11,15 @@ Once you have a key pair, you need to share the public key with whoever maintain
 ### 1. Print a human-readable sharing message (default)
 
 ```sh
-asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub
+asfaload-cli share-key -k mykey
 ```
+
+The command finds the key `mykey` in your keys directory, where `new-keys` created it, and reads the public key from `mykey.pub`. By default, your keys directory is the directory `asfaload-cli` in your user data directory:
+
+- Linux and macOS: `$XDG_DATA_HOME/asfaload-cli`, usually `~/.local/share/asfaload-cli`.
+- Windows: `%APPDATA%\asfaload-cli`, usually `C:\Users\<user>\AppData\Roaming\asfaload-cli`.
+
+If you keep your keys in another location, give that directory with `--keys-dir` or with the `ASFALOAD_KEYS_DIR` environment variable. You can also give the path to the public key file.
 
 This prints your public key together with a ready-to-send message you can forward to a team admin:
 
@@ -34,7 +41,7 @@ You can share your public key, for example with an admin, with this message:
 When you only need the base64 string — for example, to paste it into a signers file — use `--raw` (`-r`):
 
 ```sh
-asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub --raw
+asfaload-cli share-key -k mykey --raw
 ```
 
 Output:
@@ -58,7 +65,7 @@ asfaload-cli share-key -k ~/.ssh/id_ed25519.pub --raw
 For scripting, use `--json`:
 
 ```sh
-asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub --json
+asfaload-cli share-key -k mykey --json
 ```
 
 Output:

@@ -6,11 +6,22 @@ Print your public key in the base64 form used in signers files, along with a rea
 
 This command is offline: it only reads a local public key file and never contacts the backend.
 
+By default, the command looks for the key name in the keys directory, the directory `asfaload-cli` in your user data directory:
+
+- Linux and macOS: `$XDG_DATA_HOME/asfaload-cli`, usually `~/.local/share/asfaload-cli`.
+- Windows: `%APPDATA%\asfaload-cli`, usually `C:\Users\<user>\AppData\Roaming\asfaload-cli`.
+
+This is the directory where [`new-keys`](new-keys.md) creates keys by default. If you keep your keys in another location, use `--keys-dir`.
+
 ## Options
 
-### `-k --public-key <PATH>`
+### `-k --public-key <PATH|NAME>`
 
-Path to the public key file to share (asfaload or OpenSSH ed25519). Required. If the path does not contain a parseable public key, the command retries with `.pub` appended to the path — so passing the secret key path also works, as long as its `.pub` sibling exists.
+Path to the public key file to share (asfaload or OpenSSH ed25519), or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Required. If the file does not contain a parseable public key, the command retries with `.pub` appended to the path — so passing the secret key path or name also works, as long as its `.pub` sibling exists.
+
+### `-d --keys-dir <DIR>`
+
+Directory where the command looks for the public key when the value of `--public-key` is not an existing file. The command then reads `<DIR>/<value of --public-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 
 ### `-r --raw`
 
@@ -19,6 +30,10 @@ Print only the public key in its canonical base64 form (`asfaload-pub:...`), wit
 ### `--json`
 
 Emit output as JSON instead of human-readable text. Conflicts with `--raw`.
+
+## Environment
+
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 
 ## Output
 
@@ -46,13 +61,13 @@ JSON (with `--json`):
 ## Examples
 
     # print your public key and a sharing message
-    asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub
+    asfaload-cli share-key -k mykey
 
     # print only the key
-    asfaload-cli share-key -k ~/.local/share/asfaload-cli/mykey.pub --raw
+    asfaload-cli share-key -k mykey --raw
 
     # machine-readable output
-    asfaload-cli share-key --json -k ~/.local/share/asfaload-cli/mykey.pub
+    asfaload-cli share-key --json -k mykey
 
 ## Exit codes
 

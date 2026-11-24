@@ -14,7 +14,7 @@ use crate::{
     error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
-        expected_digest, get_password, load_secret_key,
+        expected_digest, get_password, load_secret_key, resolve_key_path,
     },
 };
 
@@ -138,10 +138,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::ShareKey {
             public_key,
+            keys_dir_args,
             raw,
             json_args,
         } => {
-            share_key::handle_share_key_command(public_key, *raw, json_args.json)?;
+            let public_key_path =
+                resolve_key_path(&keys_dir_args.keys_dir, public_key, "Public key")?;
+            share_key::handle_share_key_command(&public_key_path, *raw, json_args.json)?;
         }
         Commands::NewSignersFile {
             artifact_signer,

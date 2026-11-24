@@ -140,9 +140,13 @@ pub enum Commands {
 
     /// Get information to share your key
     ShareKey {
-        /// Path to the public key (asfaload or ssh ed25519).
+        /// Path to the public key (asfaload or ssh ed25519) OR filename in your keys dir
+        /// (see --keys-dir)
         #[arg(long, short = 'k')]
-        public_key: PathBuf,
+        public_key: String,
+
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         /// Print only the key
         #[arg(long, short, conflicts_with = "json")]

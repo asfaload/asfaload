@@ -201,7 +201,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -232,7 +232,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 true,
             )?;
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -313,7 +313,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
 
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -353,7 +353,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -394,7 +394,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
 
             let mode = register_assets::determine_registration_mode(github_release_url, csum_file)?;
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -435,7 +435,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -476,7 +476,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let expected_digest =
                 expected_digest(digest_args.digest.clone(), digest_args.local_copy.clone())?;
             let secret_key = load_secret_key(
-                &secret_key_args.keys_dir,
+                &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
                 &password,
             )?;
@@ -493,7 +493,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::Ping {
             secret_key,
-            keys_dir,
+            keys_dir_args,
             password_args,
             backend_url_args,
             json_args,
@@ -511,7 +511,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                         WithoutConfirmation,
                         true,
                     )?;
-                    Some(load_secret_key(keys_dir, name, &password)?)
+                    Some(load_secret_key(&keys_dir_args.keys_dir, name, &password)?)
                 }
                 None => None,
             };

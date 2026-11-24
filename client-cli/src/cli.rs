@@ -44,7 +44,14 @@ pub struct SecretKeyArgs {
     #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
     pub secret_key: String,
 
-    #[arg(long, env = "ASFALOAD_KEYS_DIR", help=keys_dir_help())]
+    // We flatten here because KeysDirArgs is used standalone in some places
+    #[command(flatten)]
+    pub keys_dir_args: KeysDirArgs,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct KeysDirArgs {
+    #[arg(long, env = "ASFALOAD_KEYS_DIR", help = keys_dir_help())]
     pub keys_dir: Option<PathBuf>,
 }
 
@@ -409,8 +416,8 @@ pub enum Commands {
         #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
         secret_key: Option<String>,
 
-        #[arg(long, env = "ASFALOAD_KEYS_DIR", help = keys_dir_help())]
-        keys_dir: Option<PathBuf>,
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         #[command(flatten)]
         password_args: PasswordArgs,

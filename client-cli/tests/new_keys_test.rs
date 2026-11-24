@@ -77,7 +77,7 @@ fn test_new_keys_message_suggests_alias() {
     )));
 }
 
-// Without --output-dir, keys go to the user's data dir. XDG_DATA_HOME is set on the child process
+// Without --keys-dir, keys go to the user's data dir. XDG_DATA_HOME is set on the child process
 // only, so the test never writes in the data dir of the developer.
 #[cfg(unix)]
 #[test]
@@ -92,6 +92,7 @@ fn test_new_keys_defaults_to_user_data_dir() {
         .arg("-p")
         .arg(TEST_PASSWORD)
         .arg("--accept-weak-password")
+        .env_remove("ASFALOAD_KEYS_DIR")
         .env("HOME", temp_dir.path())
         .env("XDG_DATA_HOME", &data_dir);
     cmd.assert().success();
@@ -122,4 +123,24 @@ fn test_new_keys_creates_output_dir_readable_by_owner_only() {
 
     let mode = std::fs::metadata(&output_dir).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o700, "unexpected keys dir mode {mode:o}");
+}
+
+// new-keys writes in the keys dir that the other commands use to find a key name.
+#[test]
+fn test_new_keys_writes_in_keys_dir_env_var() {
+    let temp_dir = TempDir::new().unwrap();
+    let keys_dir = temp_dir.path().join("keys");
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-keys")
+        .arg("-n")
+        .arg("mykey")
+        .arg("-p")
+        .arg(TEST_PASSWORD)
+        .arg("--accept-weak-password")
+        .env("ASFALOAD_KEYS_DIR", &keys_dir);
+    cmd.assert().success();
+
+    assert!(keys_dir.join("mykey").is_file());
+    assert!(keys_dir.join("mykey.pub").is_file());
 }

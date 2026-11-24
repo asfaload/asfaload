@@ -118,7 +118,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
     match &cli.command {
         Commands::NewKeys {
             name,
-            output_dir,
+            keys_dir_args,
             password_args,
             accept_weak_password,
             json_args,
@@ -133,7 +133,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 RequireConfirmation,
                 *accept_weak_password,
             )?;
-            let keys_dir = get_keys_dir(output_dir)?;
+            let keys_dir = get_keys_dir(&keys_dir_args.keys_dir)?;
             keys::handle_new_keys_command(name, keys_dir.as_ref(), password, json_args.json)?;
         }
         Commands::ShareKey {

@@ -1,7 +1,4 @@
-use crate::{
-    commands::shell::ShellKind,
-    utils::{keys_dir_help, output_dir_help},
-};
+use crate::{commands::shell::ShellKind, utils::keys_dir_help};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -127,9 +124,8 @@ pub enum Commands {
         #[arg(long, short)]
         name: String,
 
-        /// Directory to store the key
-        #[arg(long, short = 'd', help = output_dir_help())]
-        output_dir: Option<PathBuf>,
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         #[command(flatten)]
         password_args: PasswordArgs,

@@ -283,18 +283,6 @@ pub(crate) fn config_for_display(accessor: &ConfigAccessor) -> CliConfig {
     }
 }
 
-// help text displayed by Clap for --output-dir
-pub(crate) fn output_dir_help() -> String {
-    // calling get_keys_dir_with None returns the platform's default data dir
-    match get_keys_dir(&None) {
-        Ok(dir) => format!(
-            "Directory to store the keypair [default: {}]",
-            dir.display()
-        ),
-        Err(_) => "Directory to store the keypair [default: user data directory]".to_string(),
-    }
-}
-
 // help text displayed by Clap for --keys-dir
 pub(crate) fn keys_dir_help() -> String {
     // calling get_keys_dir_with None returns the platform's default data dir

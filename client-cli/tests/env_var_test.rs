@@ -100,7 +100,7 @@ fn test_password_command_taken_from_env() {
     cmd.arg("new-keys")
         .arg("--name")
         .arg("envkey")
-        .arg("--output-dir")
+        .arg("--keys-dir")
         .arg(temp_dir.path())
         .env(
             "ASFALOAD_PASSWORD_COMMAND",
@@ -130,7 +130,7 @@ fn test_password_file_taken_from_env() {
     cmd.arg("new-keys")
         .arg("--name")
         .arg("envkey")
-        .arg("--output-dir")
+        .arg("--keys-dir")
         .arg(temp_dir.path())
         .env("ASFALOAD_PASSWORD_FILE", &password_file);
 

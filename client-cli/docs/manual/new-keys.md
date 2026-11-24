@@ -2,17 +2,24 @@
 
 - **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME>`
 
-Generate a new signing key pair. The command creates both a secret key and a public key in the output directory.
+Generate a new signing key pair. The command creates both a secret key and a public key in the keys directory.
+
+By default, the keys directory is the directory `asfaload-cli` in your user data directory:
+
+- Linux and macOS: `$XDG_DATA_HOME/asfaload-cli`, usually `~/.local/share/asfaload-cli`.
+- Windows: `%APPDATA%\asfaload-cli`, usually `C:\Users\<user>\AppData\Roaming\asfaload-cli`.
+
+The commands that use a secret key also look in this directory when you give them a key name. If you must keep your keys in another location, use `--keys-dir`.
 
 ## Options
 
 ### `-n --name <NAME>`
 
-Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (public key) in the output directory.
+Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (public key) in the keys directory.
 
-### `-d --output-dir <DIR>`
+### `-d --keys-dir <DIR>`
 
-Directory to write the key files into. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`). The commands that use a secret key look in this directory when you give them a key name (see `--keys-dir` in their manual page). If the directory does not exist, the command creates it. On Linux and macOS, only you can access a directory that the command creates, and only you can read the secret key file.
+Directory to write the key files into, in place of the default keys directory (see above). Give the same directory with `--keys-dir` to the commands that use a secret key, so that they find the key by its name. If the directory does not exist, the command creates it. On Linux and macOS, only you can access a directory that the command creates, and only you can read the secret key file.
 
 ### `-p --password <PASSWORD>`
 
@@ -38,6 +45,7 @@ Emit output as JSON instead of human-readable text.
 
 These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 - `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
 - `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
 - `ASFALOAD_NEW_KEYS_PASSWORD` — alternative to `--password` (still supported, lower precedence).
@@ -83,7 +91,7 @@ JSON (with `--json`):
     asfaload-cli new-keys -n mykey -d ~/keys
 
     # non-interactive usage in CI
-    asfaload-cli new-keys -n ci-key -d ./keys -p "$KEY_PASSWORD"
+    asfaload-cli new-keys -n ci-key -p "$KEY_PASSWORD"
 
 ## Exit codes
 

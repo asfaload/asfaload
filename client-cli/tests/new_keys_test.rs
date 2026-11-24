@@ -77,6 +77,30 @@ fn test_new_keys_message_suggests_alias() {
     )));
 }
 
+// Without --output-dir, keys go to the user's data dir. XDG_DATA_HOME is set on the child process
+// only, so the test never writes in the data dir of the developer.
+#[cfg(unix)]
+#[test]
+fn test_new_keys_defaults_to_user_data_dir() {
+    let temp_dir = TempDir::new().unwrap();
+    let data_dir = temp_dir.path().join("data");
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-keys")
+        .arg("-n")
+        .arg("mykey")
+        .arg("-p")
+        .arg(TEST_PASSWORD)
+        .arg("--accept-weak-password")
+        .env("HOME", temp_dir.path())
+        .env("XDG_DATA_HOME", &data_dir);
+    cmd.assert().success();
+
+    let keys_dir = data_dir.join("asfaload-cli");
+    assert!(keys_dir.join("mykey").is_file());
+    assert!(keys_dir.join("mykey.pub").is_file());
+}
+
 #[cfg(unix)]
 #[test]
 fn test_new_keys_creates_output_dir_readable_by_owner_only() {

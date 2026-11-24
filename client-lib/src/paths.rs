@@ -59,4 +59,36 @@ mod tests {
         assert_eq!(path, data_dir.join("asfaload-cli"));
         Ok(())
     }
+
+    #[test]
+    fn key_path_from_name_joins_name_to_keys_dir() -> anyhow::Result<()> {
+        let default_dir = choose_base_strategy()?.data_dir().join("asfaload-cli");
+        let cases = vec![
+            (
+                Some(PathBuf::from("/some/keys")),
+                "mykey",
+                PathBuf::from("/some/keys/mykey"),
+            ),
+            (None, "mykey", default_dir.join("mykey")),
+            (
+                Some(PathBuf::from("/some/keys")),
+                "team/mykey",
+                PathBuf::from("/some/keys/team/mykey"),
+            ),
+            // An absolute name replaces the keys dir, as Path::join does.
+            (
+                Some(PathBuf::from("/some/keys")),
+                "/other/mykey",
+                PathBuf::from("/other/mykey"),
+            ),
+        ];
+        for (keys_dir, name, expected) in cases {
+            assert_eq!(
+                key_path_from_name(&keys_dir, name)?,
+                expected,
+                "unexpected path for keys dir {keys_dir:?} and name {name:?}"
+            );
+        }
+        Ok(())
+    }
 }

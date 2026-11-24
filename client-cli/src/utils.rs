@@ -328,6 +328,8 @@ mod tests {
     use super::*;
     use common::AsfaloadHashes;
 
+    const FIXTURE_PASSWORD: &str = "password";
+
     #[test]
     fn program_name_is_the_clap_command_name() {
         assert_eq!(program_name(), "asfaload-cli");
@@ -481,6 +483,63 @@ mod tests {
         std::fs::write(&path, "[alias]\n").unwrap();
         let accessor = ConfigAccessor::new(&Some(path));
         assert!(config_for_display(&accessor).aliases().is_empty());
+    }
+
+    fn public_key_of(secret_key: &AsfaloadSecretKeys) -> String {
+        use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
+        AsfaloadPublicKeys::from_secret_key(secret_key)
+            .unwrap()
+            .to_base64()
+    }
+
+    fn fixture_public_key(n: usize) -> String {
+        use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
+        AsfaloadPublicKeys::from_file(test_helpers::fixtures_pub_key(n))
+            .unwrap()
+            .to_base64()
+    }
+
+    #[test]
+    fn load_secret_key_reads_existing_absolute_path() -> anyhow::Result<()> {
+        let keys_dir = tempfile::TempDir::new()?;
+        let path = test_helpers::fixtures_keys_dir().join("key_0");
+
+        let secret_key = load_secret_key(
+            &Some(keys_dir.path().to_path_buf()),
+            path.to_str().unwrap(),
+            FIXTURE_PASSWORD,
+        )?;
+
+        assert_eq!(public_key_of(&secret_key), fixture_public_key(0));
+        Ok(())
+    }
+
+    #[test]
+    fn load_secret_key_reads_name_in_keys_dir() -> anyhow::Result<()> {
+        let keys_dir = test_helpers::fixtures_keys_dir();
+
+        let secret_key = load_secret_key(&Some(keys_dir), "key_2", FIXTURE_PASSWORD)?;
+
+        assert_eq!(public_key_of(&secret_key), fixture_public_key(2));
+        Ok(())
+    }
+
+    #[test]
+    fn load_secret_key_fails_when_name_is_not_in_keys_dir() -> anyhow::Result<()> {
+        let keys_dir = tempfile::TempDir::new()?;
+
+        let result = load_secret_key(
+            &Some(keys_dir.path().to_path_buf()),
+            "missing_key",
+            FIXTURE_PASSWORD,
+        );
+
+        match result {
+            Err(ClientCliError::KeyError(_)) => {}
+            Err(e) => panic!("Expected ClientCliError::KeyError but got {e}"),
+            Ok(_) => panic!("Expected an error for a missing key, got a key"),
+        }
+        Ok(())
     }
 
     #[cfg(unix)]

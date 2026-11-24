@@ -78,6 +78,24 @@ fn ping_reads_key_name_in_keys_dir_flag() {
 }
 
 #[test]
+fn ping_reads_key_name_in_keys_dir_short_flag() {
+    let temp_dir = TempDir::new().unwrap();
+    let keys_dir = temp_dir.path().join("keys");
+    copy_fixture_key(0, &keys_dir, "mykey");
+    let mut server = mockito::Server::new();
+    let mock = mock_ping_signed_by(&mut server, 0);
+
+    ping_command(&server, "mykey", temp_dir.path())
+        .arg("-d")
+        .arg(&keys_dir)
+        .current_dir(temp_dir.path())
+        .assert()
+        .success();
+
+    mock.assert();
+}
+
+#[test]
 fn ping_reads_key_name_in_keys_dir_env_var() {
     let temp_dir = TempDir::new().unwrap();
     let keys_dir = temp_dir.path().join("keys");

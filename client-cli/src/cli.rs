@@ -51,7 +51,7 @@ pub struct SecretKeyArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct KeysDirArgs {
-    #[arg(long, env = "ASFALOAD_KEYS_DIR", help = keys_dir_help())]
+    #[arg(long, short = 'd', env = "ASFALOAD_KEYS_DIR", help = keys_dir_help())]
     pub keys_dir: Option<PathBuf>,
 }
 

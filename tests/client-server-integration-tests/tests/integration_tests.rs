@@ -191,11 +191,10 @@ mod tests {
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         // Sign the pending signers file to activate it (threshold=all for InitialSignersFile)
-        let r = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -207,11 +206,10 @@ mod tests {
 
         // The signers file is now active. Signing its pending path again
         // reports that the signature was collected.
-        let again = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let again = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -224,11 +222,10 @@ mod tests {
         // A key that is not a signer gets no information about the activated
         // signers file.
         let outsider_key_path = state.lock().await.secret_key_paths[1].clone();
-        let outsider = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let outsider = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &outsider_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&outsider_key_path),
             false,
         )
         .await;
@@ -327,11 +324,10 @@ mod tests {
             .expect("Signers file should be in pending list");
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
-        let r = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -375,11 +371,10 @@ mod tests {
             .find(|p| p.path() == file_path)
             .expect("file should be in pending list");
         let artifact_client_file = client_pending_file(&git_repo_path, artifact_pending);
-        let sign_response = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let sign_response = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             artifact_client_file,
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -448,11 +443,10 @@ mod tests {
             .expect("Signers file should be in pending list");
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
-        client_cli::commands::sign_pending::handle_sign_pending_command(
+        client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -547,11 +541,10 @@ mod tests {
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         // sign-pending with key[0]: 1 of 3, not yet complete
-        let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r0 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             false,
         )
         .await
@@ -562,11 +555,10 @@ mod tests {
         );
 
         // sign-pending with key[1]: 2 of 3, not yet complete
-        let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r1 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &key_paths[1],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[1]),
             false,
         )
         .await
@@ -577,11 +569,10 @@ mod tests {
         );
 
         // sign-pending with key[2]: 3 of 3, complete -> signers activate
-        let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r2 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             signers_pending_path.clone(),
             &backend_url,
-            &key_paths[2],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[2]),
             false,
         )
         .await
@@ -625,11 +616,10 @@ mod tests {
         let artifact_client_file = client_pending_file(&git_repo_path, artifact_pending);
 
         // sign with key[0]: 1 of 2, not complete
-        let r3 = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r3 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             false,
         )
         .await
@@ -640,11 +630,10 @@ mod tests {
         );
 
         // sign again with key[0]: refused, the signature is already collected
-        let duplicate = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let duplicate = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             false,
         )
         .await;
@@ -655,11 +644,10 @@ mod tests {
         }
 
         // sign with key[1]: 2 of 2, complete
-        let r4 = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r4 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[1],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[1]),
             false,
         )
         .await
@@ -670,11 +658,10 @@ mod tests {
         );
 
         // --- Phase 5: Signing after completion should error ---
-        let r5 = client_cli::commands::sign_pending::handle_sign_pending_command(
+        let r5 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[2],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[2]),
             false,
         )
         .await;

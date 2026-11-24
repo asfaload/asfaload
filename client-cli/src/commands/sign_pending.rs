@@ -29,27 +29,14 @@ use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
 /// # Arguments
 /// * `file_path` - Path to the file (as returned by list-pending)
 /// * `backend_url` - Backend API URL
-/// * `secret_key_path` - Path to the user's secret key file
-/// * `password` - Password to unlock secret key
+/// * `secret_key` - Secret key of the user
 ///
 /// # Workflow
-/// * Load secret key and derive public key
+/// * Derive public key
 /// * Fetch all files to sign from backend
 /// * Compute SHA512 hash and sign each file
 /// * Submit all signatures to backend
 /// * Display result (whether signature is now complete)
-pub async fn handle_sign_pending_command(
-    pending_file: ClientPendingFile,
-    backend_url: &str,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
-    json: bool,
-) -> Result<SubmitSignatureResponse> {
-    // Load secret key and derive public key
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-    handle_sign_pending_sec_key(pending_file, backend_url, &secret_key, json).await
-}
-
 pub async fn handle_sign_pending_sec_key(
     pending_file: ClientPendingFile,
     backend_url: &str,

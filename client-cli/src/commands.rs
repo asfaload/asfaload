@@ -282,7 +282,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     }
                 }
             };
-            runtime.block_on(sign_pending::handle_sign_pending_sec_key(
+            runtime.block_on(sign_pending::handle_sign_pending_command(
                 pending_file,
                 &url,
                 &secret_key,

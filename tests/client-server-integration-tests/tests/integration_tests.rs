@@ -191,7 +191,7 @@ mod tests {
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         // Sign the pending signers file to activate it (threshold=all for InitialSignersFile)
-        let r = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&secret_key_path),
@@ -206,7 +206,7 @@ mod tests {
 
         // The signers file is now active. Signing its pending path again
         // reports that the signature was collected.
-        let again = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let again = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&secret_key_path),
@@ -222,7 +222,7 @@ mod tests {
         // A key that is not a signer gets no information about the activated
         // signers file.
         let outsider_key_path = state.lock().await.secret_key_paths[1].clone();
-        let outsider = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let outsider = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&outsider_key_path),
@@ -324,7 +324,7 @@ mod tests {
             .expect("Signers file should be in pending list");
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
-        let r = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&secret_key_path),
@@ -371,7 +371,7 @@ mod tests {
             .find(|p| p.path() == file_path)
             .expect("file should be in pending list");
         let artifact_client_file = client_pending_file(&git_repo_path, artifact_pending);
-        let sign_response = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let sign_response = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file,
             &backend_url,
             &load_secret_key(&secret_key_path),
@@ -443,7 +443,7 @@ mod tests {
             .expect("Signers file should be in pending list");
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
-        client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&secret_key_path),
@@ -466,7 +466,7 @@ mod tests {
         let tampered =
             ClientPendingFile::new(file_path.clone(), AsfaloadHashes::Sha512([0u8; 64].into()));
 
-        let err = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let err = client_cli::commands::sign_pending::handle_sign_pending_command(
             tampered,
             &backend_url,
             &secret_key,
@@ -541,7 +541,7 @@ mod tests {
         let signers_pending_path = client_pending_file(&git_repo_path, signers_pending);
 
         // sign-pending with key[0]: 1 of 3, not yet complete
-        let r0 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&key_paths[0]),
@@ -555,7 +555,7 @@ mod tests {
         );
 
         // sign-pending with key[1]: 2 of 3, not yet complete
-        let r1 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&key_paths[1]),
@@ -569,7 +569,7 @@ mod tests {
         );
 
         // sign-pending with key[2]: 3 of 3, complete -> signers activate
-        let r2 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
             &load_secret_key(&key_paths[2]),
@@ -616,7 +616,7 @@ mod tests {
         let artifact_client_file = client_pending_file(&git_repo_path, artifact_pending);
 
         // sign with key[0]: 1 of 2, not complete
-        let r3 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r3 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
             &load_secret_key(&key_paths[0]),
@@ -630,7 +630,7 @@ mod tests {
         );
 
         // sign again with key[0]: refused, the signature is already collected
-        let duplicate = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let duplicate = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
             &load_secret_key(&key_paths[0]),
@@ -644,7 +644,7 @@ mod tests {
         }
 
         // sign with key[1]: 2 of 2, complete
-        let r4 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r4 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
             &load_secret_key(&key_paths[1]),
@@ -658,7 +658,7 @@ mod tests {
         );
 
         // --- Phase 5: Signing after completion should error ---
-        let r5 = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let r5 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
             &load_secret_key(&key_paths[2]),

@@ -37,7 +37,7 @@ use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
 /// * Compute SHA512 hash and sign each file
 /// * Submit all signatures to backend
 /// * Display result (whether signature is now complete)
-pub async fn handle_sign_pending_sec_key(
+pub async fn handle_sign_pending_command(
     pending_file: ClientPendingFile,
     backend_url: &str,
     secret_key: &AsfaloadSecretKeys,

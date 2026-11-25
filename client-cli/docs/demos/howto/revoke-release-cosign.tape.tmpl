@@ -6,10 +6,10 @@ Set Height 700
 Set TypingSpeed $TYPING_SPEED
 Set PlaybackSpeed 1.0
 
-Type 'asfaload-cli list-pending --secret-key ~/.asfaload/key_5'
+Type 'asfaload-cli list-pending --secret-key key_5'
 Enter
 $SLEEP 3s
 
-Type 'asfaload-cli sign-pending --secret-key ~/.asfaload/key_5 --digest "$ASFALOAD_DEMO_PENDING_REVOCATION_DIGEST" "$ASFALOAD_DEMO_PENDING_REVOCATION_PATH"'
+Type 'asfaload-cli sign-pending --secret-key key_5 --digest "$ASFALOAD_DEMO_PENDING_REVOCATION_DIGEST" "$ASFALOAD_DEMO_PENDING_REVOCATION_PATH"'
 Enter
 Sleep $END_PAUSE

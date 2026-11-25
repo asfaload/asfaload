@@ -146,6 +146,8 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             accept_weak_password,
             json_args,
         } => {
+            let keys_dir = get_keys_dir(&keys_dir_args.keys_dir)?;
+            keys::ensure_new_key_absent(keys_dir.as_ref(), name)?;
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -156,7 +158,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 RequireConfirmation,
                 *accept_weak_password,
             )?;
-            let keys_dir = get_keys_dir(&keys_dir_args.keys_dir)?;
             keys::handle_new_keys_command(name, keys_dir.as_ref(), password, json_args.json)?;
         }
         Commands::ShareKey {

@@ -14,6 +14,22 @@ const WARN: Style = Style::new()
     .bold()
     .fg_color(Some(Color::Ansi(AnsiColor::Red)));
 
+/// Fails if a key file for `name` exists in `keys_dir`, so that the user does not type a password
+/// for nothing. `save` checks again when it writes the files.
+pub fn ensure_new_key_absent(keys_dir: &Path, name: &str) -> Result<()> {
+    let secret_key_path = keys_dir.join(name);
+    let public_key_path = keys_dir.join(format!("{name}.pub"));
+    for path in [secret_key_path, public_key_path] {
+        if path.exists() {
+            anyhow::bail!(
+                "Refusing to write key to existing file {}",
+                path.to_string_lossy()
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Handles the `keys` command.
 ///
 /// # Arguments

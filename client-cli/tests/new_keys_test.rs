@@ -144,3 +144,24 @@ fn test_new_keys_writes_in_keys_dir_env_var() {
     assert!(keys_dir.join("mykey").is_file());
     assert!(keys_dir.join("mykey.pub").is_file());
 }
+
+#[test]
+fn test_new_keys_reports_existing_key_before_asking_password() {
+    let temp_dir = TempDir::new().unwrap();
+    std::fs::write(temp_dir.path().join("mykey.pub"), "existing").unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-keys")
+        .arg("-n")
+        .arg("mykey")
+        .arg("-d")
+        .arg(temp_dir.path())
+        .arg("--password-command")
+        .arg("sh -c 'echo PASSWORD_ASKED 1>&2; exit 1'")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Refusing to write key to existing file",
+        ))
+        .stderr(predicate::str::contains("PASSWORD_ASKED").not());
+}

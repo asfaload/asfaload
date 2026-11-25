@@ -1,7 +1,8 @@
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use crate::{
-    cli::{Cli, Commands, DEFAULT_BACKEND},
+    cli::{Cli, Commands, DEFAULT_BACKEND, PasswordArgs},
     commands::{
         alias::{
             add_alias, check_exists, delete_alias, delete_alias_of_key, delete_alias_pair,
@@ -113,6 +114,27 @@ pub(crate) mod keys_helpers {
     }
 }
 
+/// Loads the secret key `name`, with the password given by `password_args`, by the
+/// environment variables of `command`, or by a prompt.
+fn load_secret_key_from_args(
+    command: &Commands,
+    keys_dir: &Option<PathBuf>,
+    name: &str,
+    password_args: &PasswordArgs,
+) -> Result<AsfaloadSecretKeys> {
+    let password = get_password(
+        password_args.password.clone(),
+        password_args.password_file.as_deref(),
+        password_args.password_command.clone(),
+        &command.password_env_var(),
+        &command.password_file_env_var(),
+        "Enter password: ",
+        WithoutConfirmation,
+        true,
+    )?;
+    Ok(load_secret_key(keys_dir, name, &password)?)
+}
+
 /// Dispatches the command to the appropriate handler
 pub fn handle_command(cli: &Cli) -> Result<()> {
     match &cli.command {
@@ -189,24 +211,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             json_args,
             digest_filter,
         } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(list_pending::handle_list_pending_command(
@@ -224,20 +237,11 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             digest_args,
             json_args,
         } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
             let url = backend_url_args
                 .backend_url
@@ -300,25 +304,16 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             json_args,
             config_args,
         } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
 
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(signature_status::handle_signature_status_command(
@@ -341,24 +336,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         } => {
             // First check valid digest was provided
             let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
 
             let runtime = tokio::runtime::Runtime::new()?;
@@ -380,26 +366,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             json_args,
             config_args,
         } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
             let backend = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
 
             let mode = register_assets::determine_registration_mode(github_release_url, csum_file)?;
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
 
             let runtime = tokio::runtime::Runtime::new()?;
@@ -423,24 +400,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         } => {
             // First check valid digest was provided
             let expected_digest = expected_digest(digest.clone(), local_copy.clone())?;
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
 
             let runtime = tokio::runtime::Runtime::new()?;
@@ -462,26 +430,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             json_args,
             config_args,
         } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                password_args.password_command.clone(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let expected_digest =
                 expected_digest(digest_args.digest.clone(), digest_args.local_copy.clone())?;
-            let secret_key = load_secret_key(
+            let secret_key = load_secret_key_from_args(
+                &cli.command,
                 &secret_key_args.keys_dir_args.keys_dir,
                 &secret_key_args.secret_key,
-                &password,
+                password_args,
             )?;
 
             let runtime = tokio::runtime::Runtime::new()?;
@@ -503,19 +462,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         } => {
             // The password is only needed when a secret key is used
             let secret_key = match secret_key {
-                Some(name) => {
-                    let password = get_password(
-                        password_args.password.clone(),
-                        password_args.password_file.as_deref(),
-                        password_args.password_command.clone(),
-                        &cli.command.password_env_var(),
-                        &cli.command.password_file_env_var(),
-                        "Enter password: ",
-                        WithoutConfirmation,
-                        true,
-                    )?;
-                    Some(load_secret_key(&keys_dir_args.keys_dir, name, &password)?)
-                }
+                Some(name) => Some(load_secret_key_from_args(
+                    &cli.command,
+                    &keys_dir_args.keys_dir,
+                    name,
+                    password_args,
+                )?),
                 None => None,
             };
             let url = backend_url_args

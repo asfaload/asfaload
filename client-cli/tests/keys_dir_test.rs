@@ -230,3 +230,32 @@ fn list_pending_reads_key_name_in_keys_dir() {
 
     mock.assert();
 }
+
+// A wrong key name is reported before the password is asked. The password command prints a
+// marker, so a password request shows in stderr without waiting for a prompt.
+#[test]
+fn list_pending_reports_missing_key_before_asking_password() {
+    let temp_dir = TempDir::new().unwrap();
+    let keys_dir = temp_dir.path().join("keys");
+    std::fs::create_dir_all(&keys_dir).unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("list-pending")
+        .arg("-u")
+        .arg("http://127.0.0.1:9")
+        .arg("-K")
+        .arg("missing_key")
+        .arg("--keys-dir")
+        .arg(&keys_dir)
+        .arg("--password-command")
+        .arg("sh -c 'echo PASSWORD_ASKED 1>&2; exit 1'")
+        .env_remove("ASFALOAD_KEYS_DIR")
+        .env_remove("ASFALOAD_SECRET_KEY")
+        .current_dir(temp_dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Secret key 'missing_key' not found",
+        ))
+        .stderr(predicate::str::contains("PASSWORD_ASKED").not());
+}

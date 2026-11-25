@@ -122,17 +122,18 @@ fn load_secret_key_from_args(
     name: &str,
     password_args: &PasswordArgs,
 ) -> Result<AsfaloadSecretKeys> {
-    let password = get_password(
-        password_args.password.clone(),
-        password_args.password_file.as_deref(),
-        password_args.password_command.clone(),
-        &command.password_env_var(),
-        &command.password_file_env_var(),
-        "Enter password: ",
-        WithoutConfirmation,
-        true,
-    )?;
-    Ok(load_secret_key(keys_dir, name, &password)?)
+    Ok(load_secret_key(keys_dir, name, || {
+        get_password(
+            password_args.password.clone(),
+            password_args.password_file.as_deref(),
+            password_args.password_command.clone(),
+            &command.password_env_var(),
+            &command.password_file_env_var(),
+            "Enter password: ",
+            WithoutConfirmation,
+            true,
+        )
+    })?)
 }
 
 /// Dispatches the command to the appropriate handler

@@ -327,13 +327,14 @@ pub(crate) fn resolve_key_path(
     Ok(path_built)
 }
 
+// The password is only asked when the key file is found, so the user does not type it for nothing.
 pub(crate) fn load_secret_key(
     keys_dir_in: &Option<PathBuf>,
     name: &str,
-    password: &str,
+    get_password: impl FnOnce() -> Result<String>,
 ) -> Result<AsfaloadSecretKeys> {
     let path = resolve_key_path(keys_dir_in, name, "Secret key")?;
-    let k = AsfaloadSecretKeys::from_file(path, password)?;
+    let k = AsfaloadSecretKeys::from_file(path, &get_password()?)?;
     Ok(k)
 }
 
@@ -342,7 +343,9 @@ mod tests {
     use super::*;
     use common::AsfaloadHashes;
 
-    const FIXTURE_PASSWORD: &str = "password";
+    fn fixture_password() -> Result<String> {
+        Ok("password".to_string())
+    }
 
     #[test]
     fn program_name_is_the_clap_command_name() {
@@ -521,7 +524,7 @@ mod tests {
         let secret_key = load_secret_key(
             &Some(keys_dir.path().to_path_buf()),
             path.to_str().unwrap(),
-            FIXTURE_PASSWORD,
+            fixture_password,
         )?;
 
         assert_eq!(public_key_of(&secret_key), fixture_public_key(0));
@@ -532,7 +535,7 @@ mod tests {
     fn load_secret_key_reads_name_in_keys_dir() -> anyhow::Result<()> {
         let keys_dir = test_helpers::fixtures_keys_dir();
 
-        let secret_key = load_secret_key(&Some(keys_dir), "key_2", FIXTURE_PASSWORD)?;
+        let secret_key = load_secret_key(&Some(keys_dir), "key_2", fixture_password)?;
 
         assert_eq!(public_key_of(&secret_key), fixture_public_key(2));
         Ok(())
@@ -545,7 +548,7 @@ mod tests {
         let result = load_secret_key(
             &Some(keys_dir.path().to_path_buf()),
             "missing_key",
-            FIXTURE_PASSWORD,
+            fixture_password,
         );
 
         match result {
@@ -571,7 +574,7 @@ mod tests {
         let result = load_secret_key(
             &Some(keys_dir.path().to_path_buf()),
             missing_path.to_str().unwrap(),
-            FIXTURE_PASSWORD,
+            fixture_password,
         );
 
         // The keys dir is not used for an absolute path, so the message does not name it.

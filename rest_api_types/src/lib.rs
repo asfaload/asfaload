@@ -449,11 +449,6 @@ pub mod models {
         path: String,
         short_digest: String,
     }
-    impl fmt::Display for SafePendingFile {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "path: {}\ndigest: {}\n", self.path, self.short_digest)
-        }
-    }
     impl SafePendingFile {
         pub fn path(&self) -> &str {
             &self.path
@@ -466,14 +461,6 @@ pub mod models {
     pub struct PendingFile {
         path: String,
         digest: AsfaloadHashes,
-    }
-
-    // The Display implementation is used by Inquire::Select
-    // Changing the format here will change the select prompt used by sign-pending
-    impl fmt::Display for PendingFile {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "path: {}\ndigest: {}\n", self.path, self.digest)
-        }
     }
 
     impl PendingFile {
@@ -1155,19 +1142,7 @@ mod tests {
         let pending = pending_file_with_digest(&digest)?;
         let safe = pending.shorten();
         assert!(safe.digest().len() < digest.len());
-        assert!(!safe.to_string().contains(&digest));
         assert!(!serde_json::to_string(&safe)?.contains(&digest));
-        Ok(())
-    }
-
-    #[test]
-    fn test_shorten_display() -> anyhow::Result<()> {
-        let digest = format!("sha512:{}", "0123456789abcdef".repeat(8));
-        let safe = pending_file_with_digest(&digest)?.shorten();
-        assert_eq!(
-            safe.to_string(),
-            format!("path: {SHORTEN_TEST_PATH}\ndigest: sha512:01234567....89abcdef\n")
-        );
         Ok(())
     }
 

@@ -31,7 +31,10 @@ OPTIONS
 ENVIRONMENT SET IN SPAWNED SHELL
   ASFALOAD_BACKEND_URL   Backend REST API address
   ASFALOAD_PASSWORD_FILE Path to file containing the key password
-  KEY_0 KEY_1 KEY_2      Paths to fixture private keys
+  ASFALOAD_KEYS_DIR      Keys dir in the temp workspace, with the fixture keys
+  ASFALOAD_CONFIG_FILE   Config file in the temp workspace, with the aliases
+                         alias_key_0 .. alias_key_9
+  KEY_0 .. KEY_9         Paths to fixture private keys
   FILE_SERVER_URL        Local file server address
   PATH                   target/debug prepended (asfaload-cli available directly)
 
@@ -75,6 +78,7 @@ mt_init_workspace
 # --- Build ---
 
 mt_build_binaries
+mt_create_aliases
 
 # --- File server ---
 
@@ -162,10 +166,17 @@ printf '%s  asfaload manual test environment ready%s\n' "$GREEN" "$RESET"
 printf '\n'
 printf '  %-22s %s\n' "ASFALOAD_BACKEND_URL" "$BACKEND_URL"
 printf '  %-22s %s\n' "ASFALOAD_PASSWORD_FILE" "$PASSWORD_FILE"
+printf '  %-22s %s\n' "ASFALOAD_KEYS_DIR" "$CLI_KEYS_DIR"
+printf '  %-22s %s\n' "ASFALOAD_CONFIG_FILE" "$CLI_CONFIG_FILE"
 printf '  %-22s %s\n' "FILE_SERVER_URL" "$FILE_SERVER_URL"
-printf '  %-22s %s\n' "KEY_0" "$KEY_0"
-printf '  %-22s %s\n' "KEY_1" "$KEY_1"
-printf '  %-22s %s\n' "KEY_2" "$KEY_2"
+printf '  %-22s %s\n' "KEY_0 .. KEY_9" "$KEYS_DIR/key_{0..9}"
+printf '\n'
+printf '%s  Keys:%s\n' "$BOLD" "$RESET"
+printf '  The signers are key 0, 1 and 2. Give the key N in one of these ways:\n'
+printf '    %-24s %s\n' "-K \$KEY_N" "secret key, by path"
+printf '    %-24s %s\n' "-K key_N" "secret key, by file name in ASFALOAD_KEYS_DIR"
+printf '    %-24s %s\n' "alias_key_N" "public key, by alias in ASFALOAD_CONFIG_FILE,"
+printf '    %-24s %s\n' "" "e.g. --artifact-signer alias_key_N"
 printf '\n'
 printf '%s  %d files pending signature%s\n' "$DIM" "$PENDING_COUNT" "$RESET"
 printf '  asfaload-cli is in PATH\n'

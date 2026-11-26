@@ -70,6 +70,7 @@ done
 
 mt_init_workspace
 mt_build_binaries
+mt_create_aliases
 mt_start_file_server
 mt_start_backend
 
@@ -94,13 +95,6 @@ SIGNERS_FILE_URL="$FILE_SERVER_URL/project/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE"
 RELEASES_URL="$FILE_SERVER_URL/project/releases"
 
 MT_RC_EXTRA_EXPORTS+=(
-    "KEY_3=$KEY_3"
-    "KEY_4=$KEY_4"
-    "KEY_5=$KEY_5"
-    "KEY_6=$KEY_6"
-    "KEY_7=$KEY_7"
-    "KEY_8=$KEY_8"
-    "KEY_9=$KEY_9"
     "SIGNERS_FILE_PATH=$SIGNERS_FILE_PATH"
     "SIGNERS_FILE_URL=$SIGNERS_FILE_URL"
     "RELEASES_URL=$RELEASES_URL"

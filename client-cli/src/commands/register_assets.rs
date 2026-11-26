@@ -3,22 +3,18 @@ use crate::error::{ClientCliError, Result, ensure_backend_success};
 use crate::utils::config_for_display;
 use admin_lib::v1::RegistrationMode;
 use client_lib::config::ConfigAccessor;
-use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
 use forge_url::github::is_github_release_host;
 
 pub async fn handle_register_assets_command(
     backend_url: &str,
     mode: RegistrationMode,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
+    secret_key: &AsfaloadSecretKeys,
     json: bool,
     config_accessor: &ConfigAccessor,
 ) -> Result<()> {
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-
     let client = admin_lib::v1::Client::new(backend_url);
-    let registered = client.register_assets(&mode, &secret_key).await?;
+    let registered = client.register_assets(&mode, secret_key).await?;
     let response = registered.response;
 
     ensure_backend_success(

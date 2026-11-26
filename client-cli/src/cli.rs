@@ -1,9 +1,12 @@
-use crate::commands::shell::ShellKind;
+use crate::{commands::shell::ShellKind, utils::keys_dir_help};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 /// Default backend API URL
 pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
+
+/// Environment variable giving the keys dir
+pub const KEYS_DIR_ENV_VAR: &str = "ASFALOAD_KEYS_DIR";
 
 // helpers for clap
 
@@ -36,9 +39,20 @@ pub struct DigestArgs {
 }
 #[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
-    /// Path to your secret key file (asfaload or OpenSSH ed25519)
+    /// Path to your secret key file (asfaload or OpenSSH ed25519) OR filename in your keys dir
+    /// (see --keys-dir)
     #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
-    pub secret_key: PathBuf,
+    pub secret_key: String,
+
+    // We flatten here because KeysDirArgs is used standalone in some places
+    #[command(flatten)]
+    pub keys_dir_args: KeysDirArgs,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct KeysDirArgs {
+    #[arg(long, short = 'd', env = KEYS_DIR_ENV_VAR, help = keys_dir_help())]
+    pub keys_dir: Option<PathBuf>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -113,9 +127,8 @@ pub enum Commands {
         #[arg(long, short)]
         name: String,
 
-        /// Directory to store the key
-        #[arg(long, short = 'd', default_value = ".")]
-        output_dir: PathBuf,
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         #[command(flatten)]
         password_args: PasswordArgs,
@@ -130,9 +143,13 @@ pub enum Commands {
 
     /// Get information to share your key
     ShareKey {
-        /// Path to the public key (asfaload or ssh ed25519).
+        /// Path to the public key (asfaload or ssh ed25519) OR filename in your keys dir
+        /// (see --keys-dir)
         #[arg(long, short = 'k')]
-        public_key: PathBuf,
+        public_key: String,
+
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         /// Print only the key
         #[arg(long, short, conflicts_with = "json")]
@@ -397,10 +414,13 @@ pub enum Commands {
     /// Ping the backend, optionally testing your credentials
     Ping {
         // NOTE: this does not use SecretKeyArgs to not make it a mandatory flag.
-        /// Path to your secret key file; when given, the ping request is
-        /// authenticated (asfaload or OpenSSH ed25519)
+        /// Path to your secret key file (asfaload or OpenSSH ed25519) OR filename in your keys
+        /// dir (see --keys-dir); when given, the ping request is authenticated
         #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
-        secret_key: Option<PathBuf>,
+        secret_key: Option<String>,
+
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         #[command(flatten)]
         password_args: PasswordArgs,

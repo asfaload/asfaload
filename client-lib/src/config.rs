@@ -1,4 +1,3 @@
-use etcetera::{BaseStrategy, choose_base_strategy};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::ClientLibError;
+use crate::{ClientLibError, paths::build_config_path};
 
 type Aliases = BTreeMap<String, AsfaloadPublicKeys>;
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -145,23 +144,6 @@ fn check_alias_name(name: &str) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn build_config_path(path_in: Option<&Path>) -> Result<PathBuf, ClientLibError> {
-    match path_in {
-        Some(p) => Ok(p.to_path_buf()),
-        None => {
-            let strategy = choose_base_strategy().map_err(|e| {
-                ClientLibError::ConfigError(format!(
-                    "Problem determining configuration location: {e}"
-                ))
-            })?;
-            Ok(strategy
-                .config_dir()
-                .join("asfaload-cli")
-                .join("config.toml"))
-        }
-    }
 }
 
 pub fn load_config(path_in: Option<&Path>) -> Result<CliConfig, ClientLibError> {

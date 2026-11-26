@@ -54,11 +54,11 @@ Each how-to embeds its matching demo at the end of the section that shows the CL
 
 The recordings show only what a reader following the how-to would type. Server lifecycle, fixture setup, the equivalent of "commit and push", and signing rounds the howto delegates to other guides all happen in the driver and are not visible on screen.
 
-Each tape stands on its own: comments don't refer to earlier demos, and only `generate-keys.tape.tmpl` actually generates a key. Every other tape works against the project's fixture keys, which the driver pre-stages into `$HOME/.asfaload/` before recording starts. That means the order tapes are recorded in does not matter for any single tape's correctness — only the backend state flows from one to the next.
+Each tape stands on its own: comments don't refer to earlier demos, and only `generate-keys.tape.tmpl` actually generates a key. Every other tape works against the project's fixture keys, which the driver pre-stages into the keys dir before recording starts. That means the order tapes are recorded in does not matter for any single tape's correctness — only the backend state flows from one to the next.
 
 ### Keys used in the demos
 
-The driver copies `core/test_helpers/fixtures/keys/key_0..key_6` (and matching `.pub` files) into `$HOME/.asfaload/` before any tape runs. Tapes reference them as `~/.asfaload/key_N`. The fixture keys are encrypted with the password `password`, so the demo's `.demo-password` file holds that exact string; the driver points `ASFALOAD_PASSWORD_FILE` at it, so every command decrypts its key without an on-screen `--password-file` flag.
+The driver copies `core/test_helpers/fixtures/keys/key_0..key_6` (and matching `.pub` files) into the default keys dir, `$XDG_DATA_HOME/asfaload-cli/`, before any tape runs. Tapes give a secret key by its name (`--secret-key key_N`) and a public key file by its path (`~/.local/share/asfaload-cli/key_N.pub`). The fixture keys are encrypted with the password `password`, so the demo's `.demo-password` file holds that exact string; the driver points `ASFALOAD_PASSWORD_FILE` at it, so every command decrypts its key without an on-screen `--password-file` flag.
 
 | Key | Role in the demos |
 |-----|------------------|
@@ -100,12 +100,13 @@ The driver renders tapes in this order, mirroring the howto index:
 
 These run silently in the driver to bridge demos:
 
-- **At fixture setup**: copy `core/test_helpers/fixtures/keys/key_0..key_6{,.pub}` into `$HOME/.asfaload/` and stage a v1.0 release artifact + `SHA256SUMS` in the file-server doc-root.
+- **At fixture setup**: copy `core/test_helpers/fixtures/keys/key_0..key_6{,.pub}` into `$XDG_DATA_HOME/asfaload-cli/` and stage a v1.0 release artifact + `SHA256SUMS` in the file-server doc-root.
 - **Before `update-signers-file.tape`**: pre-publish the v2 signers file at `$ASFALOAD_DEMO_NEW_SIGNERS_URL`. The tape re-runs `new-signers-file` for the camera, but it's the pre-published version the backend fetches. Local content matches except for an embedded timestamp.
 - **After `create-signers-file.tape`**: copy `$HOME/signers.json` into the fileserver doc-root at `demo-project/asfaload.signers/index.json`. Equivalent of the how-to's "commit and push".
 - **After `update-signers-file.tape`**: run `sign-pending` for `key_0` through `key_6` so the v2 signers file becomes active. The signing-round how-to (`activate-signers-file`) already showed the user-facing flow, so we don't re-record it here. This is what makes `revoke-release` work — the active signers file now has a revocation group.
 - **Backend URL and password file via env vars**: the driver exports `ASFALOAD_BACKEND_URL` (the local rest-api) and `ASFALOAD_PASSWORD_FILE` (the fixture `.demo-password`) to the `vhs` process. The CLI reads both through clap's env support, so on-screen commands omit `-u` and `--password-file`. In a real session the user only passes `-u` to override the default backend (`https://backend.asfaload.com`) and supplies the password interactively or via `--password-file`.
 - **Configuration directory**: the driver sets `XDG_CONFIG_HOME` to `$HOME/.config` in the fixture. Thus, the `alias` command writes its configuration file in the fixture, and not in your own configuration directory.
+- **Data directory**: the driver sets `XDG_DATA_HOME` to `$HOME/.local/share` in the fixture. Thus, the keys dir is in the fixture, and `new-keys` does not write in your own keys dir.
 
 ## Env vars exposed to tapes
 
@@ -131,7 +132,7 @@ These run silently in the driver to bridge demos:
 2. Use `Set TypingSpeed $TYPING_SPEED` and `$SLEEP Ns` for in-tape delays — never literal values, otherwise the profile won't apply.
 3. End every tape with a single `Sleep $END_PAUSE` line (not `$SLEEP …`) so the last frame stays readable in both profiles.
 4. Append the basename (without `.tmpl`) to the `TAPES` array in `run-demos.sh`. The driver appends `.tmpl` when reading.
-5. Use one of the staged fixture keys (`~/.asfaload/key_N`) rather than calling `new-keys` for setup. Only `generate-keys.tape.tmpl` should ever invoke `new-keys`.
+5. Use one of the staged fixture keys (`--secret-key key_N`) rather than calling `new-keys` for setup. Only `generate-keys.tape.tmpl` should ever invoke `new-keys`.
 6. If the new demo depends on state from a previous demo, add a `case` arm in `hidden_step_after()` (or `hidden_step_before()` for prerequisites the howto assumes are already in place) to bridge it.
 7. If the new demo introduces a new env var, add it to the env-var table and export it from `run-demos.sh` before the `vhs` invocation.
 

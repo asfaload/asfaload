@@ -5,7 +5,6 @@ use crate::error::Result;
 use crate::utils::{config_for_display, strip_control_chars};
 use anstyle::Style;
 use client_lib::config::{CliConfig, ConfigAccessor};
-use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
 use rest_api_types::GetSignatureStatusResponse;
 
@@ -39,15 +38,12 @@ pub fn signature_status_overview(
 pub async fn handle_signature_status_command(
     file_path: &str,
     backend_url: &str,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
+    secret_key: &AsfaloadSecretKeys,
     json: bool,
     config_accessor: &ConfigAccessor,
 ) -> Result<()> {
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-
     let client = admin_lib::v1::Client::new(backend_url);
-    let response = client.get_signature_status(file_path, &secret_key).await?;
+    let response = client.get_signature_status(file_path, secret_key).await?;
 
     if json {
         println!("{}", serde_json::to_string(&response)?);

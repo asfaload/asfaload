@@ -299,3 +299,116 @@ fn test_share_key_json_message_suggests_alias() {
         fixture_pub_key_0()
     )));
 }
+
+// -------------------------------------------------------------------
+// Public key name in the keys dir
+// -------------------------------------------------------------------
+
+// Copy the fixture key pair `n` in `dir`, as `mykey` and `mykey.pub`.
+fn copy_fixture_key_pair(n: usize, dir: &std::path::Path) {
+    fs::create_dir_all(dir).unwrap();
+    fs::copy(test_helpers::fixtures_sec_key(n), dir.join("mykey")).unwrap();
+    fs::copy(test_helpers::fixtures_pub_key(n), dir.join("mykey.pub")).unwrap();
+}
+
+fn fixture_pub_key(n: usize) -> String {
+    fs::read_to_string(test_helpers::fixtures_pub_key(n))
+        .unwrap()
+        .trim()
+        .to_owned()
+}
+
+// A share-key --raw with -k `name`, isolated from key settings in the environment of the developer.
+fn share_key_command(name: &str, home: &std::path::Path) -> assert_cmd::Command {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(name)
+        .arg("--raw")
+        .env_remove("ASFALOAD_KEYS_DIR")
+        .env("HOME", home)
+        .env("XDG_DATA_HOME", home.join("data"))
+        .current_dir(home);
+    cmd
+}
+
+enum KeysDirSource {
+    Flag,
+    ShortFlag,
+    EnvVar,
+}
+
+#[test]
+fn test_share_key_reads_name_in_keys_dir() {
+    let cases = vec![
+        // The public key file name.
+        ("mykey.pub", KeysDirSource::Flag),
+        ("mykey.pub", KeysDirSource::ShortFlag),
+        ("mykey.pub", KeysDirSource::EnvVar),
+        // The secret key name: share-key then reads its .pub sibling.
+        ("mykey", KeysDirSource::Flag),
+    ];
+    for (name, source) in cases {
+        let temp_dir = TempDir::new().unwrap();
+        let keys_dir = temp_dir.path().join("keys");
+        copy_fixture_key_pair(1, &keys_dir);
+
+        let mut cmd = share_key_command(name, temp_dir.path());
+        match source {
+            KeysDirSource::Flag => cmd.arg("--keys-dir").arg(&keys_dir),
+            KeysDirSource::ShortFlag => cmd.arg("-d").arg(&keys_dir),
+            KeysDirSource::EnvVar => cmd.env("ASFALOAD_KEYS_DIR", &keys_dir),
+        };
+
+        cmd.assert()
+            .success()
+            .stdout(predicate::eq(format!("{}\n", fixture_pub_key(1))));
+    }
+}
+
+// The default keys dir is the one where new-keys writes keys by default.
+#[cfg(unix)]
+#[test]
+fn test_share_key_reads_name_in_default_keys_dir() {
+    let temp_dir = TempDir::new().unwrap();
+    copy_fixture_key_pair(2, &temp_dir.path().join("data").join("asfaload-cli"));
+
+    share_key_command("mykey", temp_dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq(format!("{}\n", fixture_pub_key(2))));
+}
+
+#[test]
+fn test_share_key_prefers_file_in_current_dir_over_keys_dir() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join("work");
+    let keys_dir = temp_dir.path().join("keys");
+    copy_fixture_key_pair(0, &work_dir);
+    copy_fixture_key_pair(1, &keys_dir);
+
+    share_key_command("mykey.pub", temp_dir.path())
+        .arg("--keys-dir")
+        .arg(&keys_dir)
+        .current_dir(&work_dir)
+        .assert()
+        .success()
+        .stdout(predicate::eq(format!("{}\n", fixture_pub_key(0))));
+}
+
+#[test]
+fn test_share_key_fails_when_name_is_not_found() {
+    let temp_dir = TempDir::new().unwrap();
+    let keys_dir = temp_dir.path().join("keys");
+    fs::create_dir_all(&keys_dir).unwrap();
+
+    share_key_command("missing.pub", temp_dir.path())
+        .arg("--keys-dir")
+        .arg(&keys_dir)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "Public key 'missing.pub' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
+            keys_dir.display()
+        )));
+}

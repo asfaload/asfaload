@@ -22,6 +22,11 @@ mod tests {
         ClientPendingFile::new(pending.path().to_string(), digest)
     }
 
+    fn load_secret_key(path: &Path) -> features_lib::AsfaloadSecretKeys {
+        features_lib::AsfaloadSecretKeys::from_file(path, test_harness::TEST_PASSWORD)
+            .expect("Failed to load secret key")
+    }
+
     /// Mirror shape of a signers project served by a mock forge.
     ///
     /// `_source_server` must be kept alive: dropping it stops the mock forge,
@@ -112,8 +117,7 @@ mod tests {
 
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -169,8 +173,7 @@ mod tests {
         // list-pending should show it.
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -191,8 +194,7 @@ mod tests {
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -207,8 +209,7 @@ mod tests {
         let again = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -224,8 +225,7 @@ mod tests {
         let outsider = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &outsider_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&outsider_key_path),
             false,
         )
         .await;
@@ -251,8 +251,7 @@ mod tests {
 
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -308,8 +307,7 @@ mod tests {
         // Sign the pending signers file first (two-phase signing)
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -329,8 +327,7 @@ mod tests {
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -354,8 +351,7 @@ mod tests {
         // Verify the file appears in pending list
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -378,8 +374,7 @@ mod tests {
         let sign_response = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file,
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -431,8 +426,7 @@ mod tests {
         // Sign the pending signers file to activate it
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             None,
             false,
         )
@@ -452,8 +446,7 @@ mod tests {
         client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&secret_key_path),
             false,
         )
         .await
@@ -473,7 +466,7 @@ mod tests {
         let tampered =
             ClientPendingFile::new(file_path.clone(), AsfaloadHashes::Sha512([0u8; 64].into()));
 
-        let err = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+        let err = client_cli::commands::sign_pending::handle_sign_pending_command(
             tampered,
             &backend_url,
             &secret_key,
@@ -529,8 +522,7 @@ mod tests {
         // list-pending for key[0] should show the pending signers file
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             None,
             false,
         )
@@ -552,8 +544,7 @@ mod tests {
         let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             false,
         )
         .await
@@ -567,8 +558,7 @@ mod tests {
         let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &key_paths[1],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[1]),
             false,
         )
         .await
@@ -582,8 +572,7 @@ mod tests {
         let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
             signers_pending_path.clone(),
             &backend_url,
-            &key_paths[2],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[2]),
             false,
         )
         .await
@@ -606,8 +595,7 @@ mod tests {
         // --- Phase 4: Sign artifact (threshold=2) ---
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             None,
             false,
         )
@@ -631,8 +619,7 @@ mod tests {
         let r3 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             false,
         )
         .await
@@ -646,8 +633,7 @@ mod tests {
         let duplicate = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[0]),
             false,
         )
         .await;
@@ -661,8 +647,7 @@ mod tests {
         let r4 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[1],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[1]),
             false,
         )
         .await
@@ -676,8 +661,7 @@ mod tests {
         let r5 = client_cli::commands::sign_pending::handle_sign_pending_command(
             artifact_client_file.clone(),
             &backend_url,
-            &key_paths[2],
-            test_harness::TEST_PASSWORD,
+            &load_secret_key(&key_paths[2]),
             false,
         )
         .await;

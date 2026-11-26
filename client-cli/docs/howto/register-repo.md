@@ -34,7 +34,7 @@ Pass the digest with `--digest`. One of `--digest` or `--local-copy` is required
 
 ```sh
 asfaload-cli register-repo \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --digest sha512:2e2fde4e... \
     https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 ```
@@ -43,7 +43,7 @@ If you still have the signers file locally and its bytes are identical to the pu
 
 ```sh
 asfaload-cli register-repo \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --local-copy ./asfaload.signers/index.json \
     https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 ```
@@ -91,7 +91,7 @@ If your backend is not Asfaload's:
 
 ```sh
 asfaload-cli register-repo \
-    --secret-key ~/.asfaload/mykey \
+    --secret-key mykey \
     --digest sha512:2e2fde4e... \
     -u https://my-asfaload-deployment.example.com \
     https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json

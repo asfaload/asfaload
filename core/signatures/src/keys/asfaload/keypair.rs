@@ -14,11 +14,26 @@ use common::errors::keys::KeyError;
 use ed25519_dalek::SigningKey;
 use rand::{RngCore, rngs::OsRng};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use zeroize::Zeroizing;
 
 /// Prefix used in private-key files.
 pub const ASFALOAD_PRIV_PREFIX: &str = "asfaload-priv:";
+
+/// Write a new file that only its owner can read. The mode is set at creation, so the content is
+/// never readable by other users, and `create_new` refuses to replace an existing file.
+/// On non-Unix platforms the file inherits the access rules of its directory.
+fn write_secret_file(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(content)
+}
 
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<AsfaloadKeysBlob> {
     type PublicKey = AsfaloadEd25519PublicKey;
@@ -33,7 +48,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<AsfaloadKeysBlob> {
 
         let body = STANDARD_NO_PAD.encode(self.key_pair.0);
         let sk_line = format!("{}{}\n", ASFALOAD_PRIV_PREFIX, body);
-        fs::write(&sk_path, sk_line)?;
+        write_secret_file(&sk_path, sk_line.as_bytes())?;
 
         let pk = self.public_key();
         use crate::keys::AsfaloadPublicKeyTrait;
@@ -177,6 +192,22 @@ mod tests {
         use crate::keys::AsfaloadPublicKeyTrait;
         use crate::types::AsfaloadPublicKeys;
         assert!(AsfaloadPublicKeys::from_file(format!("{}.pub", key_path.display())).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_secret_key_is_readable_by_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let key_path = tmp.path().join("key");
+        let kp =
+            AsfaloadKeyPair::<AsfaloadKeysBlob>::new_with_argon2_params("pw", Argon2Params::TEST)
+                .unwrap();
+        kp.save(&key_path).unwrap();
+
+        let mode = std::fs::metadata(&key_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "unexpected secret key mode {mode:o}");
     }
 
     #[test]

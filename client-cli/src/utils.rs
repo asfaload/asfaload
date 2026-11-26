@@ -1,11 +1,14 @@
 use ClientCliError::PasswordStrengthError;
+use client_lib::paths::{get_keys_dir, key_path_from_name};
+use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use std::io::Read;
 use std::io::{Error, ErrorKind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use zxcvbn::{Score, zxcvbn};
 
+use crate::cli::KEYS_DIR_ENV_VAR;
 use crate::error::{ClientCliError, Result};
 use clap::CommandFactory;
 use client_lib::config::{CliConfig, ConfigAccessor};
@@ -15,6 +18,23 @@ use common::{AsfaloadHashes, sha512_for_file};
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
     if !path.exists() {
         std::fs::create_dir_all(path).map_err(ClientCliError::Io)?;
+    }
+    Ok(())
+}
+
+/// Ensures a directory for secret keys exists. Directories it creates are only accessible by
+/// their owner on Unix; an existing directory keeps its permissions, as the user chose them.
+/// On non-Unix platforms the directory inherits the access rules of its parent.
+pub fn ensure_private_dir_exists(path: &Path) -> Result<()> {
+    if !path.exists() {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(path).map_err(ClientCliError::Io)?;
     }
     Ok(())
 }
@@ -264,10 +284,68 @@ pub(crate) fn config_for_display(accessor: &ConfigAccessor) -> CliConfig {
     }
 }
 
+// help text displayed by Clap for --keys-dir
+pub(crate) fn keys_dir_help() -> String {
+    // Show the dir used without --keys-dir: the env var if set, else the platform's default.
+    let location = if let Ok(dir) = std::env::var(KEYS_DIR_ENV_VAR) {
+        dir
+    } else {
+        match get_keys_dir(&None) {
+            Ok(dir) => dir.display().to_string(),
+            Err(_) => "user data directory".to_string(),
+        }
+    };
+    format!("Directory where keys are stored [current: {}]", location)
+}
+
+// Returns `name` if it is an existing file, else the file `name` in the keys dir.
+// `label` names the kind of key in the error message, e.g. "Secret key".
+pub(crate) fn resolve_key_path(
+    keys_dir_in: &Option<PathBuf>,
+    name: &str,
+    label: &str,
+) -> Result<PathBuf> {
+    if Path::new(name).is_file() {
+        return Ok(PathBuf::from(name));
+    }
+    let path_built = key_path_from_name(keys_dir_in, name)?;
+    if !path_built.is_file() {
+        let keys_dir = get_keys_dir(keys_dir_in)?;
+        // An absolute name replaces the keys dir when joined to it.
+        let msg = if path_built.starts_with(&keys_dir) {
+            format!(
+                "{} '{}' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
+                label,
+                name,
+                keys_dir.display()
+            )
+        } else {
+            format!("{} file '{}' not found", label, name)
+        };
+        return Err(ClientCliError::InvalidInput(msg));
+    }
+    Ok(path_built)
+}
+
+// The password is only asked when the key file is found, so the user does not type it for nothing.
+pub(crate) fn load_secret_key(
+    keys_dir_in: &Option<PathBuf>,
+    name: &str,
+    get_password: impl FnOnce() -> Result<String>,
+) -> Result<AsfaloadSecretKeys> {
+    let path = resolve_key_path(keys_dir_in, name, "Secret key")?;
+    let k = AsfaloadSecretKeys::from_file(path, &get_password()?)?;
+    Ok(k)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use common::AsfaloadHashes;
+
+    fn fixture_password() -> Result<String> {
+        Ok("password".to_string())
+    }
 
     #[test]
     fn program_name_is_the_clap_command_name() {
@@ -422,5 +500,109 @@ mod tests {
         std::fs::write(&path, "[alias]\n").unwrap();
         let accessor = ConfigAccessor::new(&Some(path));
         assert!(config_for_display(&accessor).aliases().is_empty());
+    }
+
+    fn public_key_of(secret_key: &AsfaloadSecretKeys) -> String {
+        use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
+        AsfaloadPublicKeys::from_secret_key(secret_key)
+            .unwrap()
+            .to_base64()
+    }
+
+    fn fixture_public_key(n: usize) -> String {
+        use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
+        AsfaloadPublicKeys::from_file(test_helpers::fixtures_pub_key(n))
+            .unwrap()
+            .to_base64()
+    }
+
+    #[test]
+    fn load_secret_key_reads_existing_absolute_path() -> anyhow::Result<()> {
+        let keys_dir = tempfile::TempDir::new()?;
+        let path = test_helpers::fixtures_keys_dir().join("key_0");
+
+        let secret_key = load_secret_key(
+            &Some(keys_dir.path().to_path_buf()),
+            path.to_str().unwrap(),
+            fixture_password,
+        )?;
+
+        assert_eq!(public_key_of(&secret_key), fixture_public_key(0));
+        Ok(())
+    }
+
+    #[test]
+    fn load_secret_key_reads_name_in_keys_dir() -> anyhow::Result<()> {
+        let keys_dir = test_helpers::fixtures_keys_dir();
+
+        let secret_key = load_secret_key(&Some(keys_dir), "key_2", fixture_password)?;
+
+        assert_eq!(public_key_of(&secret_key), fixture_public_key(2));
+        Ok(())
+    }
+
+    #[test]
+    fn load_secret_key_fails_when_name_is_not_in_keys_dir() -> anyhow::Result<()> {
+        let keys_dir = tempfile::TempDir::new()?;
+
+        let result = load_secret_key(
+            &Some(keys_dir.path().to_path_buf()),
+            "missing_key",
+            fixture_password,
+        );
+
+        match result {
+            Err(ClientCliError::InvalidInput(msg)) => assert_eq!(
+                msg,
+                format!(
+                    "Secret key 'missing_key' not found: it is not a path to a file relative to the current directory, and it is not a file in keys dir {}",
+                    keys_dir.path().display()
+                )
+            ),
+            Err(e) => panic!("Expected ClientCliError::InvalidInput but got {e}"),
+            Ok(_) => panic!("Expected an error for a missing key, got a key"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn load_secret_key_fails_when_absolute_path_is_missing() -> anyhow::Result<()> {
+        let keys_dir = tempfile::TempDir::new()?;
+        let other_dir = tempfile::TempDir::new()?;
+        let missing_path = other_dir.path().join("missing_key");
+
+        let result = load_secret_key(
+            &Some(keys_dir.path().to_path_buf()),
+            missing_path.to_str().unwrap(),
+            fixture_password,
+        );
+
+        // The keys dir is not used for an absolute path, so the message does not name it.
+        match result {
+            Err(ClientCliError::InvalidInput(msg)) => assert_eq!(
+                msg,
+                format!("Secret key file '{}' not found", missing_path.display())
+            ),
+            Err(e) => panic!("Expected ClientCliError::InvalidInput but got {e}"),
+            Ok(_) => panic!("Expected an error for a missing key, got a key"),
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_private_dir_exists_keeps_mode_of_existing_dir() -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::TempDir::new()?;
+        let dir = temp_dir.path().join("keys");
+        std::fs::create_dir(&dir)?;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755))?;
+
+        ensure_private_dir_exists(&dir)?;
+
+        let mode = std::fs::metadata(&dir)?.permissions().mode();
+        assert_eq!(mode & 0o777, 0o755, "unexpected mode {mode:o}");
+        Ok(())
     }
 }

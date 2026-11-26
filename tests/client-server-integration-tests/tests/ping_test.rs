@@ -2,6 +2,7 @@
 mod tests {
     use client_server_integration_tests::test_harness;
     use features_lib::AsfaloadPublicKeyTrait;
+    use features_lib::AsfaloadSecretKeyTrait;
     use rest_api_types::PingAuthStatus;
 
     // Unauthenticated and authenticated ping against a real server, going
@@ -16,22 +17,20 @@ mod tests {
         drop(guard);
 
         // Unauthenticated ping
-        let response =
-            client_cli::commands::ping::handle_ping_command(&backend_url, None, None, false)
-                .await
-                .expect("unauthenticated ping should succeed");
+        let response = client_cli::commands::ping::handle_ping_command(&backend_url, None, false)
+            .await
+            .expect("unauthenticated ping should succeed");
         assert_eq!(response.message, "pong");
         assert_eq!(response.auth, PingAuthStatus::Unauthenticated);
 
         // Authenticated ping with the first test key
-        let response = client_cli::commands::ping::handle_ping_command(
-            &backend_url,
-            Some(&key_path),
-            Some(test_harness::TEST_PASSWORD),
-            false,
-        )
-        .await
-        .expect("authenticated ping should succeed");
+        let secret_key =
+            features_lib::AsfaloadSecretKeys::from_file(&key_path, test_harness::TEST_PASSWORD)
+                .expect("Failed to load secret key");
+        let response =
+            client_cli::commands::ping::handle_ping_command(&backend_url, Some(&secret_key), false)
+                .await
+                .expect("authenticated ping should succeed");
         assert_eq!(response.message, "pong");
         assert_eq!(
             response.auth,

@@ -84,21 +84,24 @@ echo "Building asfaload-cli, rest-api, test-file-server..." >&2
 # --- Create fixture ---
 FIXTURE="$(mktemp -d -t asfaload-demos.XXXXXX)"
 RELEASE_DIR="$FIXTURE/fileserver/$DEMO_PROJECT/releases/$DEMO_RELEASE"
+DATA_HOME="$FIXTURE/home/.local/share"
+# Default keys dir of the CLI when XDG_DATA_HOME is DATA_HOME.
+KEYS_DIR="$DATA_HOME/asfaload-cli"
 mkdir -p \
-    "$FIXTURE/home/.asfaload" \
+    "$KEYS_DIR" \
     "$FIXTURE/fileserver/$DEMO_PROJECT/asfaload.signers" \
     "$RELEASE_DIR" \
     "$FIXTURE/git-repo" \
     "$FIXTURE/git-signing" \
     "$FIXTURE/logs"
-printf '%s' "$DEMO_PASSWORD" > "$FIXTURE/home/.asfaload/.demo-password"
+printf '%s' "$DEMO_PASSWORD" > "$FIXTURE/.demo-password"
 
-# Stage fixture keys into $HOME so every tape (except generate-keys) can
+# Stage fixture keys into the keys dir so every tape (except generate-keys) can
 # reference real, pre-encrypted keys without depending on an earlier tape
 # having created them. Only key_0..key_6 are needed by the current demos.
 for n in 0 1 2 3 4 5 6; do
-    cp "$FIXTURE_KEYS_DIR/key_$n"     "$FIXTURE/home/.asfaload/key_$n"
-    cp "$FIXTURE_KEYS_DIR/key_$n.pub" "$FIXTURE/home/.asfaload/key_$n.pub"
+    cp "$FIXTURE_KEYS_DIR/key_$n"     "$KEYS_DIR/key_$n"
+    cp "$FIXTURE_KEYS_DIR/key_$n.pub" "$KEYS_DIR/key_$n.pub"
 done
 
 # Release artifact + SHA256SUMS so register-release / sign-release / download
@@ -213,7 +216,7 @@ mkdir -p "$TAPES_DIR/out"
 # (publishing files, batch-signing rounds the howto delegates to other guides) lives here.
 
 CLI="$REPO_ROOT/target/debug/asfaload-cli"
-PASSWORD_FILE="$FIXTURE/home/.asfaload/.demo-password"
+PASSWORD_FILE="$FIXTURE/.demo-password"
 
 # Digests of the files the tapes register or sign. The pending-file digests
 # depend on state created by earlier tapes, so they are filled in
@@ -280,14 +283,14 @@ hidden_step_before() {
             # The howto assumes the new signers file is already pushed; stage the
             # exact content the tape will produce locally, at its forge URL.
             "$CLI" new-signers-file \
-                --artifact-signers-file "$FIXTURE/home/.asfaload/key_0.pub" \
-                --artifact-signers-file "$FIXTURE/home/.asfaload/key_1.pub" \
-                --artifact-signers-file "$FIXTURE/home/.asfaload/key_2.pub" \
-                --artifact-signers-file "$FIXTURE/home/.asfaload/key_3.pub" \
+                --artifact-signers-file "$KEYS_DIR/key_0.pub" \
+                --artifact-signers-file "$KEYS_DIR/key_1.pub" \
+                --artifact-signers-file "$KEYS_DIR/key_2.pub" \
+                --artifact-signers-file "$KEYS_DIR/key_3.pub" \
                 --artifact-threshold 3 \
-                --revocation-keys-file "$FIXTURE/home/.asfaload/key_4.pub" \
-                --revocation-keys-file "$FIXTURE/home/.asfaload/key_5.pub" \
-                --revocation-keys-file "$FIXTURE/home/.asfaload/key_6.pub" \
+                --revocation-keys-file "$KEYS_DIR/key_4.pub" \
+                --revocation-keys-file "$KEYS_DIR/key_5.pub" \
+                --revocation-keys-file "$KEYS_DIR/key_6.pub" \
                 --revocation-threshold 2 \
                 --output-file "$FIXTURE/fileserver/$DEMO_PROJECT/asfaload.signers/index_v2.json" \
                 >/dev/null
@@ -314,7 +317,7 @@ hidden_step_after() {
             # key_0 submitted the update in the tape, so its signature is
             # already collected.
             for n in 1 2 3 4 5 6; do
-                asfa_sign_pending "$FIXTURE/home/.asfaload/key_$n" "$PENDING_SIGNERS_PATH" "$NEW_SIGNERS_DIGEST"
+                asfa_sign_pending "$KEYS_DIR/key_$n" "$PENDING_SIGNERS_PATH" "$NEW_SIGNERS_DIGEST"
             done
             ;;
         *) ;;
@@ -337,6 +340,7 @@ for tape in "${TAPES[@]}"; do
         cd "$TAPES_DIR"
         HOME="$FIXTURE/home" \
         XDG_CONFIG_HOME="$FIXTURE/home/.config" \
+        XDG_DATA_HOME="$DATA_HOME" \
         PATH="$REPO_ROOT/target/debug:$PATH" \
         ASFALOAD_BACKEND_URL="$BACKEND_URL" \
         ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE" \

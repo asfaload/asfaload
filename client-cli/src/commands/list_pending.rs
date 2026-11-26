@@ -1,38 +1,18 @@
 use crate::error::{ClientCliError, Result};
 use common::AsfaloadHashes;
-use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
 use rest_api_types::models::SafeListPendingResponse;
 use rest_api_types::models::SafePendingFile;
 
-/// Handle the list-pending command.
-///
 /// Lists all files from the backend that require the user's signature.
-///
-/// # Arguments
-///
-/// * `backend_url` - Backend API URL
-/// * `secret_key_path` - Path to the user's secret key file
-/// * `password` - Password for the secret key
-///
-/// # Workflow
-///
-/// 1. Load secret key
-/// 2. Make authenticated request to backend
-/// 3. Display list of pending files
 pub async fn handle_list_pending_command(
     backend_url: &str,
-    secret_key_path: &std::path::PathBuf,
-    password: &str,
+    secret_key: &AsfaloadSecretKeys,
     digest_filter: Option<String>,
     json: bool,
 ) -> Result<Vec<SafePendingFile>> {
-    // 1. Load secret key
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-
-    // 2. Make authenticated request to backend (derives public key from auth headers)
     let client = admin_lib::v1::Client::new(backend_url);
-    let response = client.get_pending_signatures(&secret_key).await?;
+    let response = client.get_pending_signatures(secret_key).await?;
 
     let filtered_response: SafeListPendingResponse = match digest_filter {
         Some(filter) => {

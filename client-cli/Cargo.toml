@@ -47,6 +47,7 @@ mockito = "1.2"
 assert_cmd = "2.0"
 predicates = "3.1"
 test_helpers = { path = "../core/test_helpers" }
+rest_api_auth = { path = "../rest_api_auth" }
 base64 = "0.22"
 
 [lints]

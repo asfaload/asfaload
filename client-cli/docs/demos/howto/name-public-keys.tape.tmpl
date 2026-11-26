@@ -8,10 +8,10 @@ Set PlaybackSpeed 1.0
 
 Type "# Give a name to the public key of each signer"
 Enter
-Type 'asfaload-cli alias alice --key "$(cat ~/.asfaload/key_0.pub)"'
+Type 'asfaload-cli alias alice --key "$(cat ~/.local/share/asfaload-cli/key_0.pub)"'
 Enter
 $SLEEP 2s
-Type 'asfaload-cli alias bob --key "$(cat ~/.asfaload/key_1.pub)"'
+Type 'asfaload-cli alias bob --key "$(cat ~/.local/share/asfaload-cli/key_1.pub)"'
 Enter
 $SLEEP 2s
 Type "# Show all aliases"
@@ -24,12 +24,12 @@ Enter
 Type "asfaload-cli alias alice"
 Enter
 $SLEEP 2s
-Type 'asfaload-cli alias --key "$(cat ~/.asfaload/key_1.pub)"'
+Type 'asfaload-cli alias --key "$(cat ~/.local/share/asfaload-cli/key_1.pub)"'
 Enter
 $SLEEP 3s
 Type "# Rename the alias of a key"
 Enter
-Type 'asfaload-cli alias robert --key "$(cat ~/.asfaload/key_1.pub)" --force'
+Type 'asfaload-cli alias robert --key "$(cat ~/.local/share/asfaload-cli/key_1.pub)" --force'
 Enter
 $SLEEP 2s
 Type "# Delete an alias, and confirm"

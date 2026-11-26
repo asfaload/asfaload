@@ -6,9 +6,13 @@ List all files on the backend that still need your signature. The command authen
 
 ## Options
 
-### `-K --secret-key <PATH>`
+### `-K --secret-key <PATH|NAME>`
 
-Path to your secret key file. Required.
+Path to your secret key file, or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Required.
+
+### `-d --keys-dir <DIR>`
+
+Directory where the command looks for the secret key when the value of `--secret-key` is not an existing file. The command then reads `<DIR>/<value of --secret-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 
 ### `-p --password <PASSWORD>`
 
@@ -39,6 +43,7 @@ Emit the backend response as JSON instead of human-readable text.
 These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
 - `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
 - `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
@@ -66,16 +71,16 @@ An empty result serializes as `{"pending_files":[]}`.
 ## Examples
 
     # list pending files
-    asfaload-cli list-pending -K ~/.asfaload/key
+    asfaload-cli list-pending -K key
 
     # list pending files for one specific digest
-    asfaload-cli list-pending --df sha512:2e2fde4e... -K ~/.asfaload/key
+    asfaload-cli list-pending --df sha512:2e2fde4e... -K key
 
     # non-interactive: sign the first pending file. EXPECTED_DIGEST
     # comes from a source that you trust, not from list-pending.
-    PENDING_PATH=$(asfaload-cli list-pending --json -K ~/.asfaload/key -p "$PASSWORD" \
+    PENDING_PATH=$(asfaload-cli list-pending --json -K key -p "$PASSWORD" \
         | jq -r '.pending_files[0].path')
-    asfaload-cli sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
+    asfaload-cli sign-pending -K key -p "$PASSWORD" \
         --digest "$EXPECTED_DIGEST" "$PENDING_PATH"
 
 ## Exit codes

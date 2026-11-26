@@ -18,9 +18,13 @@ URL of a GitHub release page. The CLI uses it to compute the release index. The 
 
 URL of a checksums file. Repeatable — pass once per file. All URLs must share the same origin (scheme, host, and port) and a common parent path. The CLI downloads these files and computes the release index from them. Mutually exclusive with `--github-release-url`.
 
-### `-K --secret-key <PATH>`
+### `-K --secret-key <PATH|NAME>`
 
-Path to your secret key file. Required.
+Path to your secret key file, or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Required.
+
+### `-d --keys-dir <DIR>`
+
+Directory where the command looks for the secret key when the value of `--secret-key` is not an existing file. The command then reads `<DIR>/<value of --secret-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 
 ### `-p --password <PASSWORD>`
 
@@ -51,6 +55,7 @@ Emit output as JSON instead of human-readable text.
 These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
 - `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
 - `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
@@ -111,11 +116,11 @@ The release is registered when this check occurs. If you register the release ag
 ## Examples
 
     # register a GitHub release
-    asfaload-cli register-assets -K ~/.asfaload/key \
+    asfaload-cli register-assets -K key \
         --github-release-url https://github.com/acme/tool/releases/tag/v1.0
 
     # register checksum files
-    asfaload-cli register-assets -K ~/.asfaload/key \
+    asfaload-cli register-assets -K key \
         --csum-file https://example.com/releases/v1.0/SHA256SUMS \
         --csum-file https://example.com/releases/v1.0/SHA512SUMS
 

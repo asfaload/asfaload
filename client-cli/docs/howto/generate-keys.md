@@ -8,53 +8,64 @@ Every signer needs their own key pair. This guide walks you through creating one
 
 ## Steps
 
-### 1. Choose a directory
-
-By default the keys are generated in the **current directory**. A common convention, used throughout this guide, is to keep them together in `~/.asfaload/`:
+### 1. Generate the key pair
 
 ```sh
-mkdir -p ~/.asfaload
+asfaload-cli new-keys --name mykey
 ```
-
-### 2. Generate the key pair
-
-```sh
-asfaload-cli new-keys --name mykey --output-dir ~/.asfaload
-```
-
-Omit `--output-dir` to create the keys in the current directory instead.
 
 You'll be prompted for a password to protect the secret key. Pick a strong one — this password is required every time you sign.
+
+By default, the command creates the keys in your keys directory. This is the directory `asfaload-cli` in your user data directory:
+
+- Linux and macOS: `$XDG_DATA_HOME/asfaload-cli`, usually `~/.local/share/asfaload-cli`.
+- Windows: `%APPDATA%\asfaload-cli`, usually `C:\Users\<user>\AppData\Roaming\asfaload-cli`.
+
+If the directory does not exist, the command creates it. You do not have to give a directory.
+
+If you must keep your keys in another location, give that directory with `--keys-dir` or with the `ASFALOAD_KEYS_DIR` environment variable.
 
 This creates two files:
 
 | File | Purpose |
 |------|---------|
-| `~/.asfaload/mykey` | Secret key (keep this safe) |
-| `~/.asfaload/mykey.pub` | Public key (share with your team) |
+| `~/.local/share/asfaload-cli/mykey` | Secret key (keep this safe) |
+| `~/.local/share/asfaload-cli/mykey.pub` | Public key (share with your team) |
+
+On Linux and macOS, only you can read the secret key file.
 
 ![Demo: generate a key pair](demos/generate-keys.gif)
 
-### 3. Verify the output
+### 2. Verify the output
 
 ```sh
-ls ~/.asfaload/mykey*
+ls ~/.local/share/asfaload-cli/mykey*
 ```
 
 You should see both `mykey` and `mykey.pub`.
+
+### 3. Use the key by its name
+
+The commands that sign find a key by its name in the keys directory. You do not need to type the full path:
+
+```sh
+asfaload-cli list-pending --secret-key mykey
+```
+
+If a file with this name exists in the current directory, the command uses that file. To keep your keys in another directory, give it with `--keys-dir` or the `ASFALOAD_KEYS_DIR` environment variable.
 
 ## Non-interactive usage
 
 For CI or scripting, pass the password directly:
 
 ```sh
-asfaload-cli new-keys --name ci-key --output-dir ./keys --password "$KEY_PASSWORD"
+asfaload-cli new-keys --name ci-key --password "$KEY_PASSWORD"
 ```
 
 Or read the password from a file with `--password-file` (`-P`):
 
 ```sh
-asfaload-cli new-keys --name ci-key --output-dir ./keys --password-file /run/secrets/key-password
+asfaload-cli new-keys --name ci-key --password-file /run/secrets/key-password
 ```
 
 The file should contain the password on a single line. Trailing newlines are stripped.
@@ -62,7 +73,7 @@ The file should contain the password on a single line. Trailing newlines are str
 Or fetch the password from a password manager (or any external command) with `--password-command` (`-C`). The command's standard output is used as the password:
 
 ```sh
-asfaload-cli new-keys --name ci-key --output-dir ./keys \
+asfaload-cli new-keys --name ci-key \
     --password-command "pass show asfaload/ci-key"
 ```
 
@@ -72,14 +83,14 @@ The password file and password command can also come from environment variables 
 
 ```sh
 export ASFALOAD_PASSWORD_FILE="/run/secrets/key-password"
-asfaload-cli new-keys --name ci-key --output-dir ./keys
+asfaload-cli new-keys --name ci-key
 ```
 
 The command-specific `ASFALOAD_NEW_KEYS_PASSWORD` and `ASFALOAD_NEW_KEYS_PASSWORD_FILE` are also still honoured (at lower precedence):
 
 ```sh
 export ASFALOAD_NEW_KEYS_PASSWORD="$KEY_PASSWORD"
-asfaload-cli new-keys --name ci-key --output-dir ./keys
+asfaload-cli new-keys --name ci-key
 ```
 
 ## Next step

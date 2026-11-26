@@ -640,6 +640,7 @@ dependencies = [
  "minus",
  "mockito",
  "predicates",
+ "rest_api_auth",
  "rest_api_types",
  "rpassword",
  "serde",

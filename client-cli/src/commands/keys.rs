@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::commands::keys_helpers::share_pub_key_message;
 use crate::output::NewKeysOutput;
-use crate::utils::ensure_dir_exists;
+use crate::utils::ensure_private_dir_exists;
 use anstream::println;
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
@@ -13,6 +13,22 @@ const DIM: Style = Style::new().dimmed();
 const WARN: Style = Style::new()
     .bold()
     .fg_color(Some(Color::Ansi(AnsiColor::Red)));
+
+/// Fails if a key file for `name` exists in `keys_dir`, so that the user does not type a password
+/// for nothing. `save` checks again when it writes the files.
+pub fn ensure_new_key_absent(keys_dir: &Path, name: &str) -> Result<()> {
+    let secret_key_path = keys_dir.join(name);
+    let public_key_path = keys_dir.join(format!("{name}.pub"));
+    for path in [secret_key_path, public_key_path] {
+        if path.exists() {
+            anyhow::bail!(
+                "Refusing to write key to existing file {}",
+                path.to_string_lossy()
+            );
+        }
+    }
+    Ok(())
+}
 
 /// Handles the `keys` command.
 ///
@@ -30,7 +46,7 @@ pub fn handle_new_keys_command(
     password: String,
     json: bool,
 ) -> Result<()> {
-    ensure_dir_exists(output_dir)?;
+    ensure_private_dir_exists(output_dir)?;
 
     let kp = AsfaloadKeyPairs::new(password.as_str())?;
     let location = output_dir.join(name);

@@ -16,7 +16,7 @@ Give the expected digest of the release index with `--digest`. Get it from a tru
 
 ```sh
 asfaload-cli revoke \
-    --secret-key ~/.asfaload/revoke-key \
+    --secret-key revoke-key \
     --digest sha512:7d4a1c90... \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
@@ -58,7 +58,7 @@ When the revocation threshold requires multiple signatures, additional revocatio
 
 ```sh
 # Another revocation signer checks for pending work
-asfaload-cli list-pending --secret-key ~/.asfaload/revoke-key-2
+asfaload-cli list-pending --secret-key revoke-key-2
 ```
 
 The pending revocation shows up as a path ending in `.revocation.json.pending`, together with a short digest:
@@ -72,7 +72,7 @@ digest: sha512:2e2fde4e....c41438d7
 Sign it. Copy the path from the output above. Do not take the full digest from the backend: get it from the person who started the revocation, in the command that the `revoke` output gives (see step 1). Make sure that the short digest in the `list-pending` output agrees with the start and the end of this digest:
 
 ```sh
-asfaload-cli sign-pending --secret-key ~/.asfaload/revoke-key-2 \
+asfaload-cli sign-pending --secret-key revoke-key-2 \
     --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending
 ```

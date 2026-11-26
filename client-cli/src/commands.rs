@@ -266,8 +266,8 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     let server_response =
                         runtime.block_on(client.get_pending_signatures(&secret_key))?;
                     let response = server_response.filter(&digest_to_sign);
-                    // Inquired formats proposals according to the Display implementation for PendingFile,
-                    let proposals = response.pending_files;
+                    let proposals =
+                        sign_pending::PendingFileChoice::from_files(response.pending_files);
 
                     if proposals.is_empty() {
                         let error = if server_response.pending_files.is_empty() {

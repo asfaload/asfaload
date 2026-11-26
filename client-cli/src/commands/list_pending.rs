@@ -56,6 +56,22 @@ fn wrap_text(text: &str) -> Vec<String> {
     lines
 }
 
+/// Width of the entry numbers, so that the paths and digests stay in one column.
+pub(crate) fn number_width(file_count: usize) -> usize {
+    file_count.to_string().len()
+}
+
+/// The two lines of a numbered pending file entry. The digest line has two
+/// more columns of indentation, because the caller indents the first line.
+pub(crate) fn pending_file_entry(number: usize, width: usize, file: &SafePendingFile) -> String {
+    format!(
+        "{number:>width$}. path:   {}\n  {:width$}  digest: {}",
+        strip_control_chars(file.path()),
+        "",
+        strip_control_chars(file.digest())
+    )
+}
+
 /// Build the human output of list-pending: the pending files, and how to sign one.
 ///
 /// `backend_url` is `Some` only when the user did not use the default backend.
@@ -74,22 +90,12 @@ pub fn pending_files_overview(
     }
     let bold = if with_ansi { BOLD } else { Style::new() };
     let mut lines = vec![format!("{bold}Files requiring your signature{bold:#}")];
-    // Right-align the numbers, so that the paths and digests stay in one column.
-    let width = files.len().to_string().len();
+    let width = number_width(files.len());
     for (index, file) in files.iter().enumerate() {
         if index > 0 {
             lines.push(String::new());
         }
-        lines.push(format!(
-            "  {:>width$}. path:   {}",
-            index + 1,
-            strip_control_chars(file.path())
-        ));
-        lines.push(format!(
-            "  {:width$}  digest: {}",
-            "",
-            strip_control_chars(file.digest())
-        ));
+        lines.push(format!("  {}", pending_file_entry(index + 1, width, file)));
     }
     // Only a safe path goes in the command. Else the user fills it in.
     let example = files

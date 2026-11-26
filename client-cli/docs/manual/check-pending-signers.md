@@ -29,6 +29,7 @@ Emit a summary object instead of human-readable text.
 ## Environment
 
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
+- `ASFALOAD_CONFIG_FILE` — alternative to `--config-file`.
 
 The command is unauthenticated: no secret key or password is needed.
 

@@ -87,6 +87,8 @@ RELEASE_DIR="$FIXTURE/fileserver/$DEMO_PROJECT/releases/$DEMO_RELEASE"
 DATA_HOME="$FIXTURE/home/.local/share"
 # Default keys dir of the CLI when XDG_DATA_HOME is DATA_HOME.
 KEYS_DIR="$DATA_HOME/asfaload-cli"
+# Exported for tapes and hidden steps, so no CLI call uses the user's keys dir.
+export ASFALOAD_KEYS_DIR="$KEYS_DIR"
 mkdir -p \
     "$KEYS_DIR" \
     "$FIXTURE/fileserver/$DEMO_PROJECT/asfaload.signers" \
@@ -95,6 +97,8 @@ mkdir -p \
     "$FIXTURE/git-signing" \
     "$FIXTURE/logs"
 printf '%s' "$DEMO_PASSWORD" > "$FIXTURE/.demo-password"
+# Exported for tapes and hidden steps, so no CLI call writes in the user's config file.
+export ASFALOAD_CONFIG_FILE="$FIXTURE/home/.config/asfaload-cli/config.toml"
 
 # Stage fixture keys into the keys dir so every tape (except generate-keys) can
 # reference real, pre-encrypted keys without depending on an earlier tape

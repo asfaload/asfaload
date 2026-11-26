@@ -22,6 +22,8 @@ Alias alice added for asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
 
 A key has one alias at most. An alias starts with a letter or digit, and contains only letters, digits, `-`, `_` and `.`.
 
+The command stores the alias in your configuration file. To use a different file, set the environment variable `ASFALOAD_CONFIG_FILE` to its path, or add `--config-file <path>` to each command.
+
 ### 2. Show the aliases
 
 Show all aliases:

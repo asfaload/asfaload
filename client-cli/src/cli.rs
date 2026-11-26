@@ -79,7 +79,7 @@ pub struct JsonArgs {
 #[derive(clap::Args, Debug)]
 pub struct ConfigFile {
     /// Config file path
-    #[arg(long, short)]
+    #[arg(long, short, env = "ASFALOAD_CONFIG_FILE")]
     pub config_file: Option<PathBuf>,
 }
 

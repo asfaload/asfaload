@@ -66,7 +66,15 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Interactive selection
 
-When `<FILE_PATH>` is omitted, the command fetches your pending files and keeps only the files with the expected digest (from `--digest` or `--local-copy`). On a terminal, it shows an interactive `Select` prompt. Each proposal shows the file path and its digest. Use `↑`/`↓` to move through the list, or type to filter it.
+When `<FILE_PATH>` is omitted, the command fetches your pending files and keeps only the files with the expected digest (from `--digest` or `--local-copy`). On a terminal, it shows an interactive `Select` prompt. Each proposal shows a number, the file path and a short digest, in the same format as [`list-pending`](list-pending.md):
+
+    ? File to sign
+    > 1. path:   https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
+         digest: sha512:2e2fde4e....c41438d7
+
+The list is shown even when only one file has the expected digest. The command signs a file only after you select it. This allows you to validate that you sign the expected path.
+
+Use `↑`/`↓` to move through the list, or type to filter it.
 
 If nothing is pending, the command fails with `No pending signature found`. If files are pending, but none has the expected digest, the command fails with `No pending file has the expected digest <DIGEST>`. If stdin is not a terminal (e.g. in CI), the command fails with `Not a tty and no path to sign was passed.` — pass `<FILE_PATH>` explicitly in that case.
 

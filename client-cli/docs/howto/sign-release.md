@@ -18,9 +18,23 @@ asfaload-cli list-pending --secret-key mykey
 Each pending file is listed with its path and a short digest:
 
 ```
-Files requiring your signature:
-  - path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
-digest: sha512:2e2fde4e....c41438d7
+Files requiring your signature
+  1. path:   https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+     digest: sha512:2e2fde4e....c41438d7
+
+Before you sign
+  The digests above are shortened. Get the full digest of the file from
+  the user who started the signature process. Use the full digest to
+  sign. Make sure that it starts and ends like the shortened digest.
+
+Next step
+  To sign pending file 1, run this command. Replace <full-digest> with the
+  full digest:
+
+     asfaload-cli sign-pending \
+       --digest <full-digest> \
+       https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json \
+       --secret-key mykey
 ```
 
 ### 2. Sign the release index

@@ -105,8 +105,8 @@ These run silently in the driver to bridge demos:
 - **After `create-signers-file.tape`**: copy `$HOME/signers.json` into the fileserver doc-root at `demo-project/asfaload.signers/index.json`. Equivalent of the how-to's "commit and push".
 - **After `update-signers-file.tape`**: run `sign-pending` for `key_0` through `key_6` so the v2 signers file becomes active. The signing-round how-to (`activate-signers-file`) already showed the user-facing flow, so we don't re-record it here. This is what makes `revoke-release` work — the active signers file now has a revocation group.
 - **Backend URL and password file via env vars**: the driver exports `ASFALOAD_BACKEND_URL` (the local rest-api) and `ASFALOAD_PASSWORD_FILE` (the fixture `.demo-password`) to the `vhs` process. The CLI reads both through clap's env support, so on-screen commands omit `-u` and `--password-file`. In a real session the user only passes `-u` to override the default backend (`https://backend.asfaload.com`) and supplies the password interactively or via `--password-file`.
-- **Configuration directory**: the driver sets `XDG_CONFIG_HOME` to `$HOME/.config` in the fixture. Thus, the `alias` command writes its configuration file in the fixture, and not in your own configuration directory.
-- **Data directory**: the driver sets `XDG_DATA_HOME` to `$HOME/.local/share` in the fixture. Thus, the keys dir is in the fixture, and `new-keys` does not write in your own keys dir.
+- **Configuration directory**: the driver sets `XDG_CONFIG_HOME` to `$HOME/.config` in the fixture. It also exports `ASFALOAD_CONFIG_FILE` with a path in the fixture, for the tapes and the hidden steps. Thus, the `alias` command writes its configuration file in the fixture, and not in your own configuration directory.
+- **Data directory**: the driver sets `XDG_DATA_HOME` to `$HOME/.local/share` in the fixture. It also exports `ASFALOAD_KEYS_DIR` with the keys dir in the fixture, for the tapes and the hidden steps. Thus, the keys dir is in the fixture, and `new-keys` does not write in your own keys dir.
 
 ## Env vars exposed to tapes
 

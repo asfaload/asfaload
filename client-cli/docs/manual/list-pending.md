@@ -52,11 +52,27 @@ These variables provide fallbacks for the matching options. Password sources are
 
 ## Output
 
-Human-readable (default), when files are pending. Each entry shows the path and a short digest: the start and the end of the digest that the backend gives. The full digest is not shown, because you must not take the expected digest of [`sign-pending`](sign-pending.md) from the backend. Use the short digest to make sure that the pending file has the digest that you expect, for example when `sign-pending` reports a digest mismatch:
+Human-readable (default), when files are pending. Each entry shows a number, the path and a short digest: the start and the end of the digest that the backend gives. The full digest is not shown, because you must not take the expected digest of [`sign-pending`](sign-pending.md) from the backend. Use the short digest to make sure that the pending file has the digest that you expect, for example when `sign-pending` reports a digest mismatch:
 
-    Files requiring your signature:
-      - path: https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
-    digest: sha512:2e2fde4e....c41438d7
+    Files requiring your signature
+      1. path:   https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
+         digest: sha512:2e2fde4e....c41438d7
+
+    Before you sign
+      The digests above are shortened. Get the full digest of the file from
+      the user who started the signature process. Use the full digest to
+      sign. Make sure that it starts and ends like the shortened digest.
+
+    Next step
+      To sign pending file 1, run this command. Replace <full-digest> with the
+      full digest:
+
+         asfaload-cli sign-pending \
+           --digest <full-digest> \
+           https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json \
+           --secret-key key
+
+The `sign-pending` example uses the first pending file with a path that is safe in a shell command, and gives the number of this file. To sign a different file, replace the path. When no path is safe, the example shows `<file-path>`. The example uses the `--secret-key` and `--keys-dir` values that you gave to `list-pending`. The sample above is the output of `asfaload-cli list-pending -K key`. When a value contains characters that are not safe in a shell command, the example shows `--secret-key <secret-key>` instead.
 
 When nothing is pending:
 

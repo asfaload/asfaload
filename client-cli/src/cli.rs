@@ -79,7 +79,7 @@ pub struct JsonArgs {
 #[derive(clap::Args, Debug)]
 pub struct ConfigFile {
     /// Config file path
-    #[arg(long, short)]
+    #[arg(long, short, env = "ASFALOAD_CONFIG_FILE")]
     pub config_file: Option<PathBuf>,
 }
 
@@ -495,7 +495,7 @@ pub enum Commands {
         #[arg(long, value_enum, default_value = "bash")]
         shell: ShellKind,
     },
-    /// Manage aliases for keys.
+    /// Manage aliases for public keys.
     ///
     /// An alias is a name you assign to a public key.
     /// It is stored locally, and is only useful for humans.

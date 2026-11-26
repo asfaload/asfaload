@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::cli::DEFAULT_BACKEND;
+use crate::commands::list_pending::{number_width, pending_file_entry};
 use crate::commands::release_download_output::{
     is_release_index_path, print_release_download_next_step,
 };
@@ -16,7 +17,46 @@ use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
     AsfaloadSignatures, SignersConfigMetadata, sha512_for_content, to_posix_json,
 };
-use rest_api_types::{SubmitSignatureResponse, models::ClientPendingFile};
+use rest_api_types::{
+    SubmitSignatureResponse,
+    models::{ClientPendingFile, PendingFile, SafePendingFile},
+};
+
+/// A pending file in the interactive selection of sign-pending.
+pub struct PendingFileChoice {
+    number: usize,
+    width: usize,
+    file: PendingFile,
+}
+
+impl PendingFileChoice {
+    /// Number the files as list-pending does.
+    pub fn from_files(files: Vec<PendingFile>) -> Vec<PendingFileChoice> {
+        let width = number_width(files.len());
+        files
+            .into_iter()
+            .enumerate()
+            .map(|(index, file)| PendingFileChoice {
+                number: index + 1,
+                width,
+                file,
+            })
+            .collect()
+    }
+
+    pub fn unseal(&self) -> ClientPendingFile {
+        self.file.unseal()
+    }
+}
+
+// The selection prompt writes its cursor before the first line, which
+// pending_file_entry expects. The last new line separates the entries.
+impl std::fmt::Display for PendingFileChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let entry = pending_file_entry(self.number, self.width, &SafePendingFile::from(&self.file));
+        writeln!(f, "{entry}")
+    }
+}
 
 /// Handle the sign-pending command.
 ///
@@ -267,6 +307,53 @@ mod tests {
     use super::*;
     use crate::error::ClientCliError;
     use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
+
+    fn pending_file(path: &str, digest_char: char) -> PendingFile {
+        let digest = format!("sha512:{}", digest_char.to_string().repeat(128));
+        serde_json::from_str(&format!(r#"{{"path":"{path}","digest":"{digest}"}}"#)).unwrap()
+    }
+
+    #[test]
+    fn pending_file_choices_align_path_and_digest() {
+        let choices = PendingFileChoice::from_files(vec![
+            pending_file("o/r/v1/asfaload.index.json", 'a'),
+            pending_file(r"o/r/\u001b[2Jx", 'b'),
+        ]);
+        // The selection prompt writes "> " or "  " before the first line.
+        assert_eq!(
+            choices[0].to_string(),
+            "1. path:   o/r/v1/asfaload.index.json\n     digest: sha512:aaaaaaaa....aaaaaaaa\n"
+        );
+        assert_eq!(
+            choices[1].to_string(),
+            "2. path:   o/r/[2Jx\n     digest: sha512:bbbbbbbb....bbbbbbbb\n"
+        );
+    }
+
+    #[test]
+    fn pending_file_choices_align_numbers_from_ten_files() {
+        let paths: Vec<String> = (0..10).map(|i| format!("o/r/v{i}/a.json")).collect();
+        let choices = PendingFileChoice::from_files(
+            paths.iter().map(|path| pending_file(path, 'a')).collect(),
+        );
+        assert_eq!(
+            choices[0].to_string(),
+            " 1. path:   o/r/v0/a.json\n      digest: sha512:aaaaaaaa....aaaaaaaa\n"
+        );
+        assert_eq!(
+            choices[9].to_string(),
+            "10. path:   o/r/v9/a.json\n      digest: sha512:aaaaaaaa....aaaaaaaa\n"
+        );
+    }
+
+    #[test]
+    fn pending_file_choice_unseals_the_full_digest() {
+        let file = pending_file("o/r/v1/asfaload.index.json", 'a');
+        let choices = PendingFileChoice::from_files(vec![file.clone()]);
+        let unsealed = choices[0].unseal();
+        assert_eq!(unsealed.path(), file.path());
+        assert_eq!(unsealed.digest(), file.digest());
+    }
 
     fn files(paths: &[&str]) -> HashMap<String, Vec<u8>> {
         paths

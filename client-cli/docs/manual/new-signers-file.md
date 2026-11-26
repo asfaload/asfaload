@@ -84,6 +84,10 @@ Emit output as JSON instead of human-readable text.
 
 The configuration file to read aliases from, instead of the default file. Refer to [alias](alias.md#configuration-file).
 
+## Environment
+
+- `ASFALOAD_CONFIG_FILE` — alternative to `--config-file`.
+
 ## Output
 
 Human-readable (default):

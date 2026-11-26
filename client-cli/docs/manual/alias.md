@@ -47,7 +47,7 @@ The default location is `asfaload-cli/config.toml` in your configuration directo
 - Linux and macOS: `$XDG_CONFIG_HOME/asfaload-cli/config.toml`, or `~/.config/asfaload-cli/config.toml` when `XDG_CONFIG_HOME` is not set.
 - Windows: `%APPDATA%\asfaload-cli\config.toml`.
 
-Use `--config-file` to use a different file.
+Use `--config-file` or the environment variable `ASFALOAD_CONFIG_FILE` to use a different file. All the commands that show aliases use this file. If you set both, `--config-file` is used.
 
 The file is in TOML format. Each alias is an entry in the `[aliases]` table:
 
@@ -87,6 +87,10 @@ The configuration file to use instead of the default file.
 ### `--json`
 
 Write the result as JSON instead of human-readable text.
+
+## Environment
+
+- `ASFALOAD_CONFIG_FILE` — alternative to `--config-file`.
 
 ## Output
 

@@ -107,9 +107,46 @@ fn list_pending_output_shows_only_paths_and_digests() {
         .env("ASFALOAD_LIST_PENDING_PASSWORD", "password");
 
     let expected = format!(
-        "Files requiring your signature:\n  - path: releases/v1/file-a.tar.gz\ndigest: {SHORT_DIGEST_A}\n\n  - path: releases/v1/file-b.tar.gz\ndigest: {SHORT_DIGEST_B}\n\n"
+        "Files requiring your signature\n  1. path:   releases/v1/file-a.tar.gz\n     digest: {SHORT_DIGEST_A}\n\n  2. path:   releases/v1/file-b.tar.gz\n     digest: {SHORT_DIGEST_B}\n\n"
     );
-    cmd.assert().success().stdout(expected);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::starts_with(expected));
+}
+
+#[test]
+fn list_pending_output_shows_how_to_sign() {
+    let mut server = mockito::Server::new();
+    let _m = server
+        .mock("GET", "/v1/pending_signatures")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(pending_response_json(&[(
+            "releases/v1/file-a.tar.gz",
+            DIGEST_A,
+        )]))
+        .create();
+
+    let keys_dir = test_helpers::fixtures_keys_dir();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("list-pending")
+        .arg("--keys-dir")
+        .arg(&keys_dir)
+        .arg("-K")
+        .arg("key_0")
+        .arg("-u")
+        .arg(server.url())
+        .env("ASFALOAD_LIST_PENDING_PASSWORD", "password");
+
+    let expected_command = format!(
+        " sign-pending \\\n       --digest <full-digest> \\\n       releases/v1/file-a.tar.gz \\\n       --backend-url {} \\\n       --keys-dir {} \\\n       --secret-key key_0\n",
+        server.url(),
+        keys_dir.display()
+    );
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Get the full digest of the file"))
+        .stdout(predicate::str::ends_with(expected_command));
 }
 
 // ---------------------------------------------------------------------------

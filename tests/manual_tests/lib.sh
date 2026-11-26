@@ -9,6 +9,9 @@
 # Functions set these variables for the caller:
 #   WORK_DIR            temp workspace, removed by mt_cleanup
 #   PASSWORD_FILE       file containing the fixture key password
+#   CLI_KEYS_DIR        keys dir of the CLI with the fixture keys, so the user's
+#                       keys dir is not used
+#   CLI_CONFIG_FILE     config file of the CLI, so the user's config is not used
 #   CLI                 path to the built asfaload-cli binary
 #   FS_ROOT PROJECT_DIR file server root and project dir within it
 #   FILE_SERVER_URL     local file server address
@@ -38,6 +41,14 @@ mt_init_workspace() {
     printf '%s' "$key_password" > "$PASSWORD_FILE"
     export ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE"
 
+    CLI_KEYS_DIR="$WORK_DIR/keys"
+    CLI_CONFIG_FILE="$WORK_DIR/config/config.toml"
+    mkdir -p "$CLI_KEYS_DIR" "$(dirname "$CLI_CONFIG_FILE")"
+    # So that keys can be given by name, e.g. -K key_1.
+    cp "$KEYS_DIR"/key_* "$CLI_KEYS_DIR/"
+    export ASFALOAD_KEYS_DIR="$CLI_KEYS_DIR"
+    export ASFALOAD_CONFIG_FILE="$CLI_CONFIG_FILE"
+
     trap mt_cleanup EXIT
 }
 
@@ -49,6 +60,18 @@ mt_build_binaries() {
     printf '%s✓%s\n' "$GREEN" "$RESET"
 
     CLI="$REPO_ROOT/target/debug/asfaload-cli"
+}
+
+# Create the aliases alias_key_0 .. alias_key_9 for the public keys of
+# KEY_0 .. KEY_9. Requires CLI, thus call after mt_build_binaries.
+mt_create_aliases() {
+    printf '%sCreating aliases...%s ' "$DIM" "$RESET"
+    local _n _key_var
+    for _n in $(seq 0 9); do
+        _key_var="KEY_$_n"
+        "$CLI" alias "alias_key_$_n" --key "$(cat "${!_key_var}.pub")" > /dev/null
+    done
+    printf '%s✓%s\n' "$GREEN" "$RESET"
 }
 
 mt_start_file_server() {
@@ -128,9 +151,13 @@ mt_spawn_shell() {
         printf '[ -f ~/.bashrc ] && source ~/.bashrc\n\n'
         printf 'export ASFALOAD_BACKEND_URL="%s"\n' "$BACKEND_URL"
         printf 'export ASFALOAD_PASSWORD_FILE="%s"\n' "$PASSWORD_FILE"
-        printf 'export KEY_0="%s"\n' "$KEY_0"
-        printf 'export KEY_1="%s"\n' "$KEY_1"
-        printf 'export KEY_2="%s"\n' "$KEY_2"
+        printf 'export ASFALOAD_KEYS_DIR="%s"\n' "$CLI_KEYS_DIR"
+        printf 'export ASFALOAD_CONFIG_FILE="%s"\n' "$CLI_CONFIG_FILE"
+        local _n _key_var
+        for _n in $(seq 0 9); do
+            _key_var="KEY_$_n"
+            printf 'export %s="%s"\n' "$_key_var" "${!_key_var}"
+        done
         if [[ -n "${FILE_SERVER_URL:-}" ]]; then
             printf 'export FILE_SERVER_URL="%s"\n' "$FILE_SERVER_URL"
         fi

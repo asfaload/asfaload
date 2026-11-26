@@ -57,6 +57,7 @@ done
 
 mt_init_workspace
 mt_build_binaries
+mt_create_aliases
 mt_start_file_server
 mt_start_backend
 

@@ -74,6 +74,7 @@ done
 
 mt_init_workspace
 mt_build_binaries
+mt_create_aliases
 mt_start_backend
 
 # Locate a pending file by mirror-path substring and print "PATH --digest D",

@@ -227,6 +227,8 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(list_pending::handle_list_pending_command(
                 &url,
                 &secret_key,
+                &secret_key_args.secret_key,
+                secret_key_args.keys_dir_args.keys_dir.as_deref(),
                 digest_filter.digest_filter.clone(),
                 json_args.json,
             ))?;

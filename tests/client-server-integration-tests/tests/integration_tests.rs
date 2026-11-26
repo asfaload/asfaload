@@ -118,6 +118,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&secret_key_path),
+            &secret_key_path.to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -174,6 +176,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&secret_key_path),
+            &secret_key_path.to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -252,6 +256,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&secret_key_path),
+            &secret_key_path.to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -308,6 +314,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&secret_key_path),
+            &secret_key_path.to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -352,6 +360,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&secret_key_path),
+            &secret_key_path.to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -427,6 +437,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&secret_key_path),
+            &secret_key_path.to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -523,6 +535,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&key_paths[0]),
+            &key_paths[0].to_string_lossy(),
+            None,
             None,
             false,
         )
@@ -596,6 +610,8 @@ mod tests {
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
             &load_secret_key(&key_paths[0]),
+            &key_paths[0].to_string_lossy(),
+            None,
             None,
             false,
         )

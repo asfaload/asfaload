@@ -165,3 +165,18 @@ fn test_new_keys_reports_existing_key_before_asking_password() {
         ))
         .stderr(predicate::str::contains("PASSWORD_ASKED").not());
 }
+
+// Clap shows the options set from environment variables in the usage of an error.
+// They must not look required.
+#[test]
+fn test_new_keys_error_usage_omits_options_set_from_env() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-keys")
+        .env("ASFALOAD_KEYS_DIR", temp_dir.path())
+        .env("ASFALOAD_PASSWORD_FILE", temp_dir.path().join("password"));
+    cmd.assert().code(2).stderr(predicate::str::contains(
+        "Usage: asfaload-cli new-keys [OPTIONS] --name <NAME>\n",
+    ));
+}

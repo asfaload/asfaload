@@ -1,6 +1,9 @@
 use crate::{commands::shell::ShellKind, utils::keys_dir_help};
-use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use clap::{
+    CommandFactory, Parser, Subcommand,
+    error::{ContextKind, ContextValue},
+};
+use std::{ffi::OsString, path::PathBuf};
 
 /// Default backend API URL
 pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
@@ -118,6 +121,33 @@ pub struct Cli {
     /// Show the manual page of the command, or the index page without a command
     #[arg(long, global = true)]
     pub manual: bool,
+}
+
+/// Replaces the usage of a parse error with the usage that `--help` shows.
+///
+/// In the usage of an error, clap also shows the options that got a value from an
+/// environment variable. Thus, an optional argument looks required.
+pub fn with_help_usage(mut error: clap::Error, args: &[OsString]) -> clap::Error {
+    if error.get(ContextKind::Usage).is_none() {
+        return error;
+    }
+    let mut cli_command = Cli::command();
+    cli_command.build();
+    let subcommand_name = cli_command
+        .clone()
+        .ignore_errors(true)
+        .try_get_matches_from(args)
+        .ok()
+        .and_then(|matches| matches.subcommand_name().map(str::to_string));
+    let usage = match subcommand_name
+        .as_deref()
+        .and_then(|name| cli_command.find_subcommand_mut(name))
+    {
+        Some(subcommand) => subcommand.render_usage(),
+        None => cli_command.render_usage(),
+    };
+    error.insert(ContextKind::Usage, ContextValue::StyledStr(usage));
+    error
 }
 
 #[derive(Subcommand, Debug)]

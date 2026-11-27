@@ -115,6 +115,11 @@ impl ConfigAccessor {
         Ok(self.config.get_or_init(|| config))
     }
 
+    /// The config file that get() and save() use: the given path, or the default path.
+    pub fn path(&self) -> Result<PathBuf, ClientLibError> {
+        build_config_path(self.path.as_deref())
+    }
+
     /// Write the config to the file of the accessor, and keep it for the next get().
     pub fn save(&mut self, config: CliConfig) -> Result<(), ClientLibError> {
         let config_path = build_config_path(self.path.as_deref())?;
@@ -203,6 +208,14 @@ mod tests {
     fn build_config_path_returns_given_path() -> anyhow::Result<()> {
         let path = PathBuf::from("/some/dir/my-config.toml");
         assert_eq!(build_config_path(Some(&path))?, path);
+        Ok(())
+    }
+
+    #[test]
+    fn accessor_path_is_the_given_or_default_path() -> anyhow::Result<()> {
+        let path = PathBuf::from("/some/dir/my-config.toml");
+        assert_eq!(ConfigAccessor::new(&Some(path.clone())).path()?, path);
+        assert_eq!(ConfigAccessor::new(&None).path()?, build_config_path(None)?);
         Ok(())
     }
 

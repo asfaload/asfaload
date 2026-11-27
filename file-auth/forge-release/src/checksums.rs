@@ -1,4 +1,4 @@
-use common::into_url::IntoUrl;
+use common::{http::FetchError, into_url::IntoUrl};
 use features_lib::{AsfaloadIndex, ChecksumSourceFormat, FileChecksum, parse_checksums};
 use futures_util::{StreamExt, stream};
 use rest_api_types::{CommonBasePath, validate_common_parent};
@@ -50,15 +50,15 @@ async fn download_checksum_file(
     use futures_util::StreamExt as _;
 
     let response = client.get(url).send().await.map_err(|e| {
-        ReleaseHandlingError::Generic(format!("Failed to download checksums file: {}", e))
+        FetchError::RequestFailed(format!("Failed to download checksums file: {}", e))
     })?;
 
     if response.status() != reqwest::StatusCode::OK {
-        return Err(ReleaseHandlingError::Generic(format!(
-            "HTTP error downloading checksums file {}: {}",
-            url,
-            response.status()
-        )));
+        return Err(FetchError::HttpError {
+            status: response.status().as_u16(),
+            url: url.to_string(),
+        }
+        .into());
     }
 
     if let Some(len) = response.content_length()
@@ -76,7 +76,7 @@ async fn download_checksum_file(
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| {
-            ReleaseHandlingError::Generic(format!("Error reading checksums stream: {}", e))
+            FetchError::BodyReadError(format!("Error reading checksums stream: {}", e))
         })?;
 
         total_bytes += chunk.len() as u64;
@@ -339,14 +339,14 @@ mod tests {
         let url = format!("{}/missing", server.url());
 
         match download_checksum_file(&reqwest::Client::new(), &url).await {
-            Err(ReleaseHandlingError::Generic(msg)) => {
-                assert!(
-                    msg.contains("HTTP error downloading checksums file"),
-                    "unexpected message: {msg}"
-                );
-                assert!(msg.contains("404"), "unexpected message: {msg}");
+            Err(ReleaseHandlingError::FetchError(FetchError::HttpError {
+                status,
+                url: error_url,
+            })) => {
+                assert_eq!(status, 404);
+                assert_eq!(error_url, url);
             }
-            other => panic!("expected a Generic error, got {other:?}"),
+            other => panic!("expected an HttpError, got {other:?}"),
         }
         mock.assert_async().await;
     }
@@ -427,11 +427,11 @@ mod tests {
         let url = "http://127.0.0.1:1/checksums";
 
         match download_checksum_file(&reqwest::Client::new(), url).await {
-            Err(ReleaseHandlingError::Generic(msg)) => assert!(
+            Err(ReleaseHandlingError::FetchError(FetchError::RequestFailed(msg))) => assert!(
                 msg.contains("Failed to download checksums file"),
                 "unexpected message: {msg}"
             ),
-            other => panic!("expected a Generic error, got {other:?}"),
+            other => panic!("expected a RequestFailed error, got {other:?}"),
         }
     }
 
@@ -589,13 +589,13 @@ mod tests {
         let urls = urls_for(&server, &["/good", "/missing"]);
 
         match index_from_shasums_urls(&reqwest::Client::new(), &urls).await {
-            Err(ReleaseHandlingError::Generic(msg)) => assert!(
-                msg.contains("HTTP error downloading checksums file"),
-                "unexpected message: {msg}"
-            ),
-            Err(other) => panic!("expected a Generic error, got {other:?}"),
+            Err(ReleaseHandlingError::FetchError(FetchError::HttpError { status, url })) => {
+                assert_eq!(status, 404);
+                assert!(url.ends_with("/missing"), "unexpected url: {url}");
+            }
+            Err(other) => panic!("expected an HttpError, got {other:?}"),
             Ok(index) => panic!(
-                "expected a Generic error, got a successful index with {} published files",
+                "expected an HttpError, got a successful index with {} published files",
                 index.published_files.len()
             ),
         }

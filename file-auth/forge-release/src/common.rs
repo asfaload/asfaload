@@ -218,9 +218,9 @@ impl VerifiedClientData {
 
         // Retrieve the release and build our own index: the client index
         // must publish exactly the files we find there, with identical hashes.
-        let release: R = fetcher.fetch(data.sources.to_urls()).await.map_err(|e| {
-            ReleaseHandlingError::Generic(format!("Could not retrieve release: {}", e))
-        })?;
+        // The error is kept as it is: its variant tells a client error
+        // from a server-side failure.
+        let release: R = fetcher.fetch(data.sources.to_urls()).await?;
 
         let index = release.generate_index().await?;
 

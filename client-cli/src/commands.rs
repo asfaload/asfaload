@@ -666,6 +666,11 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         Commands::Manual { command } => {
             crate::manual::show(command.as_deref().unwrap_or(crate::manual::INDEX_PAGE))?;
         }
+        Commands::Workflow => {
+            crate::manual::show_markdown(&crate::manual::remove_see_lines(
+                crate::manual::WORKFLOW,
+            ))?;
+        }
     }
     Ok(())
 }

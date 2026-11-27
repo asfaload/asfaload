@@ -84,3 +84,10 @@ fn manual_subcommand_with_unknown_command_fails() {
         .code(2)
         .stderr(contains("invalid value"));
 }
+
+#[test]
+fn workflow_subcommand_shows_the_workflow() {
+    let text = stdout_of(&["workflow"]);
+    assert!(text.contains("The Asfaload workflow"), "{text}");
+    assert!(!text.contains("See "), "{text}");
+}

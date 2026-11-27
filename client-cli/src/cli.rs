@@ -554,6 +554,16 @@ pub enum Commands {
         #[arg(long, short, requires = "alias_target")]
         delete: bool,
     },
+    /// List your key files and the aliases of public keys
+    Keys {
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
+        /// Configuration file to use instead of the default file
+        #[command(flatten)]
+        config_args: ConfigFile,
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
     /// Show the manual of asfaload-cli, equivalent to --manual available on every command.
     #[command(display_order = 0)]
     Manual {
@@ -601,6 +611,7 @@ impl Commands {
             Self::Complete { .. } => "COMPLETE",
             Self::Shell { .. } => "SHELL",
             Self::Alias { .. } => "ALIAS",
+            Self::Keys { .. } => "KEYS",
             Self::Manual { .. } => "MANUAL",
         }
     }
@@ -635,7 +646,8 @@ impl Commands {
             | Self::Ping { json_args, .. }
             | Self::CheckIndex { json_args, .. }
             | Self::CheckPendingSigners { json_args, .. }
-            | Self::Alias { json_args, .. } => json_args.json,
+            | Self::Alias { json_args, .. }
+            | Self::Keys { json_args, .. } => json_args.json,
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::FetchFile { json_args, .. } => json_args.json,
             Self::Download { .. } => false,

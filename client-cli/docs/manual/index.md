@@ -6,6 +6,7 @@ Reference for all `asfaload-cli` commands. To show the page of a command in the 
 
 - [`new-keys`](new-keys.md) — generate a new signing key pair
 - [`share-key`](share-key.md) — print your public key and a message for sharing it
+- [`keys`](keys.md) — list your key files and the aliases of public keys
 
 ## Signers
 

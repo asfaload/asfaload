@@ -6,6 +6,18 @@ use std::path::{Path, PathBuf};
 use common::errors::keys::{SignError, SignatureError, VerifyError, append_pub_extension};
 use common::{AsfaloadHashes, errors::keys::KeyError};
 
+/// True when `head` starts with the marker of a secret key of a supported format (no I/O).
+pub fn is_secret_key_head(head: &str) -> bool {
+    head.starts_with(asfaload::ASFALOAD_PRIV_PREFIX)
+        || head.starts_with(OPENSSH_PRIVATE_KEY_PEM_HEADER)
+}
+
+/// True when `head` starts with the marker of a public key of a supported format (no I/O).
+pub fn is_public_key_head(head: &str) -> bool {
+    head.starts_with(asfaload::ASFALOAD_PUB_PREFIX)
+        || head.starts_with(asfaload::SSH_ED25519_PREFIX)
+}
+
 /// Resolve secret-key and public-key file paths from a save target,
 /// and refuse to overwrite existing files.
 ///
@@ -233,6 +245,47 @@ pub trait AsfaloadSignatureTrait: Sized {
 mod key_format_tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn test_is_secret_key_head() {
+        let cases = [
+            ("asfaload-priv:QVNGQUxPQUQB", true),
+            ("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk", true),
+            (
+                "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8",
+                false,
+            ),
+            ("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA", false),
+            (" asfaload-priv:QVNGQUxPQUQB", false),
+            ("some text", false),
+            ("", false),
+        ];
+        for (head, expected) in cases {
+            assert_eq!(is_secret_key_head(head), expected, "head {head:?}");
+        }
+    }
+
+    #[test]
+    fn test_is_public_key_head() {
+        let cases = [
+            (
+                "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8",
+                true,
+            ),
+            ("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA", true),
+            ("asfaload-priv:QVNGQUxPQUQB", false),
+            (
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk",
+                false,
+            ),
+            (" asfaload-pub:b5S+CxuqICIUn", false),
+            ("some text", false),
+            ("", false),
+        ];
+        for (head, expected) in cases {
+            assert_eq!(is_public_key_head(head), expected, "head {head:?}");
+        }
+    }
 
     #[test]
     fn test_key_format_display() {

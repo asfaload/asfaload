@@ -110,6 +110,7 @@ pub struct ForgeTypeArgs {
 #[derive(Parser, Debug)]
 #[command(name = "asfaload-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
+#[command(next_display_order = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -523,7 +524,8 @@ pub enum Commands {
         #[arg(long, short, requires = "alias_target")]
         delete: bool,
     },
-    /// Show the manual of asfaload-cli, or the manual page of one command
+    /// Show the manual of asfaload-cli, equivalent to --manual available on every command.
+    #[command(display_order = 0)]
     Manual {
         /// Command to show the manual page of. Without it, show the index page.
         #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::manual::page_names()))]

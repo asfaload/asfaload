@@ -2,7 +2,12 @@ use std::ffi::OsString;
 
 use anyhow::Result;
 use clap::Parser;
-use client_cli::{cli::Cli, commands::handle_command, manual, output::JsonError};
+use client_cli::{
+    cli::{Cli, with_help_usage},
+    commands::handle_command,
+    manual,
+    output::JsonError,
+};
 
 fn main() -> Result<()> {
     // `--manual` must work without the required arguments of the subcommand, so it is
@@ -11,7 +16,7 @@ fn main() -> Result<()> {
     if let Some(page) = manual::requested_page(&args) {
         return manual::show(page);
     }
-    let cli = Cli::parse_from(args);
+    let cli = Cli::try_parse_from(&args).unwrap_or_else(|e| with_help_usage(e, &args).exit());
     let json = cli.command.json_output();
 
     if let Err(e) = handle_command(&cli) {

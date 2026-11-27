@@ -43,7 +43,8 @@ fn alias_without_args_lists_all_aliases() -> anyhow::Result<()> {
         .clone();
 
     let expected = format!(
-        "alice = \"{}\"\nbob = \"{}\"\n",
+        "# Config file: {}\nalice = \"{}\"\nbob = \"{}\"\n",
+        config_path.display(),
         key_0.to_base64(),
         key_1.to_base64()
     );
@@ -64,7 +65,13 @@ fn alias_lookups_without_config_do_not_create_it() -> anyhow::Result<()> {
         .success()
         .get_output()
         .clone();
-    assert_eq!(String::from_utf8(output.stdout)?.trim(), "");
+    assert_eq!(
+        String::from_utf8(output.stdout)?,
+        format!(
+            "# Config file: {} (does not exist)\n",
+            config_path.display()
+        )
+    );
     alias_cmd(&config_path).arg("alice").assert().failure();
     alias_cmd(&config_path)
         .arg("--key")

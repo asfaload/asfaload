@@ -3,6 +3,7 @@ use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseUrlErro
 use crate::file_auth::releasers::ReleaseAdders;
 use aggregate_signature::get_authorized_signers_for_file;
 use common::errors::AggregateSignatureError;
+use common::http::FetchError;
 use common::{AsfaloadHashes, SignedFileLoader};
 use features_lib::{AsfaloadPublicKeyTrait, SignedFileWithKindTrait};
 use forge_release::common::{ClientProvidedData, ReleaseHandlingError};
@@ -106,20 +107,7 @@ impl ReleaseActor {
                     ReleaseUrlError::MissingComponent(msg) => ApiError::InvalidReleaseUrl(msg),
                 },
                 ReleaseError::ClientError(e) => ApiError::InternalServerError(e),
-                // Retrieval and parsing of the release themselves are
-                // server-side problems; invalid data or urls are
-                // user-provided and lead to a bad request.
-                ReleaseError::Generic(e) => match e {
-                    ReleaseHandlingError::FetchError(_) | ReleaseHandlingError::ParseError(_) => {
-                        ApiError::InternalServerError(e.to_string())
-                    }
-                    ReleaseHandlingError::InvalidData(_)
-                    | ReleaseHandlingError::InvalidUrl(_)
-                    | ReleaseHandlingError::Generic(_) => {
-                        ApiError::InvalidRequestBody(e.to_string())
-                    }
-                    other => ApiError::Generic(format!("An error occured: {}", other)),
-                },
+                ReleaseError::Generic(e) => release_handling_error_to_api_error(e),
                 ReleaseError::SerdeError(e) => ApiError::InternalServerError(e.to_string()),
             }
         })?;
@@ -263,6 +251,25 @@ impl ReleaseActor {
     }
 }
 
+// Retrieval and parsing of the release themselves are
+// server-side problems; invalid data or urls are
+// user-provided and lead to a bad request.
+fn release_handling_error_to_api_error(e: ReleaseHandlingError) -> ApiError {
+    match e {
+        // The release or checksums file the client points to does not exist.
+        ReleaseHandlingError::FetchError(FetchError::HttpError { status: 404, .. }) => {
+            ApiError::InvalidRequestBody(e.to_string())
+        }
+        ReleaseHandlingError::FetchError(_) | ReleaseHandlingError::ParseError(_) => {
+            ApiError::InternalServerError(e.to_string())
+        }
+        ReleaseHandlingError::InvalidData(_)
+        | ReleaseHandlingError::InvalidUrl(_)
+        | ReleaseHandlingError::Generic(_) => ApiError::InvalidRequestBody(e.to_string()),
+        other => ApiError::Generic(format!("An error occured: {}", other)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
@@ -331,6 +338,50 @@ mod tests {
         ] {
             let (status, _) = mapped(e);
             assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // A release or checksums file that does not exist is a client error,
+    // while the other fetch failures are server-side problems.
+    #[test]
+    fn release_handling_errors_map_to_status() {
+        let http_error = |status| {
+            ReleaseHandlingError::FetchError(FetchError::HttpError {
+                status,
+                url: "https://example.com/release".to_string(),
+            })
+        };
+        let cases = [
+            (http_error(404), StatusCode::BAD_REQUEST),
+            (http_error(500), StatusCode::INTERNAL_SERVER_ERROR),
+            (http_error(403), StatusCode::INTERNAL_SERVER_ERROR),
+            (
+                ReleaseHandlingError::FetchError(FetchError::RequestFailed("timeout".to_string())),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                ReleaseHandlingError::FetchError(FetchError::RateLimitExceeded {
+                    retries: 3,
+                    url: "https://example.com/release".to_string(),
+                }),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                ReleaseHandlingError::InvalidData("bad index".to_string()),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                ReleaseHandlingError::InvalidUrl("bad url".to_string()),
+                StatusCode::BAD_REQUEST,
+            ),
+        ];
+        for (error, expected) in cases {
+            let description = error.to_string();
+            assert_eq!(
+                release_handling_error_to_api_error(error).to_http_status(),
+                expected,
+                "unexpected status for {description}"
+            );
         }
     }
 }

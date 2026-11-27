@@ -21,6 +21,7 @@ use crate::{
 
 pub mod alias;
 pub mod keys;
+pub mod list_keys;
 pub mod list_pending;
 pub mod share_key;
 pub mod sign_pending;
@@ -648,6 +649,19 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 }
             };
             println!("{}", output);
+        }
+        Commands::Keys {
+            keys_dir_args,
+            config_args,
+            json_args,
+        } => {
+            let keys_dir = get_keys_dir(&keys_dir_args.keys_dir)?;
+            let config_accessor = ConfigAccessor::new(&config_args.config_file);
+            // anstream removes the styles when stdout is not a terminal.
+            anstream::println!(
+                "{}",
+                list_keys::list_keys(&keys_dir, &config_accessor, json_args.json)?
+            );
         }
         Commands::Manual { command } => {
             crate::manual::show(command.as_deref().unwrap_or(crate::manual::INDEX_PAGE))?;

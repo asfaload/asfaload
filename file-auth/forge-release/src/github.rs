@@ -306,7 +306,7 @@ mod verified_client_data_tests {
     use super::*;
     use crate::common::{ClientProvidedData, IndexDateChecks, VerifiedClientData};
     use crate::github::test_utils::{
-        MockGithubReleaseFetcher, client_provided_data_for_index,
+        MOCK_RELEASE_PAGE_URL, MockGithubReleaseFetcher, client_provided_data_for_index,
         create_mocked_client_provided_data, mocked_client_provided_data_with_keys,
         mocked_release_index,
     };
@@ -382,6 +382,38 @@ mod verified_client_data_tests {
                 }
             }
             Err(e) => panic!("Expected InvalidData but got: {e}"),
+            Ok(_) => panic!("Expected client data verification to fail, but it succeeded"),
+        }
+    }
+
+    struct FailingFetcher;
+
+    impl ReleaseFetcher<GithubReleaseResponse> for FailingFetcher {
+        async fn fetch<U: IntoUrl + Clone + Sync>(
+            &self,
+            _url: &[U],
+        ) -> Result<GithubReleaseResponse, ReleaseHandlingError> {
+            Err(common::http::FetchError::HttpError {
+                status: 503,
+                url: MOCK_RELEASE_PAGE_URL.to_string(),
+            }
+            .into())
+        }
+    }
+
+    // The caller maps the fetch error to a status code, so its variant must
+    // not be lost.
+    #[tokio::test]
+    async fn keeps_fetch_error_unchanged() {
+        let (public_key, secret_key) = keys_with_password();
+        let data = mocked_client_provided_data_with_keys(public_key, secret_key);
+
+        match VerifiedClientData::new(data, &FailingFetcher).await {
+            Err(ReleaseHandlingError::FetchError(common::http::FetchError::HttpError {
+                status,
+                ..
+            })) => assert_eq!(status, 503),
+            Err(e) => panic!("Expected FetchError::HttpError but got: {e}"),
             Ok(_) => panic!("Expected client data verification to fail, but it succeeded"),
         }
     }

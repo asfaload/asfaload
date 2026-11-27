@@ -39,6 +39,7 @@ pub const PAGES: &[(&str, &str)] = &[
     page!("download"),
     page!("fetch-file"),
     page!("get-digest"),
+    page!("keys"),
     page!("list-pending"),
     page!("manual"),
     page!("new-keys"),

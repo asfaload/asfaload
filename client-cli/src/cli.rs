@@ -1,6 +1,9 @@
 use crate::{commands::shell::ShellKind, utils::keys_dir_help};
-use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use clap::{
+    CommandFactory, Parser, Subcommand,
+    error::{ContextKind, ContextValue},
+};
+use std::{ffi::OsString, path::PathBuf};
 
 /// Default backend API URL
 pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
@@ -110,6 +113,7 @@ pub struct ForgeTypeArgs {
 #[derive(Parser, Debug)]
 #[command(name = "asfaload-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
+#[command(next_display_order = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -117,6 +121,33 @@ pub struct Cli {
     /// Show the manual page of the command, or the index page without a command
     #[arg(long, global = true)]
     pub manual: bool,
+}
+
+/// Replaces the usage of a parse error with the usage that `--help` shows.
+///
+/// In the usage of an error, clap also shows the options that got a value from an
+/// environment variable. Thus, an optional argument looks required.
+pub fn with_help_usage(mut error: clap::Error, args: &[OsString]) -> clap::Error {
+    if error.get(ContextKind::Usage).is_none() {
+        return error;
+    }
+    let mut cli_command = Cli::command();
+    cli_command.build();
+    let subcommand_name = cli_command
+        .clone()
+        .ignore_errors(true)
+        .try_get_matches_from(args)
+        .ok()
+        .and_then(|matches| matches.subcommand_name().map(str::to_string));
+    let usage = match subcommand_name
+        .as_deref()
+        .and_then(|name| cli_command.find_subcommand_mut(name))
+    {
+        Some(subcommand) => subcommand.render_usage(),
+        None => cli_command.render_usage(),
+    };
+    error.insert(ContextKind::Usage, ContextValue::StyledStr(usage));
+    error
 }
 
 #[derive(Subcommand, Debug)]
@@ -523,7 +554,18 @@ pub enum Commands {
         #[arg(long, short, requires = "alias_target")]
         delete: bool,
     },
-    /// Show the manual of asfaload-cli, or the manual page of one command
+    /// List your key files and the aliases of public keys
+    Keys {
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
+        /// Configuration file to use instead of the default file
+        #[command(flatten)]
+        config_args: ConfigFile,
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
+    /// Show the manual of asfaload-cli, equivalent to --manual available on every command.
+    #[command(display_order = 0)]
     Manual {
         /// Command to show the manual page of. Without it, show the index page.
         #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::manual::page_names()))]
@@ -569,6 +611,7 @@ impl Commands {
             Self::Complete { .. } => "COMPLETE",
             Self::Shell { .. } => "SHELL",
             Self::Alias { .. } => "ALIAS",
+            Self::Keys { .. } => "KEYS",
             Self::Manual { .. } => "MANUAL",
         }
     }
@@ -603,7 +646,8 @@ impl Commands {
             | Self::Ping { json_args, .. }
             | Self::CheckIndex { json_args, .. }
             | Self::CheckPendingSigners { json_args, .. }
-            | Self::Alias { json_args, .. } => json_args.json,
+            | Self::Alias { json_args, .. }
+            | Self::Keys { json_args, .. } => json_args.json,
             Self::GetDigest { json_args, .. } => json_args.json,
             Self::FetchFile { json_args, .. } => json_args.json,
             Self::Download { .. } => false,

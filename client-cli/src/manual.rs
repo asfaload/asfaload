@@ -53,7 +53,27 @@ pub const PAGES: &[(&str, &str)] = &[
     page!("sign-pending"),
     page!("signature-status"),
     page!("update-signers"),
+    page!("workflow"),
 ];
+
+/// Markdown source of the workflow overview, shown by the `workflow` subcommand.
+pub const WORKFLOW: &str = include_str!("../docs/workflow.md");
+const SEE_LINE_START: &str = "See [";
+
+/// Removes the lines that start with `See [`, and the empty line after each of them. These lines
+/// link to the how-to guides, which are available on the web only.
+pub fn remove_see_lines(markdown: &str) -> String {
+    let mut output = String::with_capacity(markdown.len());
+    let mut lines = markdown.split_inclusive('\n').peekable();
+    while let Some(line) = lines.next() {
+        if line.starts_with(SEE_LINE_START) {
+            lines.next_if(|next| next.trim().is_empty());
+        } else {
+            output.push_str(line);
+        }
+    }
+    output
+}
 
 pub fn page_names() -> impl Iterator<Item = &'static str> {
     PAGES.iter().map(|(name, _)| *name)
@@ -241,6 +261,11 @@ fn styled_skin() -> MadSkin {
 /// Shows a manual page: in a pager when stdout is a terminal, else as plain text.
 pub fn show(page: &str) -> anyhow::Result<()> {
     let source = page_source(page).ok_or_else(|| anyhow::anyhow!("No manual page {page}"))?;
+    show_markdown(source)
+}
+
+/// Shows a Markdown document: in a pager when stdout is a terminal, else as plain text.
+pub fn show_markdown(source: &str) -> anyhow::Result<()> {
     let markdown = rewrite_links(source, Cli::command().get_name());
     let to_terminal = std::io::stdout().is_terminal();
     let styled = to_terminal && std::env::var_os("NO_COLOR").is_none();
@@ -472,6 +497,35 @@ mod tests {
                     "line wider than {width} in page {name}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn workflow_fits_the_width_and_has_no_raw_link() {
+        let markdown = rewrite_links(&remove_see_lines(WORKFLOW), "asfaload-cli");
+        assert!(!markdown.contains("]("), "raw link in workflow");
+        for width in [40, 60, 80] {
+            let text = render(&markdown, false, width);
+            assert!(
+                text.lines().all(|line| line.chars().count() <= width),
+                "line wider than {width} in workflow"
+            );
+        }
+    }
+
+    #[test]
+    fn remove_see_lines_removes_only_see_lines() {
+        let cases = vec![
+            ("Text.\n\nSee [a](a.md).\n\n## Next\n", "Text.\n\n## Next\n"),
+            ("See [a](a.md).\n", ""),
+            ("See [a](a.md).\nText.\n", "Text.\n"),
+            ("We See [a](a.md).\n", "We See [a](a.md).\n"),
+            ("See the guide.\n", "See the guide.\n"),
+            ("    See [a](a.md).\n", "    See [a](a.md).\n"),
+            ("", ""),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(remove_see_lines(input), expected, "input: {input:?}");
         }
     }
 

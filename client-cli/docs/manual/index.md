@@ -52,6 +52,7 @@ Reference for all `asfaload-cli` commands. To show the page of a command in the 
 ## Help
 
 - [`manual`](manual.md) — show the manual page of a command in the terminal
+- [`workflow`](workflow.md) — show an overview of the asfaload workflow
 
 ## Common notes
 

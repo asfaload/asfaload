@@ -118,7 +118,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    /// Show the manual page of the command, or the index page without a command
+    /// Show the manual page of your command
     #[arg(long, global = true)]
     pub manual: bool,
 }
@@ -565,12 +565,15 @@ pub enum Commands {
         json_args: JsonArgs,
     },
     /// Show the manual of asfaload-cli, equivalent to --manual available on every command.
-    #[command(display_order = 0)]
+    #[command(display_order = 1)]
     Manual {
         /// Command to show the manual page of. Without it, show the index page.
         #[arg(value_parser = clap::builder::PossibleValuesParser::new(crate::manual::page_names()))]
         command: Option<String>,
     },
+    /// The asfaload workflow, from key generation to download. Useful for new users.
+    #[command(display_order = 0)]
+    Workflow,
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -613,6 +616,7 @@ impl Commands {
             Self::Alias { .. } => "ALIAS",
             Self::Keys { .. } => "KEYS",
             Self::Manual { .. } => "MANUAL",
+            Self::Workflow => "WORKFLOW",
         }
     }
 
@@ -654,6 +658,7 @@ impl Commands {
             Self::Complete { .. } => false,
             Self::Shell { .. } => false,
             Self::Manual { .. } => false,
+            Self::Workflow => false,
         }
     }
 }

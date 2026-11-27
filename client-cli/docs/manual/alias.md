@@ -96,8 +96,9 @@ Write the result as JSON instead of human-readable text.
 
 The operations that show aliases write TOML lines. You can copy these lines into the `[aliases]` table of a configuration file. An alias that contains a `.` is between quotes, because TOML reads an unquoted `.` as a separator of nested tables.
 
-Show all aliases:
+Show all aliases. The first line is a TOML comment with the configuration file that the command uses. If the file does not exist, the comment ends with `(does not exist)`:
 
+    # Config file: /home/alice/.config/asfaload-cli/config.toml
     alice = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"
     "release.v1" = "asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU"
 
@@ -117,7 +118,7 @@ Delete canceled at the confirmation:
 
     Canceled
 
-JSON (with `--json`). To show all aliases, the object contains all aliases. For all other operations, it contains the alias that was found, added or deleted:
+JSON (with `--json`). To show all aliases, the object contains all aliases, and not the configuration file. For all other operations, it contains the alias that was found, added or deleted:
 
     {"alice":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","bob":"asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU"}
     {"alice":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"}

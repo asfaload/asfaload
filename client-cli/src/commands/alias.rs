@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use client_lib::config::ConfigAccessor;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
@@ -13,6 +13,12 @@ fn to_toml_lines(aliases: &impl serde::Serialize) -> Result<String, ClientCliErr
         ))
     })?;
     Ok(lines.trim_end().to_string())
+}
+
+// A TOML comment, so the list of aliases stays valid to copy to a config file.
+fn config_file_comment(config_path: &Path, exists: bool) -> String {
+    let missing = if exists { "" } else { " (does not exist)" };
+    format!("# Config file: {}{missing}", config_path.display())
 }
 
 // Output of a single alias, as used for lookups, additions and deletions.
@@ -43,7 +49,16 @@ pub fn list_aliases(
             None => return Err(ClientCliError::AliasNotFound(alias.clone())),
         },
         None if json => serde_json::to_string(aliases)?,
-        None => to_toml_lines(aliases)?,
+        None => {
+            let config_path = config_accessor.path()?;
+            let comment = config_file_comment(&config_path, config_path.exists());
+            let lines = to_toml_lines(aliases)?;
+            if lines.is_empty() {
+                comment
+            } else {
+                format!("{comment}\n{lines}")
+            }
+        }
     };
 
     Ok(output.clone())
@@ -192,7 +207,8 @@ mod tests {
         let output = list_aliases(&accessor, &None, false)?;
 
         let expected = format!(
-            "alice = \"{}\"\nbob = \"{}\"",
+            "# Config file: {}\nalice = \"{}\"\nbob = \"{}\"",
+            config_path.as_deref().unwrap().display(),
             key_0.to_base64(),
             key_1.to_base64()
         );
@@ -275,7 +291,10 @@ mod tests {
         let key_0 = keys.pub_key(0).unwrap();
         let accessor = ConfigAccessor::new(&config_path);
 
-        assert_eq!(list_aliases(&accessor, &None, false)?.trim(), "");
+        assert_eq!(
+            list_aliases(&accessor, &None, false)?,
+            format!("# Config file: {} (does not exist)", path.display())
+        );
         assert!(list_aliases(&accessor, &Some("alice".to_string()), false).is_err());
         assert!(display_key(&accessor, key_0, false).is_err());
 

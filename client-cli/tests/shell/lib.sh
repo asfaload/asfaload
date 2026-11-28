@@ -116,6 +116,33 @@ assert_dir_empty() {
     [[ -z "$entries" ]] || fail "directory $1 not empty: $entries"
 }
 
+# Creates the keys dirs and config files of the key completion tests, with fixture keys.
+# Sets KEYS_DIR, OTHER_KEYS_DIR, OTHER_CONFIG_FILE, XDG_DATA_DIR, LOCAL_DIR (the current dir of
+# the completion), and COMPLETION_ENV, the environment that selects KEYS_DIR and its config file.
+new_keys_env() {
+    local fixtures="$_REPO_ROOT/core/test_helpers/fixtures/keys" root config_file
+    new_temp_dir root
+    KEYS_DIR="$root/keys"
+    OTHER_KEYS_DIR="$root/other keys"
+    OTHER_CONFIG_FILE="$root/other.toml"
+    LOCAL_DIR="$root/local"
+    config_file="$root/config.toml"
+    mkdir -p "$KEYS_DIR" "$OTHER_KEYS_DIR" "$LOCAL_DIR" "$root/home" "$root/xdg/asfaload-cli"
+    cp "$fixtures/key_0" "$fixtures/key_0.pub" "$fixtures/key_1" "$fixtures/key_2.pub" "$KEYS_DIR"
+    cp "$fixtures/key_3" "$KEYS_DIR/my key"
+    cp "$fixtures/key_3.pub" "$KEYS_DIR/my key.pub"
+    echo "not a key" >"$KEYS_DIR/notes.txt"
+    cp "$fixtures/key_4" "$fixtures/key_4.pub" "$OTHER_KEYS_DIR"
+    cp "$fixtures/key_5" "$fixtures/key_5.pub" "$root/xdg/asfaload-cli"
+    touch "$LOCAL_DIR/local.key"
+    printf '[aliases]\nalice = "%s"\n"bob.k" = "%s"\n' \
+        "$(cat "$fixtures/key_0.pub")" "$(cat "$fixtures/key_1.pub")" >"$config_file"
+    printf '[aliases]\ncarol = "%s"\n' "$(cat "$fixtures/key_4.pub")" >"$OTHER_CONFIG_FILE"
+    XDG_DATA_DIR="$root/xdg"
+    COMPLETION_ENV=(-u XDG_DATA_HOME -u XDG_CONFIG_HOME HOME="$root/home"
+        ASFALOAD_KEYS_DIR="$KEYS_DIR" ASFALOAD_CONFIG_FILE="$config_file")
+}
+
 # Runs the test functions given as arguments, and stops at the first failure.
 run_tests() {
     for test_fn in "$@"; do

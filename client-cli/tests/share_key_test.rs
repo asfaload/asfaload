@@ -323,7 +323,6 @@ fn share_key_command(name: &str, home: &std::path::Path) -> assert_cmd::Command 
 
 enum KeysDirSource {
     Flag,
-    ShortFlag,
     EnvVar,
 }
 
@@ -332,7 +331,6 @@ fn test_share_key_reads_name_in_keys_dir() {
     let cases = vec![
         // The public key file name.
         ("mykey.pub", KeysDirSource::Flag),
-        ("mykey.pub", KeysDirSource::ShortFlag),
         ("mykey.pub", KeysDirSource::EnvVar),
         // The secret key name: share-key then reads its .pub sibling.
         ("mykey", KeysDirSource::Flag),
@@ -345,7 +343,6 @@ fn test_share_key_reads_name_in_keys_dir() {
         let mut cmd = share_key_command(name, temp_dir.path());
         match source {
             KeysDirSource::Flag => cmd.arg("--keys-dir").arg(&keys_dir),
-            KeysDirSource::ShortFlag => cmd.arg("-d").arg(&keys_dir),
             KeysDirSource::EnvVar => cmd.env("ASFALOAD_KEYS_DIR", &keys_dir),
         };
 

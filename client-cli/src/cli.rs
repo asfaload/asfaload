@@ -54,7 +54,7 @@ pub struct SecretKeyArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct KeysDirArgs {
-    #[arg(long, short = 'd', env = KEYS_DIR_ENV_VAR, help = keys_dir_help())]
+    #[arg(long, env = KEYS_DIR_ENV_VAR, help = keys_dir_help())]
     pub keys_dir: Option<PathBuf>,
 }
 
@@ -190,7 +190,8 @@ pub enum Commands {
     },
     /// Operations related to signers files
     NewSignersFile {
-        /// Artifact signer: key alias or public key as base64 string (can be repeated)
+        /// Artifact signer: public key as base64 string, alias, or key file (path or name in your
+        /// keys dir) (can be repeated)
         #[arg(long, short, value_name = "PUB_KEY")]
         artifact_signer: Vec<String>,
 
@@ -202,7 +203,8 @@ pub enum Commands {
         #[arg(long, short = 'A')]
         artifact_threshold: u32,
 
-        /// Admin public key alias or base64 string (can be repeated)
+        /// Admin public key as base64 string, alias, or key file (path or name in your keys dir)
+        /// (can be repeated)
         #[arg(long, short = 'd', value_name = "PUB_KEY")]
         admin_key: Vec<String>,
 
@@ -214,7 +216,8 @@ pub enum Commands {
         #[arg(long, short = 'D')]
         admin_threshold: Option<u32>,
 
-        /// Master public key alias or base64 string (can be repeated)
+        /// Master public key as base64 string, alias, or key file (path or name in your keys dir)
+        /// (can be repeated)
         #[arg(long, short, value_name = "PUB_KEY")]
         master_key: Vec<String>,
 
@@ -226,7 +229,8 @@ pub enum Commands {
         #[arg(long, short = 'M')]
         master_threshold: Option<u32>,
 
-        /// Revocation public key alias or base64 string (can be repeated)
+        /// Revocation public key as base64 string, alias, or key file (path or name in your keys
+        /// dir) (can be repeated)
         #[arg(long, short, value_name = "PUB_KEY")]
         revocation_key: Vec<String>,
 
@@ -237,6 +241,9 @@ pub enum Commands {
         /// Threshold for revocation keys (required if revocation keys are provided)
         #[arg(long, short = 'R')]
         revocation_threshold: Option<u32>,
+
+        #[command(flatten)]
+        keys_dir_args: KeysDirArgs,
 
         /// Path to the signers file to be created; if omitted, writes to stdout (if with --json, in the signers_config field)
         #[arg(long, short)]

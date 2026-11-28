@@ -281,3 +281,61 @@ fn output_file_refuses_overwrite() {
         "existing file was modified despite the refusal"
     );
 }
+
+// -------------------------------------------------------------------
+// new-signers-file with key names from the keys dir
+// -------------------------------------------------------------------
+
+// A keys dir with the key pair "mine", from fixture key 0.
+fn keys_dir_with_key_pair() -> TempDir {
+    let keys_dir = TempDir::new().unwrap();
+    fs::copy(
+        test_helpers::fixtures_sec_key(0),
+        keys_dir.path().join("mine"),
+    )
+    .unwrap();
+    fs::copy(fixtures_pub_key(0), keys_dir.path().join("mine.pub")).unwrap();
+    keys_dir
+}
+
+// Runs `new-signers-file -a mine` with the keys dir given by `keys_dir_args` and `keys_dir_env`,
+// and checks that the signers file has fixture key 0.
+fn assert_mine_is_resolved(
+    label: &str,
+    keys_dir_args: &[&std::ffi::OsStr],
+    keys_dir_env: Option<&std::path::Path>,
+) {
+    let expected = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+    // Not the keys dir, so that "mine" is not found relative to the current directory.
+    let current_dir = TempDir::new().unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.current_dir(current_dir.path())
+        .env_remove("ASFALOAD_KEYS_DIR")
+        .args(["new-signers-file", "-a", "mine", "-A", "1"])
+        .args(keys_dir_args);
+    if let Some(dir) = keys_dir_env {
+        cmd.env("ASFALOAD_KEYS_DIR", dir);
+    }
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{label}: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains(expected.trim()),
+        "{label}: the signers file has no key 0: {stdout}"
+    );
+}
+
+#[test]
+fn key_name_is_resolved_in_the_keys_dir() {
+    let keys_dir = keys_dir_with_key_pair();
+    assert_mine_is_resolved(
+        "--keys-dir",
+        &["--keys-dir".as_ref(), keys_dir.path().as_os_str()],
+        None,
+    );
+    assert_mine_is_resolved("ASFALOAD_KEYS_DIR", &[], Some(keys_dir.path()));
+}

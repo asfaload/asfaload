@@ -21,7 +21,7 @@ Path to the public key file to share (asfaload or OpenSSH ed25519), or the name 
 
 ## Options
 
-### `-d --keys-dir <DIR>`
+### `--keys-dir <DIR>`
 
 Directory where the command looks for the public key when the argument is not an existing file. The command then reads `<DIR>/<argument>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 

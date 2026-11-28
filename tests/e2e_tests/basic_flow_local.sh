@@ -99,7 +99,7 @@ if broken_config_output=$(cargo run --quiet --manifest-path "$base_dir/client-cl
     exit 1
 fi
 SIGNERS_FILE_2_WITHOUT_ALIASES="$CONFIG_DIR/signers_file_2_without_aliases.json"
-cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
+if ! without_aliases_output=$(cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
     --artifact-signer "$(pubkey_of "$KEY_0")" \
     --artifact-signer "$(pubkey_of "$KEY_1")" \
     --artifact-signer "$(pubkey_of "$KEY_2")" \
@@ -110,7 +110,12 @@ cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signe
     --revocation-key "$(pubkey_of "$KEY_6")" \
     -R 2 \
     -c "$BROKEN_CONFIG" \
-    -o "$SIGNERS_FILE_2_WITHOUT_ALIASES"
+    -o "$SIGNERS_FILE_2_WITHOUT_ALIASES" 2>&1) \
+    || ! grep -q "Warning: could not load aliases from the config file" <<<"$without_aliases_output"; then
+    printf '%s✗%s\n' "$RED" "$RESET"
+    printf '%sSigners file generation with an invalid config file did not succeed with a warning: %s%s\n' "$RED" "$without_aliases_output" "$RESET"
+    exit 1
+fi
 # The same signers file proves that the aliases were resolved to the expected keys.
 # The timestamp is the time of generation, so it is not compared.
 if ! diff -q <(jq -S 'del(.timestamp)' "$SIGNERS_FILE_2_WITHOUT_ALIASES") \

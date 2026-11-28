@@ -17,7 +17,7 @@ use crate::{commands::signers_submission_output::BOLD, error::ClientCliError};
 const INTRO: &str = "Keys in your keys dir and config file. To use a key file in a different location, give its path to the command.";
 
 // Enough to hold the longest key marker.
-const HEAD_SIZE: u64 = 64;
+pub(crate) const HEAD_SIZE: u64 = 64;
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct AliasedKey {

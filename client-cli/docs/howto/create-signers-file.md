@@ -142,7 +142,7 @@ asfaload-cli new-signers-file \
 To obtain the base64 string from a `.pub` file, use `share-key --raw`:
 
 ```sh
-asfaload-cli share-key -k alice.pub --raw
+asfaload-cli share-key alice.pub --raw
 ```
 
 See [Share a public key](share-public-key.md) for more details.

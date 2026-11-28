@@ -176,7 +176,6 @@ pub enum Commands {
     ShareKey {
         /// Path to the public key (asfaload or ssh ed25519) OR filename in your keys dir
         /// (see --keys-dir)
-        #[arg(long, short = 'k')]
         public_key: String,
 
         #[command(flatten)]

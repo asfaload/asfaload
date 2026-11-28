@@ -20,7 +20,7 @@ See [Generate a key pair](howto/generate-keys.md).
 The public key is safe to share. Send it to the admin of the project.
 
 ```sh
-asfaload-cli share-key -k mykey
+asfaload-cli share-key mykey
 ```
 
 See [Share a public key](howto/share-public-key.md).

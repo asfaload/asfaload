@@ -11,7 +11,7 @@ Once you have a key pair, you need to share the public key with whoever maintain
 ### 1. Print a human-readable sharing message (default)
 
 ```sh
-asfaload-cli share-key -k mykey
+asfaload-cli share-key mykey
 ```
 
 The command finds the key `mykey` in your keys directory, where `new-keys` created it, and reads the public key from `mykey.pub`. By default, your keys directory is the directory `asfaload-cli` in your user data directory:
@@ -44,7 +44,7 @@ Do not create aliases for your own keys, they are usable by name without an alia
 When you only need the base64 string — for example, to paste it into a signers file — use `--raw` (`-r`):
 
 ```sh
-asfaload-cli share-key -k mykey --raw
+asfaload-cli share-key mykey --raw
 ```
 
 Output:
@@ -58,7 +58,7 @@ This is the canonical base64 form used in signers files and templates.
 `--raw` also works with OpenSSH ed25519 public keys — the key is normalised to its asfaload canonical form:
 
 ```sh
-asfaload-cli share-key -k ~/.ssh/id_ed25519.pub --raw
+asfaload-cli share-key ~/.ssh/id_ed25519.pub --raw
 ```
 
 `--raw` and `--json` are mutually exclusive; you cannot use both at the same time.
@@ -68,7 +68,7 @@ asfaload-cli share-key -k ~/.ssh/id_ed25519.pub --raw
 For scripting, use `--json`:
 
 ```sh
-asfaload-cli share-key -k mykey --json
+asfaload-cli share-key mykey --json
 ```
 
 Output:

@@ -60,10 +60,12 @@ function __asfaload_cli_first_positional
     test $i -eq (math $count + 1)
 end
 
+# The arguments are the flags of the keys dir and config file options (short, long, short, long),
+# and the mode.
 function __asfaload_cli_keys
-    set -l keys_dir (__asfaload_cli_option_value @KEYS_DIR_SHORT@ @KEYS_DIR_LONG@)
-    set -l config_file (__asfaload_cli_option_value @CONFIG_FILE_SHORT@ @CONFIG_FILE_LONG@)
-    sh -c $__asfaload_cli_lister sh $argv[1] "$keys_dir" "$config_file" 2>/dev/null
+    set -l keys_dir (__asfaload_cli_option_value $argv[1] $argv[2])
+    set -l config_file (__asfaload_cli_option_value $argv[3] $argv[4])
+    sh -c $__asfaload_cli_lister sh $argv[5] "$keys_dir" "$config_file" 2>/dev/null
 end
 
 @COMPLETE_LINES@

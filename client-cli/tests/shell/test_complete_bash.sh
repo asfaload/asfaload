@@ -55,9 +55,11 @@ proposes_key_names_and_aliases() {
     assert_completions "local.key" share-key l
     assert_completions $'alice\nbob.k\nkey_0\nkey_0.pub\nkey_1\nkey_2.pub\nlocal.key\nmy key\nmy key.pub' \
         keys ""
-    assert_completions $'alice\nbob.k' new-signers-file -a ""
-    # In new-signers-file, -d is --admin-key.
+    # Public keys: aliases, key pair names and local files.
+    assert_completions $'alice\nbob.k\nkey_0\nlocal.key\nmy key' new-signers-file -a ""
+    # In new-signers-file, -d is --admin-key, not the keys dir.
     assert_completions "alice" new-signers-file -A 1 -d a
+    assert_completions "key_0" new-signers-file -d alice -a key_
     # The value of --keys-dir is not the key name.
     assert_completions "local.key" share-key --keys-dir ""
 }
@@ -72,6 +74,7 @@ uses_the_locations_given_on_the_command_line() {
     assert_completions "carol" keys -c = "$OTHER_CONFIG_FILE" c
     assert_completions "carol" keys -c="$OTHER_CONFIG_FILE" c
     assert_completions "carol" keys -c "$OTHER_CONFIG_FILE" c
+    assert_completions "key_4" new-signers-file --keys-dir "$OTHER_KEYS_DIR" -a key_
     assert_completions "carol" keys -c"$OTHER_CONFIG_FILE" c
     # The options after the word to complete also count.
     COMPLETION_INDEX=2 assert_completions "key_4" share-key key_ --keys-dir "$OTHER_KEYS_DIR"
@@ -116,17 +119,16 @@ COMP_CWORD=$(($# - 1))
 EOF
 }
 
-proposes_no_file_names_for_aliases() {
+quotes_the_inserted_names() {
     new_keys_env
     COMPLETION_DIR="$LOCAL_DIR"
-    # Without a matching alias, bash would use its default completion of file names.
-    assert_eq "compopt calls for an alias" \
-        "$(bash_compopt_calls asfaload-cli new-signers-file -a l)" \
-        "compopt +o default +o bashdefault"
-    assert_eq "compopt calls for a key" \
+    # A key name can have a space, which bash must quote.
+    assert_eq "compopt calls for a public key" \
+        "$(bash_compopt_calls asfaload-cli new-signers-file -a l)" "compopt -o filenames"
+    assert_eq "compopt calls for a secret key" \
         "$(bash_compopt_calls asfaload-cli sign-pending -K l)" "compopt -o filenames"
 }
 
 run_tests proposes_subcommands_and_their_flags proposes_key_names_and_aliases \
     uses_the_locations_given_on_the_command_line uses_the_xdg_data_dir_by_default \
-    is_silent_without_keys_dir proposes_no_file_names_for_aliases
+    is_silent_without_keys_dir quotes_the_inserted_names

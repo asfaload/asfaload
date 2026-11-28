@@ -21,8 +21,9 @@ fish_completions() {
 
 # complete -C puts the cursor at the end of the line. To complete an other token, a function
 # replaces the builtin commandline and gives TOKENS, with the cursor in the token at INDEX
-# (from 1). Prints the candidates of the MODE, before fish removes those that do not match.
-# Usage: fish_keys_at MODE INDEX TOKEN...
+# (from 1). Prints the candidates of __asfaload_cli_keys with ARGS (its arguments, separated by
+# spaces), before fish removes those that do not match.
+# Usage: fish_keys_at ARGS INDEX TOKEN...
 fish_keys_at() {
     (cd "$COMPLETION_DIR" && env "${COMPLETION_ENV[@]}" fish --no-config -c '
         source $argv[1]
@@ -38,7 +39,8 @@ fish_keys_at() {
                     printf "%s\n" $test_tokens[$test_index]
             end
         end
-        __asfaload_cli_keys $argv[2]' "$COMPLETION_SCRIPT" "$@") | LC_ALL=C sort
+        __asfaload_cli_keys (string split " " -- $argv[2])' "$COMPLETION_SCRIPT" "$@") |
+        LC_ALL=C sort
 }
 
 # Usage: assert_completions EXPECTED LINE
@@ -58,9 +60,11 @@ proposes_key_names_and_aliases() {
     assert_completions "local.key" "asfaload-cli share-key l"
     assert_completions $'alice\nbob.k\nkey_0\nkey_0.pub\nkey_1\nkey_2.pub\nlocal.key\nmy key\nmy key.pub' \
         "asfaload-cli keys "
-    assert_completions $'alice\nbob.k' "asfaload-cli new-signers-file -a "
-    # In new-signers-file, -d is --admin-key.
+    # Public keys: aliases, key pair names and local files.
+    assert_completions $'alice\nbob.k\nkey_0\nlocal.key\nmy key' "asfaload-cli new-signers-file -a "
+    # In new-signers-file, -d is --admin-key, not the keys dir.
     assert_completions "alice" "asfaload-cli new-signers-file -A 1 -d a"
+    assert_completions "key_0" "asfaload-cli new-signers-file -d alice -a key_"
     # The value of --keys-dir is not the key name.
     assert_completions "local.key" "asfaload-cli share-key --keys-dir "
 }
@@ -72,12 +76,15 @@ uses_the_locations_given_on_the_command_line() {
     assert_completions "key_4" "asfaload-cli share-key --keys-dir='$OTHER_KEYS_DIR' key_"
     assert_completions "carol" "asfaload-cli keys -c='$OTHER_CONFIG_FILE' c"
     assert_completions "carol" "asfaload-cli keys -c '$OTHER_CONFIG_FILE' c"
+    assert_completions "key_4" "asfaload-cli new-signers-file --keys-dir '$OTHER_KEYS_DIR' -a key_"
     assert_completions "carol" "asfaload-cli keys -c'$OTHER_CONFIG_FILE' c"
     # The options after the token to complete also count.
     assert_eq "pairs with --keys-dir after the cursor" \
-        "$(fish_keys_at pairs 3 asfaload-cli share-key k --keys-dir "$OTHER_KEYS_DIR")" "key_4"
-    assert_eq "aliases with -c after the cursor" \
-        "$(fish_keys_at aliases 3 asfaload-cli new-signers-file a -c "$OTHER_CONFIG_FILE")" "carol"
+        "$(fish_keys_at "--keys-dir --keys-dir --config-file --config-file pairs" 3 \
+            asfaload-cli share-key k --keys-dir "$OTHER_KEYS_DIR")" "key_4"
+    assert_eq "public keys with -c and --keys-dir after the cursor" \
+        "$(fish_keys_at "--keys-dir --keys-dir -c --config-file public_keys" 3 asfaload-cli \
+            new-signers-file a -c "$OTHER_CONFIG_FILE" --keys-dir "$OTHER_KEYS_DIR")" $'carol\nkey_4'
     COMPLETION_ENV+=(ASFALOAD_KEYS_DIR="$OTHER_KEYS_DIR")
     assert_completions "key_4" "asfaload-cli share-key key_"
 }

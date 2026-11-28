@@ -1,5 +1,5 @@
 # Prints completion candidates, one per line. Arguments: MODE KEYS_DIR CONFIG_FILE.
-# MODE is secret, pairs, names or aliases. An empty KEYS_DIR or CONFIG_FILE selects the
+# MODE is secret, pairs, names or public_keys. An empty KEYS_DIR or CONFIG_FILE selects the
 # location like asfaload-cli does. Errors are silent: completion must not print on the terminal.
 mode=$1
 keys_dir=$2
@@ -85,5 +85,8 @@ case $mode in
         list_key_files names
         list_aliases
         ;;
-    aliases) list_aliases ;;
+    public_keys)
+        list_key_files pairs
+        list_aliases
+        ;;
 esac

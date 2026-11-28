@@ -37,6 +37,14 @@ __asfaload_cli_option_mode() {
     esac
 }
 
+# Prints the flags of the keys dir and config file options of the subcommand $1: short, long,
+# short, long.
+__asfaload_cli_location_flags() {
+    case $1 in
+@LOCATION_CASES@
+    esac
+}
+
 # Prints the mode when the current word is the first positional of the subcommand $1, which is
 # the word at index $2. Prints nothing otherwise.
 __asfaload_cli_positional_mode() {
@@ -61,6 +69,7 @@ __asfaload_cli_positional_mode() {
 
 @WRAPPER@() {
     local cur prev sub="" sub_index=0 i mode="" keys_dir config_file candidate seen=$'\n'
+    local keys_dir_short keys_dir_long config_file_short config_file_long
     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
         cur="$2"
     else
@@ -88,8 +97,10 @@ __asfaload_cli_positional_mode() {
         @CLAP_FUNCTION@ "$@"
         return
     fi
-    keys_dir=$(__asfaload_cli_option_value @KEYS_DIR_SHORT@ @KEYS_DIR_LONG@)
-    config_file=$(__asfaload_cli_option_value @CONFIG_FILE_SHORT@ @CONFIG_FILE_LONG@)
+    read -r keys_dir_short keys_dir_long config_file_short config_file_long \
+        <<<"$(__asfaload_cli_location_flags "$sub")"
+    keys_dir=$(__asfaload_cli_option_value "$keys_dir_short" "$keys_dir_long")
+    config_file=$(__asfaload_cli_option_value "$config_file_short" "$config_file_long")
     COMPREPLY=()
     while IFS= read -r candidate; do
         [[ $candidate == "$cur"* && $seen != *$'\n'"$candidate"$'\n'* ]] || continue
@@ -98,16 +109,10 @@ __asfaload_cli_positional_mode() {
     done < <(
         sh -c "$__asfaload_cli_lister" sh "$mode" "$keys_dir" "$config_file" 2>/dev/null
         # Paths relative to the current directory are also accepted.
-        [[ $mode == aliases ]] || compgen -f -- "$cur"
+        compgen -f -- "$cur"
     )
-    # compopt is not available in bash 3.
-    if [[ $mode == aliases ]]; then
-        # Without a matching alias, the default completion would propose file names.
-        compopt +o default +o bashdefault 2>/dev/null
-    else
-        # Quotes the inserted names, e.g. a name with a space.
-        compopt -o filenames 2>/dev/null
-    fi
+    # Quotes the inserted names, e.g. a name with a space. Not available in bash 3.
+    compopt -o filenames 2>/dev/null
     return 0
 }
 

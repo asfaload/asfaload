@@ -39,8 +39,8 @@ enum Mode {
     Pairs,
     /// Key files and alias names.
     Names,
-    /// Alias names.
-    Aliases,
+    /// Alias names and key pair names: the names that new-signers-file accepts as public keys.
+    PublicKeys,
 }
 
 impl Mode {
@@ -49,7 +49,7 @@ impl Mode {
             Mode::Secret => "secret",
             Mode::Pairs => "pairs",
             Mode::Names => "names",
-            Mode::Aliases => "aliases",
+            Mode::PublicKeys => "public_keys",
         }
     }
 }
@@ -60,6 +60,7 @@ struct KeyOption {
     subcommand: String,
     flags: Vec<String>,
     mode: Mode,
+    location_flags: Vec<String>,
 }
 
 /// The first positional of a subcommand, when its value is a key name.
@@ -70,12 +71,12 @@ struct KeyPositional {
     mode: Mode,
     /// Flags of the options of the subcommand that take a value.
     value_options: Vec<String>,
+    location_flags: Vec<String>,
 }
 
 /// An option that gives a location, e.g. --keys-dir.
 #[derive(Debug, PartialEq)]
 struct LocationOption {
-    short: String,
     long: String,
     env: String,
 }
@@ -114,7 +115,7 @@ fn key_option_mode(arg: &Arg) -> Option<Mode> {
         .get_value_names()
         .is_some_and(|names| names.iter().any(|n| n == ALIAS_VALUE_NAME))
     {
-        Some(Mode::Aliases)
+        Some(Mode::PublicKeys)
     } else {
         None
     }
@@ -129,20 +130,42 @@ fn location_option(cmd: Command, id: &str) -> Result<LocationOption> {
         .get_long()
         .map(|l| format!("--{l}"))
         .ok_or_else(|| script_error(format!("argument {id} has no long flag")))?;
-    // Without a short flag, the long flag takes its place in the shell functions.
-    let short = arg
-        .get_short()
-        .map(|c| format!("-{c}"))
-        .unwrap_or_else(|| long.clone());
     let env = arg
         .get_env()
         .and_then(|e| e.to_str())
         .ok_or_else(|| script_error(format!("argument {id} has no environment variable")))?
         .to_string();
-    Ok(LocationOption { short, long, env })
+    Ok(LocationOption { long, env })
+}
+
+// The flags of the keys dir and config file options of `subcommand`, as [short, long, short,
+// long]. A missing short flag is replaced by the long flag. A missing option gets the default
+// long flag, which the user cannot give.
+fn location_flags(
+    subcommand: &Command,
+    keys_dir: &LocationOption,
+    config_file: &LocationOption,
+) -> Vec<String> {
+    [(KEYS_DIR_ID, keys_dir), (CONFIG_FILE_ID, config_file)]
+        .into_iter()
+        .flat_map(|(id, default)| {
+            let arg = subcommand.get_arguments().find(|a| a.get_id() == id);
+            let long = arg
+                .and_then(Arg::get_long)
+                .map(|l| format!("--{l}"))
+                .unwrap_or_else(|| default.long.clone());
+            let short = arg
+                .and_then(Arg::get_short)
+                .map(|c| format!("-{c}"))
+                .unwrap_or_else(|| long.clone());
+            [short, long]
+        })
+        .collect()
 }
 
 fn key_args(cmd: &Command) -> Result<KeyArgs> {
+    let keys_dir = location_option(KeysDirArgs::augment_args(Command::new("k")), KEYS_DIR_ID)?;
+    let config_file = location_option(ConfigFile::augment_args(Command::new("c")), CONFIG_FILE_ID)?;
     let mut options = Vec::new();
     for subcommand in cmd.get_subcommands() {
         for arg in subcommand.get_arguments() {
@@ -151,6 +174,7 @@ fn key_args(cmd: &Command) -> Result<KeyArgs> {
                     subcommand: subcommand.get_name().to_string(),
                     flags: flags(arg),
                     mode,
+                    location_flags: location_flags(subcommand, &keys_dir, &config_file),
                 });
             }
         }
@@ -176,14 +200,15 @@ fn key_args(cmd: &Command) -> Result<KeyArgs> {
                     .filter(|a| takes_value_option(a))
                     .flat_map(flags)
                     .collect(),
+                location_flags: location_flags(subcommand, &keys_dir, &config_file),
             })
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(KeyArgs {
         options,
         positionals,
-        keys_dir: location_option(KeysDirArgs::augment_args(Command::new("k")), KEYS_DIR_ID)?,
-        config_file: location_option(ConfigFile::augment_args(Command::new("c")), CONFIG_FILE_ID)?,
+        keys_dir,
+        config_file,
     })
 }
 
@@ -208,12 +233,9 @@ fn fish_single_quoted(s: &str) -> String {
     s.replace('\\', r"\\").replace('\'', r"\'")
 }
 
-fn with_locations(template: &str, key_args: &KeyArgs) -> String {
-    template
-        .replace("@KEYS_DIR_SHORT@", &key_args.keys_dir.short)
-        .replace("@KEYS_DIR_LONG@", &key_args.keys_dir.long)
-        .replace("@CONFIG_FILE_SHORT@", &key_args.config_file.short)
-        .replace("@CONFIG_FILE_LONG@", &key_args.config_file.long)
+// The arguments of the key functions of zsh and fish: the location flags, then the mode.
+fn key_function_args(location_flags: &[String], mode: Mode) -> String {
+    format!("{} {}", location_flags.join(" "), mode.as_str())
 }
 
 /// Adds key completion to the bash script of clap. `bin_name` is the name of the binary.
@@ -252,9 +274,32 @@ fn bash_with_keys(script: &str, bin_name: &str, key_args: &KeyArgs) -> Result<St
             )
         })
         .collect();
-    let keys = with_locations(BASH_TEMPLATE, key_args)
+    // One case per subcommand.
+    let mut location_cases = String::new();
+    let mut subcommands: Vec<&str> = Vec::new();
+    let all_location_flags = key_args
+        .options
+        .iter()
+        .map(|o| (&o.subcommand, &o.location_flags))
+        .chain(
+            key_args
+                .positionals
+                .iter()
+                .map(|p| (&p.subcommand, &p.location_flags)),
+        );
+    for (subcommand, location_flags) in all_location_flags {
+        if !subcommands.contains(&subcommand.as_str()) {
+            subcommands.push(subcommand);
+            location_cases.push_str(&format!(
+                "        {subcommand}) echo \"{}\" ;;\n",
+                location_flags.join(" ")
+            ));
+        }
+    }
+    let keys = BASH_TEMPLATE
         .replace("@OPTION_CASES@\n", &option_cases)
         .replace("@POSITIONAL_CASES@\n", &positional_cases)
+        .replace("@LOCATION_CASES@\n", &location_cases)
         .replace("@WRAPPER@", &format!("{clap_function}_keys"))
         .replace("@CLAP_FUNCTION@", &clap_function)
         .replace("@BIN@", bin_name)
@@ -300,7 +345,7 @@ fn is_zsh_positional_spec(line: &str, id: &str) -> bool {
 fn patch_zsh_block(
     lines: &mut [String],
     subcommand: &str,
-    mode: Mode,
+    function_args: &str,
     is_target: impl Fn(&str) -> bool,
 ) -> Result<()> {
     const DEFAULT_ACTION: &str = ":_default' \\";
@@ -309,14 +354,13 @@ fn patch_zsh_block(
     for line in &mut lines[range] {
         if is_target(line) && line.ends_with(DEFAULT_ACTION) {
             let spec = &line[..line.len() - DEFAULT_ACTION.len()];
-            *line = format!("{spec}:__asfaload_cli_keys {}' \\", mode.as_str());
+            *line = format!("{spec}:__asfaload_cli_keys {function_args}' \\");
             patched += 1;
         }
     }
     if patched == 0 {
         return Err(script_error(format!(
-            "zsh block ({subcommand}) has no spec to patch for {}",
-            mode.as_str()
+            "zsh block ({subcommand}) has no spec to patch for {function_args}"
         )));
     }
     Ok(())
@@ -326,12 +370,14 @@ fn patch_zsh_block(
 fn zsh_with_keys(script: &str, bin_name: &str, key_args: &KeyArgs) -> Result<String> {
     let mut lines: Vec<String> = script.lines().map(str::to_string).collect();
     for option in &key_args.options {
-        patch_zsh_block(&mut lines, &option.subcommand, option.mode, |l| {
+        let function_args = key_function_args(&option.location_flags, option.mode);
+        patch_zsh_block(&mut lines, &option.subcommand, &function_args, |l| {
             is_zsh_option_spec(l, &option.flags)
         })?;
     }
     for positional in &key_args.positionals {
-        patch_zsh_block(&mut lines, &positional.subcommand, positional.mode, |l| {
+        let function_args = key_function_args(&positional.location_flags, positional.mode);
+        patch_zsh_block(&mut lines, &positional.subcommand, &function_args, |l| {
             is_zsh_positional_spec(l, &positional.id)
         })?;
     }
@@ -342,8 +388,7 @@ fn zsh_with_keys(script: &str, bin_name: &str, key_args: &KeyArgs) -> Result<Str
         .iter()
         .position(|l| *l == call)
         .ok_or_else(|| script_error("zsh script has no final call"))?;
-    let keys = with_locations(ZSH_TEMPLATE, key_args)
-        .replace("@LISTER@", &posix_single_quoted(&lister(key_args)));
+    let keys = ZSH_TEMPLATE.replace("@LISTER@", &posix_single_quoted(&lister(key_args)));
     lines.insert(call_index, keys);
     Ok(lines.join("\n") + "\n")
 }
@@ -365,13 +410,11 @@ fn fish_with_keys(script: &str, bin_name: &str, key_args: &KeyArgs) -> Result<St
                 None => format!("-s {}", f.trim_start_matches('-')),
             })
             .collect();
-        // An alias is not a path.
-        let files = if o.mode == Mode::Aliases { "-x" } else { "-r" };
         format!(
-            "complete -c {bin_name} -n \"{using_subcommand} {}\" {} {files} -a \"(__asfaload_cli_keys {})\"",
+            "complete -c {bin_name} -n \"{using_subcommand} {}\" {} -r -a \"(__asfaload_cli_keys {})\"",
             o.subcommand,
             flags.join(" "),
-            o.mode.as_str()
+            key_function_args(&o.location_flags, o.mode)
         )
     });
     let positional_lines = key_args.positionals.iter().map(|p| {
@@ -379,11 +422,11 @@ fn fish_with_keys(script: &str, bin_name: &str, key_args: &KeyArgs) -> Result<St
             "complete -c {bin_name} -n \"{using_subcommand} {}; and __asfaload_cli_first_positional {}\" -a \"(__asfaload_cli_keys {})\"",
             p.subcommand,
             p.value_options.join(" "),
-            p.mode.as_str()
+            key_function_args(&p.location_flags, p.mode)
         )
     });
     let complete_lines: Vec<String> = option_lines.chain(positional_lines).collect();
-    let keys = with_locations(FISH_TEMPLATE, key_args)
+    let keys = FISH_TEMPLATE
         .replace("@COMPLETE_LINES@", &complete_lines.join("\n"))
         .replace("@LISTER@", &fish_single_quoted(&lister(key_args)));
     Ok(format!("{script}{keys}"))
@@ -431,10 +474,14 @@ mod tests {
             ("sign-pending", "-K", Some(Mode::Secret)),
             ("sign-pending", "--secret-key", Some(Mode::Secret)),
             ("ping", "--secret-key", Some(Mode::Secret)),
-            ("new-signers-file", "-a", Some(Mode::Aliases)),
-            ("new-signers-file", "--admin-key", Some(Mode::Aliases)),
-            ("new-signers-file", "-m", Some(Mode::Aliases)),
-            ("new-signers-file", "--revocation-key", Some(Mode::Aliases)),
+            ("new-signers-file", "-a", Some(Mode::PublicKeys)),
+            ("new-signers-file", "--admin-key", Some(Mode::PublicKeys)),
+            ("new-signers-file", "-m", Some(Mode::PublicKeys)),
+            (
+                "new-signers-file",
+                "--revocation-key",
+                Some(Mode::PublicKeys),
+            ),
             ("new-signers-file", "--artifact-signers-file", None),
             ("alias", "--key", None),
             ("share-key", "--keys-dir", None),
@@ -449,27 +496,68 @@ mod tests {
                     subcommand: "share-key".to_string(),
                     id: "public_key".to_string(),
                     mode: Mode::Pairs,
-                    value_options: vec!["--keys-dir".to_string()],
+                    value_options: strings(["--keys-dir"]),
+                    location_flags: strings([
+                        "--keys-dir",
+                        "--keys-dir",
+                        "--config-file",
+                        "--config-file",
+                    ]),
                 },
                 KeyPositional {
                     subcommand: "keys".to_string(),
                     id: "name".to_string(),
                     mode: Mode::Names,
-                    value_options: ["--keys-dir", "-c", "--config-file"]
-                        .map(String::from)
-                        .to_vec(),
+                    value_options: strings(["--keys-dir", "-c", "--config-file"]),
+                    location_flags: strings(["--keys-dir", "--keys-dir", "-c", "--config-file"]),
                 },
             ]
         );
         assert_eq!(
             key_args.keys_dir,
             LocationOption {
-                short: "--keys-dir".to_string(),
                 long: "--keys-dir".to_string(),
                 env: crate::cli::KEYS_DIR_ENV_VAR.to_string(),
             }
         );
         assert_eq!(key_args.config_file.long, "--config-file");
+    }
+
+    fn strings<const N: usize>(values: [&str; N]) -> Vec<String> {
+        values.map(String::from).to_vec()
+    }
+
+    #[test]
+    fn key_args_reads_the_location_flags_of_each_subcommand() {
+        let key_args = cli_key_args();
+        let location_flags = |subcommand: &str, flag: &str| {
+            key_args
+                .options
+                .iter()
+                .find(|o| o.subcommand == subcommand && o.flags.iter().any(|f| f == flag))
+                .map(|o| o.location_flags.clone())
+        };
+        let cases = vec![
+            // A missing short flag is replaced by the long flag, and a subcommand without config
+            // file option gets the default long flag.
+            (
+                "sign-pending",
+                "-K",
+                ["--keys-dir", "--keys-dir", "--config-file", "--config-file"],
+            ),
+            (
+                "new-signers-file",
+                "-a",
+                ["--keys-dir", "--keys-dir", "-c", "--config-file"],
+            ),
+        ];
+        for (subcommand, flag, expected) in cases {
+            assert_eq!(
+                location_flags(subcommand, flag),
+                Some(strings(expected)),
+                "{subcommand} {flag}"
+            );
+        }
     }
 
     #[test]
@@ -548,13 +636,15 @@ mod tests {
         let script = script(clap_complete_command::Shell::Zsh);
         assert!(!script.contains(":SECRET_KEY:_default'"));
         assert!(!script.contains(":PUB_KEY:_default'"));
-        assert!(script.contains(":SECRET_KEY:__asfaload_cli_keys secret' \\\n"));
-        assert!(script.contains(":PUB_KEY:__asfaload_cli_keys aliases' \\\n"));
-        assert!(script.contains("(see --keys-dir):__asfaload_cli_keys pairs' \\\n"));
-        assert!(
-            script
-                .contains("'::name -- Name of the key to display:__asfaload_cli_keys names' \\\n")
-        );
+        let cases = vec![
+            ":SECRET_KEY:__asfaload_cli_keys --keys-dir --keys-dir --config-file --config-file secret'",
+            ":PUB_KEY:__asfaload_cli_keys --keys-dir --keys-dir -c --config-file public_keys'",
+            "(see --keys-dir):__asfaload_cli_keys --keys-dir --keys-dir --config-file --config-file pairs'",
+            "'::name -- Name of the key to display:__asfaload_cli_keys --keys-dir --keys-dir -c --config-file names'",
+        ];
+        for spec_end in cases {
+            assert!(script.contains(&format!("{spec_end} \\\n")), "{spec_end}");
+        }
         // The alias name of the alias subcommand is not a key name.
         assert!(script.contains("'::name -- Alias name:_default' \\\n"));
         let function = script.find("__asfaload_cli_keys() {").unwrap();

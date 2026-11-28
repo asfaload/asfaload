@@ -9,9 +9,9 @@ With `bash`, `zsh` and `fish`, the script also completes the names of your keys 
 - `--secret-key` (`-K`): the secret key files in your keys dir.
 - The public key of `share-key`: the names of the key pairs in your keys dir. A key pair is a secret key file `NAME` with its public key file `NAME.pub`.
 - The name of `keys`: the key files in your keys dir, and the aliases of your config file.
-- The public keys of `new-signers-file` (`-a`, `-d`, `-m`, `-r`): the aliases of your config file.
+- The public keys of `new-signers-file` (`-a`, `-d`, `-m`, `-r`): the aliases of your config file, and the names of the key pairs in your keys dir.
 
-The script finds the keys dir and the config file when you press TAB: it uses `--keys-dir` and `--config-file` if they are in the command line, then the environment variables, then the default locations. It also completes the paths of files in the current directory, except for aliases.
+The script finds the keys dir and the config file when you press TAB: it uses `--keys-dir` and `--config-file` if they are in the command line, then the environment variables, then the default locations. It also completes the paths of files in the current directory.
 
 ## Options
 

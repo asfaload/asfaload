@@ -111,6 +111,12 @@ pub(crate) mod keys_helpers {
         )?;
         // The name is last, so the recipient can copy the command and append it.
         writeln!(buf, "    asfaload-cli alias --key {public_key} <name>")?;
+        writeln!(buf,)?;
+        writeln!(buf, "{underline}Note:{underline:#}")?;
+        writeln!(
+            buf,
+            "Do not create aliases for your own keys, they are usable by name without an alias!"
+        )?;
         Ok(buf)
     }
 }
@@ -651,6 +657,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             println!("{}", output);
         }
         Commands::Keys {
+            name: name_in,
             keys_dir_args,
             config_args,
             json_args,
@@ -658,10 +665,16 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let keys_dir = get_keys_dir(&keys_dir_args.keys_dir)?;
             let config_accessor = ConfigAccessor::new(&config_args.config_file);
             // anstream removes the styles when stdout is not a terminal.
-            anstream::println!(
-                "{}",
-                list_keys::list_keys(&keys_dir, &config_accessor, json_args.json)?
-            );
+            match name_in {
+                None => anstream::println!(
+                    "{}",
+                    list_keys::list_keys(&keys_dir, &config_accessor, json_args.json)?
+                ),
+                Some(name) => anstream::println!(
+                    "{}",
+                    list_keys::display_key(name, &keys_dir, &config_accessor, json_args.json)?
+                ),
+            };
         }
         Commands::Manual { command } => {
             crate::manual::show(command.as_deref().unwrap_or(crate::manual::INDEX_PAGE))?;

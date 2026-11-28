@@ -49,7 +49,7 @@ fn test_share_key_asfaload_public_key() {
     assert!(pub_key.starts_with("asfaload-pub:"));
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&pub_key_path);
+    cmd.arg("share-key").arg(&pub_key_path);
 
     cmd.assert()
         .success()
@@ -64,7 +64,7 @@ fn test_share_key_ssh_public_key() {
     fs::write(&pub_key_path, SSH_PUBLIC_KEY).unwrap();
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&pub_key_path);
+    cmd.arg("share-key").arg(&pub_key_path);
 
     // The SSH key is accepted and normalised to its canonical asfaload form.
     cmd.assert()
@@ -88,7 +88,7 @@ fn test_share_key_finds_pub_sibling_when_given_private_key() {
 
     // Pass the private key file — the command should find the `.pub` sibling.
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&priv_key);
+    cmd.arg("share-key").arg(&priv_key);
 
     cmd.assert()
         .success()
@@ -96,7 +96,7 @@ fn test_share_key_finds_pub_sibling_when_given_private_key() {
         .stdout(predicate::str::contains(pub_key));
 }
 
-// Validates that the `-k <path>` handler *appends* `.pub` to the supplied
+// Validates that the handler *appends* `.pub` to the supplied
 // path rather than replacing its existing extension. The private key is staged
 // at `mykey.bla` and the public key at `mykey.bla.pub`; if `share-key` used
 // `Path::with_extension("pub")` instead of appending, it would look for
@@ -121,7 +121,7 @@ fn test_share_key_appends_pub_extension_preserving_existing_extension() {
     assert!(pub_key.starts_with("asfaload-pub:"));
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&priv_key);
+    cmd.arg("share-key").arg(&priv_key);
 
     cmd.assert()
         .success()
@@ -137,7 +137,7 @@ fn test_share_key_rejects_private_key_without_pub_sibling() {
     fs::copy(test_helpers::fixtures_keys_dir().join("key_0"), &priv_key).unwrap();
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&priv_key);
+    cmd.arg("share-key").arg(&priv_key);
 
     cmd.assert()
         .failure()
@@ -151,7 +151,7 @@ fn test_share_key_rejects_ssh_private_key() {
     fs::write(&key_path, SSH_PRIVATE_KEY).unwrap();
 
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&key_path);
+    cmd.arg("share-key").arg(&key_path);
 
     cmd.assert()
         .failure()
@@ -183,7 +183,6 @@ fn fixture_pub_key_0() -> String {
 fn test_share_key_raw_asfaload_key() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(test_helpers::fixtures_pub_key(0))
         .arg("--raw");
 
@@ -196,7 +195,6 @@ fn test_share_key_raw_asfaload_key() {
 fn test_share_key_raw_short_flag() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(test_helpers::fixtures_pub_key(0))
         .arg("-r");
 
@@ -209,7 +207,6 @@ fn test_share_key_raw_short_flag() {
 fn test_share_key_raw_ssh_key_normalised() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(test_helpers::git_signing_pub_key_path())
         .arg("--raw");
 
@@ -222,7 +219,6 @@ fn test_share_key_raw_ssh_key_normalised() {
 fn test_share_key_raw_excludes_human_message() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(test_helpers::fixtures_pub_key(0))
         .arg("--raw");
 
@@ -236,7 +232,6 @@ fn test_share_key_raw_excludes_human_message() {
 fn test_share_key_raw_and_json_conflict() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(test_helpers::fixtures_pub_key(0))
         .arg("--raw")
         .arg("--json");
@@ -251,9 +246,7 @@ fn test_share_key_raw_and_json_conflict() {
 #[test]
 fn test_share_key_raw_default_unchanged() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key")
-        .arg("-k")
-        .arg(test_helpers::fixtures_pub_key(0));
+    cmd.arg("share-key").arg(test_helpers::fixtures_pub_key(0));
 
     cmd.assert()
         .success()
@@ -268,9 +261,7 @@ fn test_share_key_raw_default_unchanged() {
 #[test]
 fn test_share_key_message_suggests_alias() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key")
-        .arg("-k")
-        .arg(test_helpers::fixtures_pub_key(0));
+    cmd.arg("share-key").arg(test_helpers::fixtures_pub_key(0));
 
     cmd.assert()
         .success()
@@ -284,7 +275,6 @@ fn test_share_key_message_suggests_alias() {
 fn test_share_key_json_message_suggests_alias() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(test_helpers::fixtures_pub_key(0))
         .arg("--json");
 
@@ -318,11 +308,10 @@ fn fixture_pub_key(n: usize) -> String {
         .to_owned()
 }
 
-// A share-key --raw with -k `name`, isolated from key settings in the environment of the developer.
+// A share-key --raw with positional `name`, isolated from key settings in the environment of the developer.
 fn share_key_command(name: &str, home: &std::path::Path) -> assert_cmd::Command {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("share-key")
-        .arg("-k")
         .arg(name)
         .arg("--raw")
         .env_remove("ASFALOAD_KEYS_DIR")

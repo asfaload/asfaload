@@ -1,8 +1,16 @@
 # `asfaload-cli keys`
 
-- **Usage**: `asfaload-cli keys [OPTIONS]`
+- **Usage**: `asfaload-cli keys [NAME] [OPTIONS]`
 
 Show the secret and public key files in your keys directory, and the aliases of public keys in your configuration file. The command reads only local files. It does not contact the backend.
+
+With `NAME`, show every match of that name: the file found in the current directory, the file found in the keys directory, and the alias in the configuration file. The command shows each match together with its `.pub` sibling, when that file exists on disk. The command never reads nor derives the secret key.
+
+## Arguments
+
+### `NAME` (optional)
+
+Name of the key to display. It can be a key file in the current directory, a key file in the keys directory, or an alias in the configuration file. The command shows every match in each of the three places. Display an alias name as is. Display a key file name with the path like `./my_key` when the file is in the current directory. If no key matches the name, the output shows the same layout with all sections empty.
 
 ## My secret keys
 
@@ -62,6 +70,9 @@ JSON (with `--json`):
     {"keys_dir":"/home/alice/.local/share/asfaload-cli","config_file":"/home/alice/.config/asfaload-cli/config.toml","secret_keys":["mykey","release"],"my_public_keys":[{"file_name":"mykey.pub","public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"},{"file_name":"release.pub","public_key":"asfaload-pub:YCuPAtMNZQaYPDjWmp8voWh6bVg0bRyLu2zEkH6zYZI"}],"public_key_aliases":[{"alias":"bob","public_key":"asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU"},{"alias":"me","public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"}]}
 
 ## Examples
+
+    # show one key
+    asfaload-cli keys my_key
 
     # show your keys
     asfaload-cli keys

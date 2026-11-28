@@ -1,6 +1,6 @@
 # `asfaload-cli share-key`
 
-- **Usage**: `asfaload-cli share-key [OPTIONS] -k <PUBLIC_KEY>`
+- **Usage**: `asfaload-cli share-key [OPTIONS] <PUBLIC_KEY>`
 
 Print your public key in the base64 form used in signers files, along with a ready-to-send message for sharing it. The public key is safe to share — it is how others verify your signatures.
 
@@ -13,15 +13,17 @@ By default, the command looks for the key name in the keys directory, the direct
 
 This is the directory where [`new-keys`](new-keys.md) creates keys by default. If you keep your keys in another location, use `--keys-dir`.
 
-## Options
+## Arguments
 
-### `-k --public-key <PATH|NAME>`
+### `<PUBLIC_KEY>`
 
 Path to the public key file to share (asfaload or OpenSSH ed25519), or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Required. If the file does not contain a parseable public key, the command retries with `.pub` appended to the path — so passing the secret key path or name also works, as long as its `.pub` sibling exists.
 
+## Options
+
 ### `-d --keys-dir <DIR>`
 
-Directory where the command looks for the public key when the value of `--public-key` is not an existing file. The command then reads `<DIR>/<value of --public-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
+Directory where the command looks for the public key when the argument is not an existing file. The command then reads `<DIR>/<argument>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
 
 ### `-r --raw`
 
@@ -50,6 +52,9 @@ Human-readable (default):
         To refer to my key by a name, create an alias for it:
         asfaload-cli alias --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 <name>
 
+Note:
+Do not create aliases for your own keys, they are usable by name without an alias!
+
 Raw (with `--raw`):
 
     asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
@@ -61,13 +66,13 @@ JSON (with `--json`):
 ## Examples
 
     # print your public key and a sharing message
-    asfaload-cli share-key -k mykey
+    asfaload-cli share-key mykey
 
     # print only the key
-    asfaload-cli share-key -k mykey --raw
+    asfaload-cli share-key mykey --raw
 
     # machine-readable output
-    asfaload-cli share-key --json -k mykey
+    asfaload-cli share-key --json mykey
 
 ## Exit codes
 

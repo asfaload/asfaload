@@ -176,7 +176,6 @@ pub enum Commands {
     ShareKey {
         /// Path to the public key (asfaload or ssh ed25519) OR filename in your keys dir
         /// (see --keys-dir)
-        #[arg(long, short = 'k')]
         public_key: String,
 
         #[command(flatten)]
@@ -556,6 +555,8 @@ pub enum Commands {
     },
     /// List your key files and the aliases of public keys
     Keys {
+        /// Name of the key to display
+        name: Option<String>,
         #[command(flatten)]
         keys_dir_args: KeysDirArgs,
         /// Configuration file to use instead of the default file

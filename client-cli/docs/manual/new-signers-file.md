@@ -4,6 +4,16 @@
 
 Create a new signers file that defines who can sign artifacts, administer, and manage the project. At minimum, one artifact signer and its threshold are required.
 
+## Public keys
+
+The options `--artifact-signer`, `--admin-key`, `--master-key` and `--revocation-key` accept a public key in one of these forms:
+
+- The public key as a base64 string (`asfaload-pub:...`).
+- An [alias](alias.md) of the configuration file.
+- A key file: the path to a file, or the name of a file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. If the file is not a public key, the command reads the file with `.pub` appended, so the name of your key pair also works. Use this form for your own keys: do not create aliases for them.
+
+When a name is an alias and a key file of different keys, the command fails. Then give the base64 string or the path to the file.
+
 ## Options
 
 ### Artifact signers
@@ -12,7 +22,7 @@ Every signers file needs at least one artifact signer.
 
 #### `-a --artifact-signer <PUB_KEY>`
 
-Public key as a base64 string. Repeatable.
+Public key (see [Public keys](#public-keys)). Repeatable.
 
 #### `--artifact-signers-file <FILE_PATH>` (`--af`)
 
@@ -28,7 +38,7 @@ When admin keys are not specified, there is a fallback to artifact signers keys.
 
 #### `-d --admin-key <PUB_KEY>`
 
-Admin public key as a base64 string. Repeatable.
+Admin public key (see [Public keys](#public-keys)). Repeatable.
 
 #### `--admin-keys-file <FILE_PATH>` (`--df`)
 
@@ -44,7 +54,7 @@ Master keys can approve a signers file update in place of the admin keys. Keep t
 
 #### `-m --master-key <PUB_KEY>`
 
-Master public key as a base64 string. Repeatable.
+Master public key (see [Public keys](#public-keys)). Repeatable.
 
 #### `--master-keys-file <FILE_PATH>` (`--mf`)
 
@@ -60,7 +70,7 @@ When revocation keys are not specified, there is a fallback to the admin keys.
 
 #### `-r --revocation-key <PUB_KEY>`
 
-Revocation public key as a base64 string. Repeatable.
+Revocation public key (see [Public keys](#public-keys)). Repeatable.
 
 #### `--revocation-keys-file <FILE_PATH>` (`--rf`)
 
@@ -80,6 +90,10 @@ Path for the new signers file. The file must not already exist — the command r
 
 Emit output as JSON instead of human-readable text.
 
+#### `--keys-dir <DIR>`
+
+Directory where the command looks for a key file when the public key is not an existing file. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default.
+
 #### `-c --config-file <CONFIG_FILE>`
 
 The configuration file to read aliases from, instead of the default file. Refer to [alias](alias.md#configuration-file).
@@ -87,6 +101,7 @@ The configuration file to read aliases from, instead of the default file. Refer 
 ## Environment
 
 - `ASFALOAD_CONFIG_FILE` — alternative to `--config-file`.
+- `ASFALOAD_KEYS_DIR` — alternative to `--keys-dir`.
 
 ## Output
 
@@ -142,6 +157,9 @@ JSON (with `--json`):
         --revocation-keys-file revoke.pub \
         -R 1 \
         -o signers.json
+
+    # your key pair "my_key" from the keys dir, and the alias "bob"
+    asfaload-cli new-signers-file -a my_key -a bob -A 2 -o signers.json
 
     # mix base64 strings and files
     asfaload-cli new-signers-file \

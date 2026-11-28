@@ -50,6 +50,9 @@ Human-readable (default):
         To refer to my key by a name, create an alias for it:
         asfaload-cli alias --key asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8 <name>
 
+Note:
+Do not create aliases for your own keys, they are usable by name without an alias!
+
 Raw (with `--raw`):
 
     asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8

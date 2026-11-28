@@ -111,6 +111,12 @@ pub(crate) mod keys_helpers {
         )?;
         // The name is last, so the recipient can copy the command and append it.
         writeln!(buf, "    asfaload-cli alias --key {public_key} <name>")?;
+        writeln!(buf,)?;
+        writeln!(buf, "{underline}Note:{underline:#}")?;
+        writeln!(
+            buf,
+            "Do not create aliases for your own keys, they are usable by name without an alias!"
+        )?;
         Ok(buf)
     }
 }

@@ -68,15 +68,14 @@ proposes_key_names_and_aliases() {
 uses_the_locations_given_on_the_command_line() {
     new_keys_env
     COMPLETION_DIR="$LOCAL_DIR"
-    assert_completions "key_4" "asfaload-cli share-key -d '$OTHER_KEYS_DIR' key_"
+    assert_completions "key_4" "asfaload-cli share-key --keys-dir '$OTHER_KEYS_DIR' key_"
     assert_completions "key_4" "asfaload-cli share-key --keys-dir='$OTHER_KEYS_DIR' key_"
-    assert_completions "key_4" "asfaload-cli share-key -d'$OTHER_KEYS_DIR' key_"
-    assert_completions "key_4" "asfaload-cli share-key -d='$OTHER_KEYS_DIR' key_"
+    assert_completions "carol" "asfaload-cli keys -c='$OTHER_CONFIG_FILE' c"
     assert_completions "carol" "asfaload-cli keys -c '$OTHER_CONFIG_FILE' c"
     assert_completions "carol" "asfaload-cli keys -c'$OTHER_CONFIG_FILE' c"
     # The options after the token to complete also count.
-    assert_eq "pairs with -d after the cursor" \
-        "$(fish_keys_at pairs 3 asfaload-cli share-key k -d "$OTHER_KEYS_DIR")" "key_4"
+    assert_eq "pairs with --keys-dir after the cursor" \
+        "$(fish_keys_at pairs 3 asfaload-cli share-key k --keys-dir "$OTHER_KEYS_DIR")" "key_4"
     assert_eq "aliases with -c after the cursor" \
         "$(fish_keys_at aliases 3 asfaload-cli new-signers-file a -c "$OTHER_CONFIG_FILE")" "carol"
     COMPLETION_ENV+=(ASFALOAD_KEYS_DIR="$OTHER_KEYS_DIR")

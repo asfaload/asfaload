@@ -26,7 +26,7 @@ The aliases of the configuration file, with their public keys. See [`alias`](ali
 
 ## Options
 
-### `-d --keys-dir <DIR>`
+### `--keys-dir <DIR>`
 
 The directory of the key files, in place of the default keys directory.
 

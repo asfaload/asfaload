@@ -10,7 +10,7 @@ Check that the backend is reachable. Without a secret key the request is unauthe
 
 Path to your secret key file (asfaload or OpenSSH ed25519), or the name of a key file in the keys directory (see `--keys-dir`). If a file exists at the given path, the command uses it. If not, the command reads the file with this name in the keys directory. Optional — when given, the ping is authenticated, and a password is required to use the key.
 
-### `-d --keys-dir <DIR>`
+### `--keys-dir <DIR>`
 
 Directory where the command looks for the secret key when the value of `--secret-key` is not an existing file. The command then reads `<DIR>/<value of --secret-key>`. Defaults to `$XDG_DATA_HOME/asfaload-cli` (usually `~/.local/share/asfaload-cli`), the directory where [`new-keys`](new-keys.md) writes keys by default. Only used when `--secret-key` is given.
 

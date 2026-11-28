@@ -449,13 +449,13 @@ mod tests {
                     subcommand: "share-key".to_string(),
                     id: "public_key".to_string(),
                     mode: Mode::Pairs,
-                    value_options: vec!["-d".to_string(), "--keys-dir".to_string()],
+                    value_options: vec!["--keys-dir".to_string()],
                 },
                 KeyPositional {
                     subcommand: "keys".to_string(),
                     id: "name".to_string(),
                     mode: Mode::Names,
-                    value_options: ["-d", "--keys-dir", "-c", "--config-file"]
+                    value_options: ["--keys-dir", "-c", "--config-file"]
                         .map(String::from)
                         .to_vec(),
                 },
@@ -464,7 +464,7 @@ mod tests {
         assert_eq!(
             key_args.keys_dir,
             LocationOption {
-                short: "-d".to_string(),
+                short: "--keys-dir".to_string(),
                 long: "--keys-dir".to_string(),
                 env: crate::cli::KEYS_DIR_ENV_VAR.to_string(),
             }

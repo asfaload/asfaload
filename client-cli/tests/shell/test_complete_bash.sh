@@ -65,16 +65,16 @@ proposes_key_names_and_aliases() {
 uses_the_locations_given_on_the_command_line() {
     new_keys_env
     COMPLETION_DIR="$LOCAL_DIR"
-    assert_completions "key_4" share-key -d "$OTHER_KEYS_DIR" key_
+    assert_completions "key_4" share-key --keys-dir "$OTHER_KEYS_DIR" key_
+    # bash splits --opt=VALUE in 3 words when '=' is in COMP_WORDBREAKS.
     assert_completions "key_4" share-key --keys-dir = "$OTHER_KEYS_DIR" key_
-    assert_completions "key_4" share-key -d"$OTHER_KEYS_DIR" key_
-    # bash splits -d=DIR in 3 words when '=' is in COMP_WORDBREAKS.
-    assert_completions "key_4" share-key -d = "$OTHER_KEYS_DIR" key_
-    assert_completions "key_4" share-key -d="$OTHER_KEYS_DIR" key_
+    assert_completions "key_4" share-key --keys-dir="$OTHER_KEYS_DIR" key_
+    assert_completions "carol" keys -c = "$OTHER_CONFIG_FILE" c
+    assert_completions "carol" keys -c="$OTHER_CONFIG_FILE" c
     assert_completions "carol" keys -c "$OTHER_CONFIG_FILE" c
     assert_completions "carol" keys -c"$OTHER_CONFIG_FILE" c
     # The options after the word to complete also count.
-    COMPLETION_INDEX=2 assert_completions "key_4" share-key key_ -d "$OTHER_KEYS_DIR"
+    COMPLETION_INDEX=2 assert_completions "key_4" share-key key_ --keys-dir "$OTHER_KEYS_DIR"
     COMPLETION_INDEX=2 assert_completions "key_4" share-key key_ --keys-dir="$OTHER_KEYS_DIR"
     COMPLETION_INDEX=2 assert_completions "carol" keys c -c "$OTHER_CONFIG_FILE"
     COMPLETION_ENV+=(ASFALOAD_KEYS_DIR="$OTHER_KEYS_DIR")

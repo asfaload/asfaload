@@ -17,7 +17,7 @@ The commands that use a secret key also look in this directory when you give the
 
 Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (public key) in the keys directory.
 
-### `-d --keys-dir <DIR>`
+### `--keys-dir <DIR>`
 
 Directory to write the key files into, in place of the default keys directory (see above). Give the same directory with `--keys-dir` to the commands that use a secret key, so that they find the key by its name. If the directory does not exist, the command creates it. On Linux and macOS, only you can access a directory that the command creates, and only you can read the secret key file.
 
@@ -91,7 +91,7 @@ JSON (with `--json`):
     asfaload-cli ping -K mykey
 
     # store keys in another directory
-    asfaload-cli new-keys -n mykey -d ~/keys
+    asfaload-cli new-keys -n mykey --keys-dir ~/keys
 
     # non-interactive usage in CI
     asfaload-cli new-keys -n ci-key -p "$KEY_PASSWORD"

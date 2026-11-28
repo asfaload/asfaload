@@ -1,6 +1,9 @@
 use ClientCliError::PasswordStrengthError;
 use client_lib::paths::{get_keys_dir, key_path_from_name};
-use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use features_lib::errors::keys::{KeyError, append_pub_extension};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
+};
 use std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -325,6 +328,18 @@ pub(crate) fn resolve_key_path(
         return Err(ClientCliError::InvalidInput(msg));
     }
     Ok(path_built)
+}
+
+// Loads the public key of `path`. When `path` is not a public key, e.g. a secret key, its `.pub`
+// sibling is used if it exists. Otherwise the error is the one of `path`.
+pub(crate) fn load_public_key(path: &Path) -> std::result::Result<AsfaloadPublicKeys, KeyError> {
+    match AsfaloadPublicKeys::from_file(path) {
+        Err(KeyError::ParseError(e)) => match append_pub_extension(path) {
+            Ok(pub_path) if pub_path.exists() => AsfaloadPublicKeys::from_file(pub_path),
+            _ => Err(KeyError::ParseError(e)),
+        },
+        result => result,
+    }
 }
 
 // The password is only asked when the key file is found, so the user does not type it for nothing.

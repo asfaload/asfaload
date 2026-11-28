@@ -39,7 +39,7 @@ inquire = "0.9.4"
 clap_complete_command = "0.6.1"
 tempfile = "3.14"
 toml = "1.2.1+spec-1.1.0"
-termimad = "0.34.1"
+termimad = "0.35.0"
 minus = { version = "5.8.0", features = ["static_output"] }
 
 [dev-dependencies]
@@ -48,7 +48,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 test_helpers = { path = "../core/test_helpers" }
 rest_api_auth = { path = "../rest_api_auth" }
-base64 = "0.22"
+base64 = "0.23"
 
 [lints]
 workspace = true

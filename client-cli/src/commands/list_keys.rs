@@ -7,7 +7,8 @@ use std::{
 use anstyle::Style;
 use client_lib::config::ConfigAccessor;
 use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, is_public_key_head, is_secret_key_head,
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, errors::keys::append_pub_extension,
+    is_public_key_head, is_secret_key_head,
 };
 use serde::Serialize;
 
@@ -133,6 +134,13 @@ fn render_text(listing: &KeysListing, with_ansi: bool) -> String {
     lines.join("\n")
 }
 
+// The first bytes of one file: the marker of a secret or a public key.
+fn read_file_head(path: &Path) -> Result<String, ClientCliError> {
+    let mut head = Vec::new();
+    std::fs::File::open(path).and_then(|file| file.take(HEAD_SIZE).read_to_end(&mut head))?;
+    Ok(String::from_utf8_lossy(&head).to_string())
+}
+
 // The first bytes of each regular file of `dir`, without subdirectories. A missing dir has no
 // files, and a file that cannot be read is skipped.
 fn read_file_heads(dir: &Path) -> Result<Vec<(String, String)>, ClientCliError> {
@@ -145,19 +153,25 @@ fn read_file_heads(dir: &Path) -> Result<Vec<(String, String)>, ClientCliError> 
         if !path.is_file() {
             continue;
         }
-        let mut head = Vec::new();
-        let read =
-            std::fs::File::open(&path).and_then(|file| file.take(HEAD_SIZE).read_to_end(&mut head));
-        if read.is_ok()
-            && let Some(name) = path.file_name()
-        {
-            heads.push((
-                name.to_string_lossy().to_string(),
-                String::from_utf8_lossy(&head).to_string(),
-            ));
+        if let (Ok(head), Some(name)) = (read_file_head(&path), path.file_name()) {
+            heads.push((name.to_string_lossy().to_string(), head));
         }
     }
     Ok(heads)
+}
+
+// The row for one file that starts like a public key. `None` for a file that does not parse.
+fn public_key_row(file_name: &str, path: &Path) -> Option<PublicKeyFile> {
+    let head = read_file_head(path).ok()?;
+    if !is_public_key_head(head.trim_start()) {
+        return None;
+    }
+    AsfaloadPublicKeys::from_file(path)
+        .ok()
+        .map(|key| PublicKeyFile {
+            file_name: file_name.to_string(),
+            public_key: key.to_base64(),
+        })
 }
 
 /// Lists the key files of `keys_dir` and the aliases of the config file. The text output has
@@ -171,14 +185,7 @@ pub fn list_keys(
     // A file that starts like a public key but does not parse is not a public key.
     let my_public_keys = key_file_names(&heads, is_public_key_head)
         .into_iter()
-        .filter_map(|file_name| {
-            AsfaloadPublicKeys::from_file(keys_dir.join(&file_name))
-                .ok()
-                .map(|key| PublicKeyFile {
-                    file_name,
-                    public_key: key.to_base64(),
-                })
-        })
+        .filter_map(|file_name| public_key_row(&file_name, &keys_dir.join(&file_name)))
         .collect();
     let config_file = config_accessor.path()?;
     let listing = KeysListing {
@@ -190,11 +197,113 @@ pub fn list_keys(
         public_key_aliases: aliased_keys(config_accessor.get()?.aliases()),
         my_public_keys,
     };
-    if json {
-        Ok(serde_json::to_string(&listing)?)
+    render(&listing, json)
+}
+
+// The first bytes of one file, like read_file_heads does for a directory.
+// The rows for one key file: a secret key row plus its .pub sibling from disk, for a secret
+// key; a public key row for a public key. A file that is there but is not a key yields no rows,
+// like in the full listing.
+fn key_file_rows(
+    name: &str,
+    path: &Path,
+    cwd: bool,
+) -> Result<(Vec<String>, Vec<PublicKeyFile>), ClientCliError> {
+    let head = read_file_head(path)?;
+    // A cwd match keeps its relative path in the row, so the location is visible.
+    let row_name = if cwd {
+        format!("./{name}")
     } else {
-        Ok(render_text(&listing, true))
+        name.to_string()
+    };
+    if is_secret_key_head(head.trim_start()) {
+        // Report the .pub sibling from disk only: the keys command never produces nor derives
+        // from the secret key.
+        let mut public_keys = Vec::new();
+        let pub_path = append_pub_extension(path)?;
+        if pub_path.is_file() {
+            let pub_name = if cwd {
+                format!("./{}", pub_path.to_string_lossy())
+            } else {
+                pub_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| pub_path.to_string_lossy().to_string())
+            };
+            if let Some(row) = public_key_row(&pub_name, &pub_path) {
+                public_keys.push(row);
+            }
+        }
+        Ok((vec![row_name], public_keys))
+    } else if is_public_key_head(head.trim_start()) {
+        // A file that starts like a public key but does not parse is not a public key.
+        let row = public_key_row(&row_name, path);
+        Ok((Vec::new(), row.into_iter().collect()))
+    } else {
+        Ok((Vec::new(), Vec::new()))
     }
+}
+
+fn render(listing: &KeysListing, json: bool) -> Result<String, ClientCliError> {
+    if json {
+        Ok(serde_json::to_string(listing)?)
+    } else {
+        Ok(render_text(listing, true))
+    }
+}
+
+/// Displays every match of one name: the file found in the current directory, the file found in
+/// the keys dir, and the alias in the config file. Nothing is hidden, so this is a tool for
+/// debugging. A name that is not found shows the same layout with all sections empty.
+pub(crate) fn display_key(
+    name: &str,
+    keys_dir: &Path,
+    config_accessor: &ConfigAccessor,
+    json: bool,
+) -> Result<String, ClientCliError> {
+    let config_file = config_accessor.path()?;
+    let keys_dir_exists = keys_dir.exists();
+    let cwd_path = PathBuf::from(name);
+    let dir_path = keys_dir.join(name);
+    // The same file in both places is displayed once.
+    let same_file = cwd_path.is_file()
+        && dir_path.is_file()
+        && cwd_path.canonicalize().ok() == dir_path.canonicalize().ok();
+    let mut secret_keys = Vec::new();
+    let mut my_public_keys = Vec::new();
+    if cwd_path.is_file() {
+        let (s, p) = key_file_rows(name, &cwd_path, true)?;
+        secret_keys.extend(s);
+        my_public_keys.extend(p);
+    }
+    if dir_path.is_file() && !same_file {
+        let (s, p) = key_file_rows(name, &dir_path, false)?;
+        secret_keys.extend(s);
+        my_public_keys.extend(p);
+    }
+    secret_keys.sort();
+    my_public_keys.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    // Last resort: the alias in the config file.
+    let config = config_accessor.get()?;
+    let public_key_aliases = match config.get_key(name) {
+        Some(key) => vec![AliasedKey {
+            alias: name.to_string(),
+            public_key: key.to_base64(),
+        }],
+        None => Vec::new(),
+    };
+    render(
+        &KeysListing {
+            keys_dir_exists,
+            keys_dir: keys_dir.to_path_buf(),
+            config_file_exists: config_file.exists(),
+            config_file,
+            secret_keys,
+            my_public_keys,
+            public_key_aliases,
+        },
+        json,
+    )
 }
 
 #[cfg(test)]

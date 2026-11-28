@@ -556,6 +556,8 @@ pub enum Commands {
     },
     /// List your key files and the aliases of public keys
     Keys {
+        /// Name of the key to display
+        name: Option<String>,
         #[command(flatten)]
         keys_dir_args: KeysDirArgs,
         /// Configuration file to use instead of the default file

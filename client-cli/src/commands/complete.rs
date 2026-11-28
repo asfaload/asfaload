@@ -3,21 +3,24 @@ use crate::{
     error::{ClientCliError, Result},
 };
 use clap::CommandFactory;
+
+mod keys;
+
 pub fn handle_complete(
     shell: clap_complete_command::Shell,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let mut cmd = Cli::command();
+    let mut script = Vec::new();
+    shell.generate(&mut cmd, &mut script);
+    let mut script = String::from_utf8(script).map_err(|e| {
+        ClientCliError::InvalidInput(format!("completion script is not valid UTF-8: {e}"))
+    })?;
     if matches!(shell, clap_complete_command::Shell::Bash) {
-        let mut script = Vec::new();
-        shell.generate(&mut cmd, &mut script);
-        let script = String::from_utf8(script).map_err(|e| {
-            ClientCliError::InvalidInput(format!("completion script is not valid UTF-8: {e}"))
-        })?;
-        output.write_all(fix_bash_subcommand_labels(&script, cmd.get_name()).as_bytes())?;
-    } else {
-        shell.generate(&mut cmd, output);
+        script = fix_bash_subcommand_labels(&script, cmd.get_name());
     }
+    let script = keys::with_key_completion(shell, &script, &cmd)?;
+    output.write_all(script.as_bytes())?;
     Ok(())
 }
 

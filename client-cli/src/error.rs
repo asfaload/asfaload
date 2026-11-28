@@ -33,6 +33,9 @@ pub enum ClientCliError {
     #[error("Shell program {0} was not found on PATH")]
     ShellNotFound(String),
 
+    #[error("Cannot generate the completion script: {0}")]
+    CompletionScript(String),
+
     #[error("Password is too weak")]
     PasswordStrengthError(String),
 

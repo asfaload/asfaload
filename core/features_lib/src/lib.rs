@@ -26,8 +26,10 @@ pub use signatures::keys::AsfaloadPublicKeyTrait;
 pub use signatures::keys::AsfaloadSecretKeyTrait;
 pub use signatures::keys::AsfaloadSignatureTrait;
 pub use signatures::keys::KeyFormat;
+pub use signatures::keys::OPENSSH_PRIVATE_KEY_PEM_HEADER;
 pub use signatures::keys::asfaload::ASFALOAD_PRIV_PREFIX;
 pub use signatures::keys::asfaload::ASFALOAD_PUB_PREFIX;
+pub use signatures::keys::asfaload::SSH_ED25519_PREFIX;
 pub use signatures::keys::is_public_key_head;
 pub use signatures::keys::is_secret_key_head;
 

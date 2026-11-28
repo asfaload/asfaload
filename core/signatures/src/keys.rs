@@ -1,6 +1,6 @@
 pub mod asfaload;
 
-const OPENSSH_PRIVATE_KEY_PEM_HEADER: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
+pub const OPENSSH_PRIVATE_KEY_PEM_HEADER: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
 use std::path::{Path, PathBuf};
 
 use common::errors::keys::{SignError, SignatureError, VerifyError, append_pub_extension};
